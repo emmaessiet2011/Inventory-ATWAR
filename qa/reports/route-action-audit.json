@@ -1,0 +1,24 @@
+{
+  "summary": {
+    "routes": 93,
+    "dynamicPrefixes": [
+      "edit-sale/",
+      "view-user/",
+      "view-customer/",
+      "view-supplier/",
+      "view-sale/",
+      "print-sale/",
+      "edit-product/",
+      "print-labels/",
+      "product-stock-history/",
+      "add-opening-stock/",
+      "edit-user/"
+    ],
+    "unknownNavigationTargets": 0,
+    "deadOnClickHandlers": 0,
+    "bannedCalls": 0
+  },
+  "unknownNavigationTargets": [],
+  "deadOnClickHandlers": [],
+  "bannedCalls": []
+}

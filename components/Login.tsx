@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '../src/context/GlobalContext';
+import { verifyUserPassword } from '../src/utils/authSecurity';
 
 interface LoginProps {
   onLogin: () => void;
@@ -11,7 +12,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const activeUsers = users.filter(u => u.status === 'Active' && !!u.password);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,8 +20,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     // Try to find matching active user by email + password
     const matchedUser = users.find(
       u => u.email.toLowerCase() === email.toLowerCase() &&
-           u.password === password &&
-           u.status === 'Active'
+           verifyUserPassword(u, password) &&
+           u.status === 'Active' &&
+           u.allowLogin !== false
     );
 
     if (matchedUser) {
@@ -34,9 +35,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       onLogin();
     } else {
       // Check if user exists but is inactive
-      const inactiveUser = users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.status === 'Inactive');
-      if (inactiveUser) {
+      const blockedUser = users.find(
+        u => u.email.toLowerCase() === email.toLowerCase() && (u.status !== 'Active' || u.allowLogin === false)
+      );
+      if (blockedUser && blockedUser.status !== 'Active') {
         setError('Your account is inactive. Please contact Admin.');
+      } else if (blockedUser && blockedUser.allowLogin === false) {
+        setError('Login access is disabled for your account. Please contact Admin.');
       } else {
         setError('Invalid email or password. Please try again.');
       }
@@ -157,19 +162,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </button>
           </form>
 
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Login Details (Development)</p>
-            <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-              {activeUsers.map(user => (
-                <div key={user.id} className="rounded-md bg-white border border-amber-100 px-3 py-2 text-xs text-slate-700">
-                  <p><span className="font-bold">User:</span> {user.name}</p>
-                  <p><span className="font-bold">Email:</span> {user.email}</p>
-                  <p><span className="font-bold">Password:</span> {user.password}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          
           <p className="text-center text-sm text-slate-500">
             Don't have an account? <span className="text-red-600 font-medium cursor-pointer">Contact Admin</span>
           </p>

@@ -1,14 +1,13 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   User, MapPin, Phone, Mail, Plus, FileText, 
   ShoppingBag, StickyNote, CreditCard, Activity,
-  Printer, Filter, Download, ArrowLeft,
-  ChevronDown, FileSpreadsheet, Columns, Edit, Trash2, Eye,
-  Search, ArrowUpDown, CheckCircle2, Wallet, Receipt, X, DollarSign,
-  Calendar as CalendarIcon, Banknote, Briefcase, Clock, Truck, Package, ScrollText, Link, Undo2,
-  Info
+  Printer, ArrowLeft,
+  ChevronDown, Edit, Trash2, Eye,
+  Search, ArrowUpDown, Wallet, Receipt, X, DollarSign,
+  Calendar as CalendarIcon, Banknote, Briefcase, Clock, Truck, Package, ScrollText, Link, Undo2, Users,
 } from 'lucide-react';
 import DateRangeFilter from './DateRangeFilter';
 import AddDiscountModal from './AddDiscountModal';
@@ -19,11 +18,14 @@ import PackingSlip from './PackingSlip';
 import DeliveryNote from './DeliveryNote';
 import EditShippingModal from './EditShippingModal';
 import InvoiceURLModal from './InvoiceURLModal';
-import MultiSelect from './MultiSelect';
 import ViewPaymentModal from './ViewPaymentModal';
 import EditPaymentModal from './EditPaymentModal';
 import { ConfirmationModal } from './UserModals';
 import { useGlobalContext } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
+import { clampPrecision, normalizePrefix, toFixedPrecision } from '../src/utils/paymentUtils';
+import { formatDateTimeBySettings } from '../src/utils/dateTime';
+import { resolveDefaultAccountFromMethod } from '../src/utils/paymentAccounts';
 
 interface ViewCustomerProps {
     onNavigate: (page: string) => void;
@@ -73,36 +75,52 @@ interface ProductItem {
 
 interface Transaction {
     date: string;
+    timestamp: number;
     ref: string;
-    type: 'Sell' | 'Payment' | 'Opening Balance';
+    type: 'Sell' | 'Payment' | 'Opening Balance' | 'Sell Return';
     location: string;
     status: string;
     debit: number;
     credit: number;
     method: string;
     others: string;
+    linkedInvoices?: string[];
     products?: ProductItem[];
 }
 
 const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, initialTab }) => {
-  const [activeTab, setActiveTab] = useState(initialTab || 'ledger');
+  const { addNotification } = useNotifications();
+  const [activeTab, setActiveTab] = useState(initialTab === 'add-payment' ? 'payments' : (initialTab || 'ledger'));
   const [ledgerFormat, setLedgerFormat] = useState('Format 1');
   const [searchTerm, setSearchTerm] = useState('');
   
   // State for Dynamic Customer Data
   const [customer, setCustomer] = useState<Customer | null>(null);
 
-  // Account Summary Date State
-  const [summaryStartDate, setSummaryStartDate] = useState('2026-01-01');
-  const [summaryEndDate, setSummaryEndDate] = useState('2026-12-31');
+  // Account Summary Date State — defaults to current year
+  const currentYear = new Date().getFullYear();
+  const [summaryStartDate, setSummaryStartDate] = useState(`${currentYear}-01-01`);
+  const [summaryEndDate, setSummaryEndDate] = useState(`${currentYear}-12-31`);
 
   // General Customer Payment Modal State (The one from Profile Card)
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 16));
   const [paymentMethod, setPaymentMethod] = useState('Cash');
-  const [paymentAccount, setPaymentAccount] = useState('None');
+  const [paymentAccount, setPaymentAccount] = useState('Cash Account');
   const [paymentNote, setPaymentNote] = useState('');
+  const [paymentFileName, setPaymentFileName] = useState('');
+
+  // Ledger filters
+  const [locationFilter, setLocationFilter] = useState('all');
+
+  // Sales tab filters
+  const [salePayStatusFilter, setSalePayStatusFilter] = useState('All');
+
+  // Documents tab state
+  const [isDocModalOpen, setIsDocModalOpen] = useState(false);
+  const [editingDoc, setEditingDoc] = useState<{ id: string; heading: string } | null>(null);
+  const [newDocHeading, setNewDocHeading] = useState('');
 
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
 
@@ -131,16 +149,55 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const {
     customers: allCustomers,
     sales: globalSales,
+    sellReturns: globalSellReturns,
     payments: globalPayments,
     addPayment: globalAddPayment,
+    updateCustomer: globalUpdateCustomer,
+    updateSale: globalUpdateSale,
     deleteSale: globalDeleteSale,
     deletePayment: globalDeletePayment,
+    updatePayment: globalUpdatePayment,
     currentUser,
     formatCurrency,
+    locations,
+    addDiscount: globalAddDiscount,
+    generateId,
+    settings,
   } = useGlobalContext();
+  const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
 
   const formatOMR = (amount: number) => formatCurrency(amount || 0);
   const formatRiyal = (amount: number) => formatCurrency(amount || 0);
+  const parseDateValue = (value?: string): number => {
+    if (!value) return 0;
+    const direct = new Date(value);
+    if (!Number.isNaN(direct.getTime())) return direct.getTime();
+
+    const raw = String(value).trim();
+    const dmyWithTime = raw.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[T\s]+(\d{1,2}):(\d{2})(?:\s*(AM|PM))?)?$/i
+    );
+    if (!dmyWithTime) return 0;
+    const day = Number(dmyWithTime[1]);
+    const month = Number(dmyWithTime[2]) - 1;
+    const year = Number(dmyWithTime[3]);
+    const rawHour = Number(dmyWithTime[4] || 0);
+    const minute = Number(dmyWithTime[5] || 0);
+    const meridiem = String(dmyWithTime[6] || '').toUpperCase();
+    const hour24 = meridiem ? ((rawHour % 12) + (meridiem === 'PM' ? 12 : 0)) : rawHour;
+    const parsed = new Date(year, month, day, hour24, minute, 0, 0);
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  };
+  const toStartOfDay = (dateStr: string): number => {
+    const parsed = new Date(`${dateStr}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? Number.NEGATIVE_INFINITY : parsed.getTime();
+  };
+  const toEndOfDay = (dateStr: string): number => {
+    const parsed = new Date(`${dateStr}T23:59:59.999`);
+    return Number.isNaN(parsed.getTime()) ? Number.POSITIVE_INFINITY : parsed.getTime();
+  };
+  const formatLedgerDate = (value?: string): string =>
+    formatDateTimeBySettings(value, settings.dateFormat, settings.timeFormat, settings.timeZone);
 
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [customerSearchTerm, setCustomerSearchTerm] = useState('');
@@ -168,50 +225,153 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
     return match ? match[0] : null;
   };
 
-  // Real sales and payments filtered by current customer — derived from GlobalContext
-  const salesData = customer
-    ? globalSales.filter(s => {
-        const saleCustomerId = String(s.customerId || '');
-        const saleName = (s.customerName || '').toLowerCase();
+  // Real sales/returns/payments filtered by current customer — derived from GlobalContext
+  const salesData = useMemo(() => {
+    if (!customer) return [];
+    const customerId = String(customer.id || '').trim();
+    const businessName = customer.businessName.toLowerCase();
+    const contactName = customer.name.toLowerCase();
+    return globalSales
+      .filter(s => {
+        const saleCustomerId = String(s.customerId || '').trim();
+        const saleName = String(s.customerName || '').toLowerCase();
+        const saleNameMatches = saleName
+          ? (
+            saleName === businessName ||
+            saleName === contactName ||
+            saleName.includes(businessName) ||
+            businessName.includes(saleName)
+          )
+          : false;
         return (
-          saleCustomerId === customer.id ||
-          saleName === customer.businessName.toLowerCase() ||
-          saleName === customer.name.toLowerCase()
+          saleCustomerId === customerId ||
+          saleNameMatches
         );
       })
-    : [];
+      .sort((a, b) => {
+        const aTime = parseDateValue(a.date);
+        const bTime = parseDateValue(b.date);
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      });
+  }, [customer, globalSales]);
+  const isFinalizedSale = (sale?: any | null): boolean =>
+    !!sale && String(sale.status || sale.saleStatus || '').trim() === 'Final';
+  const finalizedSalesData = useMemo(
+    () => salesData.filter(isFinalizedSale),
+    [salesData]
+  );
+  const customerSellReturnsData = useMemo(() => {
+    if (!customer) return [];
+    const customerIdRef = String(customer.id || '').trim();
+    const businessName = customer.businessName.toLowerCase();
+    const contactName = customer.name.toLowerCase();
+    return globalSellReturns
+      .filter(record => {
+        const customerId = String(record.customerId || '').trim();
+        const customerName = String(record.customerName || '').toLowerCase();
+        const customerNameMatches = customerName
+          ? (
+            customerName === businessName ||
+            customerName === contactName ||
+            customerName.includes(businessName) ||
+            businessName.includes(customerName)
+          )
+          : false;
+        return (
+          customerId === customerIdRef ||
+          customerNameMatches
+        );
+      })
+      .sort((a, b) => {
+        const aTime = parseDateValue(a.date);
+        const bTime = parseDateValue(b.date);
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      });
+  }, [customer, globalSellReturns]);
+  const activeSale = activeActionId && !activeActionId.startsWith('pay-')
+    ? salesData.find(s => s.id === activeActionId)
+    : undefined;
+  const activeSaleIsFinal = isFinalizedSale(activeSale);
 
-  const paymentsData = customer
-    ? globalPayments
-        .filter(p => p.contactType === 'Customer' && (p.contactId === customer.id || p.contactName === customer.businessName))
-        .map(p => {
-          const linkedInvoices = Array.isArray(p.linkedInvoices) ? p.linkedInvoices.filter(Boolean) : [];
-          const parsedInvoice = extractInvoiceFromText(`${p.referenceNo || ''} ${p.note || ''}`);
-          const invoiceNoDisplay = linkedInvoices[0] || parsedInvoice || '--';
-          const invoiceExtraCount = linkedInvoices.length > 1 ? linkedInvoices.length - 1 : 0;
+  const paymentsData = useMemo(() => {
+    if (!customer) return [];
+    return globalPayments
+      .filter(p => p.contactType === 'Customer' && (p.contactId === customer.id || p.contactName === customer.businessName))
+      .map(p => {
+        const linkedInvoices = Array.isArray(p.linkedInvoices) ? p.linkedInvoices.filter(Boolean) : [];
+        const parsedInvoice = extractInvoiceFromText(`${p.referenceNo || ''} ${p.note || ''}`);
+        const invoiceNoDisplay = linkedInvoices[0] || parsedInvoice || '--';
+        const invoiceExtraCount = linkedInvoices.length > 1 ? linkedInvoices.length - 1 : 0;
+        const paymentTimestamp = parseDateValue(p.date);
 
-          return {
-            ...p,
-            paidOn: p.date,
-            refNo: p.referenceNo,
-            paymentFor: p.note,
-            invoiceNoDisplay,
-            invoiceExtraCount,
-          };
-        })
-    : [];
+        return {
+          ...p,
+          paidOn: p.date,
+          refNo: p.referenceNo,
+          paymentFor: p.note,
+          invoiceNoDisplay,
+          invoiceExtraCount,
+          paymentTimestamp: Number.isFinite(paymentTimestamp) ? paymentTimestamp : 0,
+        };
+      })
+      .sort((a, b) => b.paymentTimestamp - a.paymentTimestamp);
+  }, [customer, globalPayments]);
 
-  const activitiesData = [
-      { date: '06/04/2025 09:48 AM', action: 'Edited', by: 'Shafikul Islam', note: 'Updated credit limit' },
-      { date: '02/04/2025 08:44 PM', action: 'Edited', by: 'Shafikul Islam', note: 'Changed contact number' },
-      { date: '17/02/2025 08:50 AM', action: 'Edited', by: 'Shafikul Islam', note: 'Added to Customer Group: Supermarkets' },
-      { date: '26/10/2024 04:50 PM', action: 'Added', by: 'Shafikul Islam', note: 'Initial creation' },
-  ];
-  
-  const documentsData = [
-      { id: '1', heading: 'Trade License', addedBy: 'Admin', createdAt: '10/01/2025', updatedAt: '10/01/2025' },
-      { id: '2', heading: 'VAT Registration', addedBy: 'Admin', createdAt: '15/01/2025', updatedAt: '15/01/2025' },
-  ];
+  // Activities derived from real sales + payments + sell returns data
+  const activitiesData = customer ? [
+      // Each sale created = one activity row
+      ...salesData.map(s => ({
+          date: formatLedgerDate(s.date),
+          action: s.status === 'Draft' ? 'Draft Created' : 'Sale Created',
+          by: s.addedBy || currentUser?.name || 'Admin',
+          note: `Invoice ${s.invoiceNo} — ${formatRiyal(s.grandTotal || 0)}`
+      })),
+      // Each sell return = one activity row
+      ...customerSellReturnsData.map(r => ({
+          date: formatLedgerDate(r.date),
+          action: 'Sell Return',
+          by: r.addedBy || currentUser?.name || 'Admin',
+          note: `${r.referenceNo} — ${formatRiyal(r.total || 0)}`
+      })),
+      // Each payment received = one activity row
+      ...paymentsData.map(p => ({
+          date: formatLedgerDate(p.paidOn || p.date),
+          action: 'Payment Received',
+          by: p.addedBy || currentUser?.name || 'Admin',
+          note: `${p.refNo} — ${formatRiyal(p.amount)} via ${p.method}`
+      })),
+      // Customer creation
+      { date: customer.addedOn, action: 'Contact Added', by: customer.assignedTo || 'Admin', note: `Customer ${customer.businessName} created` },
+  ].sort((a, b) => {
+      const aTime = parseDateValue(a.date);
+      const bTime = parseDateValue(b.date);
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  }) : [];
+
+  // Documents from real customer.documents array (stored in GlobalContext)
+  const documentsData = customer?.documents || [];
+
+  // Document handlers
+  const handleSaveDoc = () => {
+      if (!newDocHeading.trim() || !customer) return;
+      const now = formatLedgerDate(new Date().toISOString());
+      let updatedDocs;
+      if (editingDoc) {
+          updatedDocs = documentsData.map(d => d.id === editingDoc.id ? { ...d, heading: newDocHeading.trim(), updatedAt: now } : d);
+      } else {
+          updatedDocs = [...documentsData, { id: `DOC-${Date.now()}`, heading: newDocHeading.trim(), addedBy: currentUser?.name || 'Admin', createdAt: now, updatedAt: now }];
+      }
+      globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      setIsDocModalOpen(false);
+      setNewDocHeading('');
+      setEditingDoc(null);
+  };
+
+  const handleDeleteDoc = (docId: string) => {
+      if (!customer || !window.confirm('Delete this document?')) return;
+      const updatedDocs = documentsData.filter(d => d.id !== docId);
+      globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+  };
 
   // Load Data
   useEffect(() => {
@@ -225,9 +385,13 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
   // Update active tab when prop changes
   useEffect(() => {
-      if(initialTab) {
-          setActiveTab(initialTab);
+      if (!initialTab) return;
+      if (initialTab === 'add-payment') {
+        setActiveTab('payments');
+        setIsPaymentModalOpen(true);
+        return;
       }
+      setActiveTab(initialTab);
   }, [initialTab]);
 
   // Handle Outside Click for Action Menu
@@ -303,37 +467,98 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   }
 
   const handlePackingSlip = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Packing Slip is available only for Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       setSelectedSaleId(saleId);
       setPackingSlipModalOpen(true);
       setActiveActionId(null);
   };
   
   const handleDeliveryNote = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Delivery Note is available only for Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       setSelectedSaleId(saleId);
       setDeliveryNoteModalOpen(true);
       setActiveActionId(null);
   };
   
   const handleEditShipping = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Edit Shipping is available only for Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       setSelectedSaleId(saleId);
       setEditShippingModalOpen(true);
       setActiveActionId(null);
   };
   
   const handleAddPaymentForSale = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Payment can only be added to Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       setSelectedSaleId(saleId);
       setAddPaymentForSaleModalOpen(true);
       setActiveActionId(null);
   };
 
   const handleViewPayments = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'View Payments is available only for Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       setSelectedSaleId(saleId);
       setViewPaymentsModalOpen(true);
       setActiveActionId(null);
   };
 
   const handleSellReturn = (saleId: string) => {
+      const sale = salesData.find(s => s.id === saleId);
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Sell Return can only be created from Final sales.',
+          type: 'error',
+        });
+        setActiveActionId(null);
+        return;
+      }
       if (onNavigate) {
+          localStorage.setItem('app_sell_return_sale_id', saleId);
           onNavigate('add-sell-return');
       }
       setActiveActionId(null);
@@ -371,115 +596,309 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       setSelectedPayment(null);
   };
 
-  const handleSaveEditedPayment = (_updatedPayment: any) => {
-      // Payment edits are managed through GlobalContext; local state updates automatically
+  const handleSaveEditedPayment = (updatedPayment: any) => {
+      const normalized = {
+          ...updatedPayment,
+          referenceNo: updatedPayment.referenceNo || updatedPayment.refNo,
+          date: String(updatedPayment.paidOn || updatedPayment.date || ''),
+      };
+      globalUpdatePayment(normalized);
   };
 
   const handlePayClick = () => {
     setPaymentAmount(customer?.totalSellDue.toString() || '0');
+    setPaymentMethod('Cash');
+    setPaymentAccount(resolveDefaultAccountFromMethod('Cash'));
+    setPaymentDate(new Date().toISOString().slice(0, 16));
     setIsPaymentModalOpen(true);
   };
+
+  useEffect(() => {
+    const resolvedAccount = resolveDefaultAccountFromMethod(paymentMethod || 'Cash');
+    if (paymentAccount !== resolvedAccount) {
+      setPaymentAccount(resolvedAccount);
+    }
+  }, [paymentMethod]);
 
   const processPayment = () => {
     if (!customer) return;
 
     const amountPaid = parseFloat(paymentAmount || '0');
     if (isNaN(amountPaid) || amountPaid <= 0) return;
+    const roundedAmount = Number(toFixedPrecision(amountPaid, currencyPrecision));
+    const paymentPrefix = normalizePrefix(settings.sellPaymentPrefix || settings.paymentPrefix, 'PAY');
+
+    let remaining = roundedAmount;
+    const dueSales = finalizedSalesData
+      .filter(sale => ['Due', 'Partial', 'Overdue'].includes(String(sale.paymentStatus || '')))
+      .sort((a, b) => {
+        const aTime = parseDateValue(a.date);
+        const bTime = parseDateValue(b.date);
+        return (Number.isFinite(aTime) ? aTime : 0) - (Number.isFinite(bTime) ? bTime : 0);
+      });
+    const linkedInvoices: string[] = [];
+    dueSales.forEach(sale => {
+      if (remaining <= 0) return;
+      const due = typeof sale.sellDue === 'number'
+        ? Math.max(0, sale.sellDue)
+        : Math.max(0, (sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0));
+      if (due <= 0) return;
+      const settled = Math.min(remaining, due);
+      if (settled > 0 && sale.invoiceNo) linkedInvoices.push(String(sale.invoiceNo));
+      remaining -= settled;
+    });
+    const uniqueLinkedInvoices = Array.from(new Set(linkedInvoices));
+    const primaryLinkedSale = uniqueLinkedInvoices.length > 0
+      ? salesData.find(sale => uniqueLinkedInvoices.includes(String(sale.invoiceNo || '').trim()))
+      : undefined;
+    const latestSale = [...finalizedSalesData].sort((a, b) => {
+      const aTime = parseDateValue(a.date);
+      const bTime = parseDateValue(b.date);
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    })[0];
 
     // GlobalContext addPayment handles: FIFO invoice distribution,
     // customer balance update, and localStorage persistence automatically
     globalAddPayment({
         id: `PAY-${Date.now()}`,
-        date: paymentDate || new Date().toISOString().split('T')[0],
+        date: paymentDate || new Date().toISOString().slice(0, 16),
         contactId: customer.id,
         contactName: customer.businessName,
         contactType: 'Customer',
-        amount: amountPaid,
+        amount: roundedAmount,
         method: paymentMethod,
-        account: paymentAccount,
-        referenceNo: `PAY-${Date.now().toString().slice(-6)}`,
+        account: String(paymentAccount || '').trim() || resolveDefaultAccountFromMethod(paymentMethod || 'Cash'),
+        location: primaryLinkedSale?.location || latestSale?.location || '',
+        referenceNo: `${paymentPrefix}-${Date.now().toString().slice(-6)}`,
         note: paymentNote,
         type: 'received',
         addedBy: currentUser?.name || 'Admin',
+        attachmentName: paymentFileName || undefined,
+        linkedInvoices: uniqueLinkedInvoices,
     });
 
     setIsPaymentModalOpen(false);
     setPaymentAmount('');
     setPaymentNote('');
+    setPaymentFileName('');
   };
 
-  // Build ledger transactions from real GlobalContext data (sales + payments for this customer)
-  const transactions: Transaction[] = customer ? [
-      // Opening balance entry (if non-zero)
-      ...(customer.openingBalance !== 0 ? [{
-          date: customer.addedOn + ' 12:00 AM',
-          ref: 'OPENING',
-          type: 'Opening Balance' as const,
-          location: '',
-          status: '',
-          debit: customer.openingBalance > 0 ? customer.openingBalance : 0,
-          credit: customer.openingBalance < 0 ? Math.abs(customer.openingBalance) : 0,
-          method: '',
-          others: ''
-      }] : []),
-      // Sales entries
-      ...salesData.map(s => ({
-          date: s.date,
-          ref: s.invoiceNo,
-          type: 'Sell' as const,
-          location: s.location || '',
-          status: s.paymentStatus,
-          debit: s.grandTotal,
-          credit: 0,
-          method: s.paymentMethod || 'Credit',
-          others: s.sellNote || '',
-          products: (s.items || []).map((item: any, idx: number) => ({
-              id: idx + 1,
-              name: item.name,
-              qty: item.qty,
-              unit: item.unit || 'Pc(s)',
-              unitPrice: item.unitPrice,
-              discount: item.discount || 0,
-              tax: item.tax || 0,
-              priceIncTax: item.unitPrice,
-              subtotal: item.subtotal
-          }))
-      })),
-      // Payment entries
-      ...paymentsData.map(p => ({
-          date: p.date,
-          ref: p.referenceNo,
-          type: 'Payment' as const,
-          location: '',
-          status: 'Paid',
-          debit: 0,
-          credit: p.amount,
-          method: p.method,
-          others: p.note || ''
-      })),
-  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) : [];
+  const invoiceLocationByNo = useMemo(() => {
+    const map = new Map<string, string>();
+    finalizedSalesData.forEach(sale => {
+      const invoiceNo = String(sale.invoiceNo || '').trim();
+      if (!invoiceNo) return;
+      map.set(invoiceNo, String(sale.location || '').trim());
+    });
+    return map;
+  }, [finalizedSalesData]);
 
-  // Calculate Ledger Totals
-  const totalDebit = transactions.reduce((acc, t) => acc + t.debit, 0);
-  const totalCredit = transactions.reduce((acc, t) => acc + t.credit, 0);
-  const balanceDue = totalDebit - totalCredit;
+  // Build ledger transactions from real GlobalContext data (sales + sell returns + payments)
+  const transactions = useMemo<Transaction[]>(() => {
+    if (!customer) return [];
+    const rows: Transaction[] = [];
 
-  // Calculate Running Balance for Customer (Receivable: Debit increases balance, Credit decreases)
-  let runningBalance = 0;
-  const transactionsWithBalance = transactions.map(t => {
-      const change = t.debit - t.credit;
-      runningBalance += change;
-      return { ...t, balance: runningBalance };
+    if (Number(customer.openingBalance || 0) !== 0) {
+      const openingDate = String(customer.addedOn || `${currentYear}-01-01`).trim();
+      const openingTimestamp = parseDateValue(openingDate);
+      const openingAmount = Number(customer.openingBalance || 0);
+      rows.push({
+        date: openingDate,
+        timestamp: Number.isFinite(openingTimestamp) ? openingTimestamp : 0,
+        ref: 'OPENING',
+        type: 'Opening Balance',
+        location: 'All locations',
+        status: '',
+        debit: openingAmount > 0 ? openingAmount : 0,
+        credit: openingAmount < 0 ? Math.abs(openingAmount) : 0,
+        method: '',
+        others: 'Opening balance',
+      });
+    }
+
+    finalizedSalesData.forEach((sale) => {
+      const ts = parseDateValue(sale.date);
+      rows.push({
+        date: sale.date,
+        timestamp: Number.isFinite(ts) ? ts : 0,
+        ref: sale.invoiceNo,
+        type: 'Sell',
+        location: String(sale.location || '').trim(),
+        status: String(sale.paymentStatus || ''),
+        debit: Number(sale.grandTotal || sale.totalAmount || 0),
+        credit: 0,
+        method: sale.paymentMethod || 'Credit',
+        others: sale.sellNote || '',
+        linkedInvoices: sale.invoiceNo ? [String(sale.invoiceNo)] : [],
+        products: (sale.items || []).map((item: any, idx: number) => ({
+          id: idx + 1,
+          name: item.name,
+          qty: item.qty,
+          unit: item.unit || 'Pc(s)',
+          unitPrice: item.unitPrice,
+          discount: item.discount || 0,
+          tax: item.tax || 0,
+          priceIncTax: item.unitPrice,
+          subtotal: item.subtotal || item.total || 0,
+        })),
+      });
+    });
+
+    customerSellReturnsData.forEach((record) => {
+      const ts = parseDateValue(record.date);
+      rows.push({
+        date: record.date,
+        timestamp: Number.isFinite(ts) ? ts : 0,
+        ref: record.referenceNo,
+        type: 'Sell Return',
+        location: String(record.location || '').trim(),
+        status: String(record.paymentStatus || ''),
+        debit: 0,
+        credit: Number(record.total || 0),
+        method: record.settlementMode || '--',
+        others: record.parentInvoiceNo
+          ? `Return against ${record.parentInvoiceNo}`
+          : (record.note || ''),
+        linkedInvoices: record.parentInvoiceNo ? [String(record.parentInvoiceNo)] : [],
+        products: (record.items || []).map((item: any, idx: number) => ({
+          id: idx + 1,
+          name: item.productName || item.name || '--',
+          qty: item.qty || 0,
+          unit: item.unit || 'Pc(s)',
+          unitPrice: item.unitPrice || 0,
+          discount: 0,
+          tax: 0,
+          priceIncTax: item.unitPrice || 0,
+          subtotal: item.lineTotal || 0,
+        })),
+      });
+    });
+
+    paymentsData.forEach((payment) => {
+      const linkedInvoices = Array.isArray(payment.linkedInvoices)
+        ? payment.linkedInvoices.filter(Boolean).map((inv: string) => String(inv).trim())
+        : [];
+      const fallbackLocation = linkedInvoices
+        .map((invoiceNo: string) => invoiceLocationByNo.get(invoiceNo))
+        .find(Boolean);
+      const ts = Number.isFinite(payment.paymentTimestamp)
+        ? payment.paymentTimestamp
+        : parseDateValue(payment.date);
+      rows.push({
+        date: payment.date,
+        timestamp: Number.isFinite(ts) ? ts : 0,
+        ref: payment.referenceNo,
+        type: 'Payment',
+        location: String(payment.location || fallbackLocation || '').trim(),
+        status: 'Paid',
+        debit: 0,
+        credit: Number(payment.amount || 0),
+        method: payment.method || '--',
+        others: linkedInvoices.length > 0
+          ? `Payment For: ${linkedInvoices.join(', ')}`
+          : (payment.note || ''),
+        linkedInvoices,
+      });
+    });
+
+    const sortPriority: Record<Transaction['type'], number> = {
+      'Opening Balance': 0,
+      Sell: 1,
+      'Sell Return': 2,
+      Payment: 3,
+    };
+    return rows.sort((a, b) => {
+      if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+      return sortPriority[a.type] - sortPriority[b.type];
+    });
+  }, [customer, currentYear, finalizedSalesData, customerSellReturnsData, paymentsData, invoiceLocationByNo]);
+
+  const fromTime = summaryStartDate ? toStartOfDay(summaryStartDate) : Number.NEGATIVE_INFINITY;
+  const toTime = summaryEndDate ? toEndOfDay(summaryEndDate) : Number.POSITIVE_INFINITY;
+  const locationMatches = (row: Transaction): boolean => {
+    if (locationFilter === 'all') return true;
+    if (row.type === 'Opening Balance') return true;
+    if (String(row.location || '').trim() === locationFilter) return true;
+    if (row.type === 'Payment' && Array.isArray(row.linkedInvoices) && row.linkedInvoices.length > 0) {
+      return row.linkedInvoices.some(invoiceNo => invoiceLocationByNo.get(invoiceNo) === locationFilter);
+    }
+    return false;
+  };
+
+  const openingBalanceBf = transactions.reduce((acc, row) => {
+    if (!locationMatches(row)) return acc;
+    if (row.timestamp >= fromTime) return acc;
+    return acc + (row.debit - row.credit);
+  }, 0);
+
+  const filteredTransactions = transactions.filter(row => {
+    if (!locationMatches(row)) return false;
+    return row.timestamp >= fromTime && row.timestamp <= toTime;
   });
 
-  const formatDateDisplay = (dateStr: string) => {
-    if(!dateStr) return '';
-    const date = new Date(dateStr);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
+  // Period totals
+  const totalDebit = filteredTransactions.reduce((acc, row) => acc + row.debit, 0);
+  const totalCredit = filteredTransactions.reduce((acc, row) => acc + row.credit, 0);
+  const balanceDue = openingBalanceBf + totalDebit - totalCredit;
+  const filteredInvoiceTotal = filteredTransactions
+    .filter(row => row.type === 'Sell')
+    .reduce((acc, row) => acc + row.debit, 0);
+  const filteredPaidTotal = filteredTransactions
+    .filter(row => row.type === 'Payment')
+    .reduce((acc, row) => acc + row.credit, 0);
+  const filteredReturnTotal = filteredTransactions
+    .filter(row => row.type === 'Sell Return')
+    .reduce((acc, row) => acc + row.credit, 0);
+  const filteredNetInvoice = filteredInvoiceTotal - filteredReturnTotal;
+
+  const overallOpeningTotal = transactions
+    .filter(row => row.type === 'Opening Balance')
+    .reduce((acc, row) => acc + (row.debit - row.credit), 0);
+  const overallInvoiceTotal = transactions
+    .filter(row => row.type === 'Sell')
+    .reduce((acc, row) => acc + row.debit, 0);
+  const overallPaidTotal = transactions
+    .filter(row => row.type === 'Payment')
+    .reduce((acc, row) => acc + row.credit, 0);
+  const overallReturnTotal = transactions
+    .filter(row => row.type === 'Sell Return')
+    .reduce((acc, row) => acc + row.credit, 0);
+  const overallNetInvoice = overallInvoiceTotal - overallReturnTotal;
+  const overallBalanceRaw = overallOpeningTotal + overallNetInvoice - overallPaidTotal;
+  const overallSafeBalanceDue = Math.max(0, Number(overallBalanceRaw || 0));
+
+  // Running Balance (Receivable): Debit increases balance, Credit decreases balance
+  let rolling = openingBalanceBf;
+  const transactionsWithBalance = filteredTransactions.map(row => {
+    rolling += (row.debit - row.credit);
+    return { ...row, balance: rolling };
+  });
+  const runningBalance = transactionsWithBalance.length > 0
+    ? transactionsWithBalance[transactionsWithBalance.length - 1].balance
+    : openingBalanceBf;
+  const safeBalanceDue = Math.max(0, Number(balanceDue || 0));
+  const filteredCustomerCredit = Math.max(0, Number(balanceDue < 0 ? Math.abs(balanceDue) : 0));
+  const availableCustomerCredit = Math.max(0, Number(customer?.advanceBalance || 0));
+  const overallCarryForwardCredit = Math.max(
+    0,
+    availableCustomerCredit,
+    Number(overallBalanceRaw < 0 ? Math.abs(overallBalanceRaw) : 0),
+  );
+  const ledgerEmailSubject = encodeURIComponent(`Account Statement - ${customer?.businessName || ''}`);
+  const ledgerEmailBody = encodeURIComponent([
+    `Dear ${customer?.name || ''},`,
+    '',
+    'Please find your account overall summary below.',
+    '',
+    `Total invoice: ${formatRiyal(overallInvoiceTotal)}`,
+    `Total return: ${formatRiyal(overallReturnTotal)}`,
+    `Total paid: ${formatRiyal(overallPaidTotal)}`,
+    `Balance due: ${formatRiyal(overallSafeBalanceDue)}`,
+    `Customer credit: ${formatRiyal(overallCarryForwardCredit)}`,
+    '',
+    'Regards,',
+    'ATWAR AL MUSTAQBAL',
+  ].join('\n'));
 
   // Helper to adapt sale object for AddPaymentModal
   const getSelectedSaleForPayment = () => {
@@ -498,10 +917,6 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       };
   };
 
-  const getSelectedSale = () => {
-     return salesData.find(s => s.id === selectedSaleId);
-  }
-
   if (!customer) return <div className="p-10 text-center">Loading customer data...</div>;
 
   return (
@@ -509,10 +924,15 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div className="flex items-center gap-3">
-                <button onClick={() => onNavigate('customers')} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
+                <button onClick={() => onNavigate('customers')} className="p-2 hover:bg-slate-100 rounded-xl transition-colors text-slate-500">
                     <ArrowLeft size={20} />
                 </button>
-                <h2 className="text-2xl font-bold text-slate-900">View Customer</h2>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-600 rounded-2xl shadow-md">
+                    <Users size={20} className="text-white" />
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">View Customer</h2>
+                </div>
             </div>
             
             <div className="relative" ref={customerDropdownRef}>
@@ -597,7 +1017,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                     </button>
                     <button 
                         onClick={() => setIsDiscountModalOpen(true)}
-                        className="bg-[#6200ea] text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-[#5000ca] transition shadow-sm flex items-center gap-2"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition shadow-sm flex items-center gap-2"
                     >
                         Add Discount
                     </button>
@@ -703,12 +1123,30 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
         {/* Tab Content: Ledger */}
         {activeTab === 'ledger' && (
-            <div className="bg-white rounded-b-xl border border-t-0 border-slate-200 shadow-sm overflow-hidden animate-in fade-in">
+            <div id="customer-ledger-print" className="bg-white rounded-b-xl border border-t-0 border-slate-200 shadow-sm overflow-hidden animate-in fade-in print:rounded-none print:border-0 print:shadow-none print:animate-none">
+                <style>{`
+                  @media print {
+                    @page { size: A4; margin: 8mm; }
+                    body * { visibility: hidden !important; }
+                    #customer-ledger-print, #customer-ledger-print * { visibility: visible !important; }
+                    #customer-ledger-print {
+                      position: absolute !important;
+                      left: 0 !important;
+                      top: 0 !important;
+                      width: 100% !important;
+                      border: 0 !important;
+                      box-shadow: none !important;
+                    }
+                  }
+                `}</style>
                 
                 {/* Ledger Toolbar */}
-                <div className="p-6 border-b border-slate-100 flex flex-col xl:flex-row justify-between gap-6">
+                <div className="p-6 border-b border-slate-100 flex flex-col xl:flex-row justify-between gap-6 print:hidden">
                     <div className="flex flex-col gap-4 flex-1">
-                        <DateRangeFilter />
+                        <DateRangeFilter onRangeSelect={(range) => {
+                            if (range.startDate) setSummaryStartDate(range.startDate.toISOString().split('T')[0]);
+                            if (range.endDate) setSummaryEndDate(range.endDate.toISOString().split('T')[0]);
+                        }} />
                         
                         <div className="flex items-center gap-4 text-sm">
                             <span className="font-bold text-slate-700">Ledger format:</span>
@@ -731,18 +1169,33 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                     <div className="flex flex-col gap-4 flex-1">
                          <div className="group">
                             <label className="block text-xs font-bold text-slate-700 mb-1">Business Location:</label>
-                            <select className="w-full px-3 py-2 rounded border border-slate-300 text-sm outline-none bg-white">
-                                <option>All locations</option>
+                            <select
+                                className="w-full px-3 py-2 rounded border border-slate-300 text-sm outline-none bg-white"
+                                value={locationFilter}
+                                onChange={(e) => setLocationFilter(e.target.value)}
+                            >
+                                <option value="all">All locations</option>
+                                {locations.map(loc => (
+                                    <option key={loc.id} value={loc.name}>{loc.name}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
 
                     <div className="flex flex-col items-end justify-start gap-2">
                          <div className="flex gap-2">
-                             <button className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-slate-600" title="PDF">
+                             <button
+                                 onClick={() => window.print()}
+                                 className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-slate-600"
+                                 title="Print / Save as PDF"
+                             >
                                  <FileText size={16} />
                              </button>
-                             <button className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-slate-600" title="Email">
+                             <button
+                                 onClick={() => customer && window.open(`mailto:${customer.email}?subject=${ledgerEmailSubject}&body=${ledgerEmailBody}`)}
+                                 className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-slate-600"
+                                 title="Email ledger to customer"
+                             >
                                  <Mail size={16} />
                              </button>
                          </div>
@@ -750,7 +1203,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                 </div>
                 
                  {/* Summary Section */}
-                <div className="p-6 bg-slate-50 border-b border-slate-200">
+                <div className="p-6 bg-slate-50 border-b border-slate-200 print:hidden">
                     <div className="flex flex-col xl:flex-row gap-8">
                         <div className="flex-1">
                             <h4 className="font-bold text-slate-900 bg-[#0f4c75] text-white px-3 py-1.5 text-sm inline-block w-full mb-4">
@@ -761,48 +1214,166 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                         </div>
 
                         <div className="flex-1 text-right">
-                             <div className="text-sm font-bold text-slate-800">Atwar Al Mustaqbal</div>
-                             <div className="text-xs text-slate-600">Atwar, Muscat, Muscat</div>
-                             <div className="text-xs text-slate-600">Oman, 112</div>
+                             <div className="text-sm font-bold text-slate-800">{settings?.businessName || 'ATWAR AL MUSTAQBAL'}</div>
+                             {(settings?.businessAddress || settings?.address) && <div className="text-xs text-slate-600">{settings.businessAddress || settings.address}</div>}
+                             {settings?.businessCity && <div className="text-xs text-slate-600">{settings.businessCity}, Oman</div>}
                         </div>
                     </div>
 
-                    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-0 border border-slate-300 bg-white">
-                        {/* Account Summary */}
-                        <div className="border-r border-slate-300">
-                            <div className="bg-[#0f4c75] text-white px-4 py-2 font-bold text-sm text-right">
-                                Account Summary
+                    <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div className="border border-slate-300 bg-white">
+                            <div className="bg-[#0f4c75] text-white px-4 py-2 font-bold text-sm">
+                                By Filter
+                            </div>
+                            <div className="px-4 py-2 text-[11px] text-slate-500 border-b border-slate-200">
+                                Date: {summaryStartDate} - {summaryEndDate} | Location: {locationFilter === 'all' ? 'All locations' : locationFilter}
                             </div>
                             <div className="p-4 text-xs space-y-2">
                                 <div className="flex justify-between border-b border-slate-100 pb-1">
-                                    <span className="font-medium text-slate-600">Total Invoice</span>
-                                    <span className="font-bold text-slate-800">{formatOMR(totalDebit)}</span>
+                                    <span className="font-medium text-slate-600">Total invoice</span>
+                                    <span className="font-bold text-slate-800">{formatOMR(filteredInvoiceTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Total return</span>
+                                    <span className="font-bold text-amber-700">{formatOMR(filteredReturnTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Total paid</span>
+                                    <span className="font-bold text-emerald-700">{formatOMR(filteredPaidTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Net invoice</span>
+                                    <span className="font-bold text-slate-800">{formatOMR(filteredNetInvoice)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Balance due</span>
+                                    <span className={`font-bold ${safeBalanceDue > 0 ? 'text-red-600' : 'text-emerald-700'}`}>{formatOMR(safeBalanceDue)}</span>
                                 </div>
                                 <div className="flex justify-between">
-                                    <span className="font-medium text-slate-600">Total Paid</span>
-                                    <span className="font-bold text-slate-800">{formatOMR(totalCredit)}</span>
+                                    <span className="font-medium text-slate-600">Customer credit</span>
+                                    <span className="font-bold text-blue-700">{formatOMR(filteredCustomerCredit)}</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Overall Summary */}
-                        <div>
-                            <div className="bg-slate-100 text-slate-700 px-4 py-2 font-bold text-sm text-right border-b border-slate-300">
+                        <div className="border border-slate-300 bg-white">
+                            <div className="bg-slate-100 text-slate-700 px-4 py-2 font-bold text-sm border-b border-slate-300">
                                 Overall Summary
                             </div>
+                            <div className="px-4 py-2 text-[11px] text-slate-500 border-b border-slate-200">
+                                From onboarding ({customer.addedOn}) until now | All locations
+                            </div>
                             <div className="p-4 text-xs space-y-2">
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Total invoice</span>
+                                    <span className="font-bold text-slate-800">{formatOMR(overallInvoiceTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Total return</span>
+                                    <span className="font-bold text-amber-700">{formatOMR(overallReturnTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Total paid</span>
+                                    <span className="font-bold text-emerald-700">{formatOMR(overallPaidTotal)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Net invoice</span>
+                                    <span className="font-bold text-slate-800">{formatOMR(overallNetInvoice)}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-100 pb-1">
+                                    <span className="font-medium text-slate-600">Balance due</span>
+                                    <span className={`font-bold ${overallSafeBalanceDue > 0 ? 'text-red-600' : 'text-emerald-700'}`}>{formatOMR(overallSafeBalanceDue)}</span>
+                                </div>
                                 <div className="flex justify-between">
-                                    <span className="font-bold text-slate-800">Balance due</span>
-                                    <span className="font-bold text-red-600">{formatOMR(balanceDue)}</span>
+                                    <span className="font-medium text-slate-600">Customer credit</span>
+                                    <span className="font-bold text-blue-700">{formatOMR(overallCarryForwardCredit)}</span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
+                {/* Print Statement (A4) */}
+                <div className="hidden print:block border-b border-slate-300 px-2 pb-2">
+                    <div className="text-center py-1">
+                        <h3 className="text-[14px] font-black tracking-wide text-slate-900">Customer Ledger Statement</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[10px] text-slate-700 border-t border-slate-200 pt-2">
+                        <div><span className="font-bold">Business:</span> {settings?.businessName || 'ATWAR AL MUSTAQBAL'}</div>
+                        <div><span className="font-bold">Date Range:</span> {summaryStartDate} - {summaryEndDate}</div>
+                        <div><span className="font-bold">Customer:</span> {customer.businessName}</div>
+                        <div><span className="font-bold">Location:</span> {locationFilter === 'all' ? 'All locations' : locationFilter}</div>
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                        <div className="border border-slate-300 p-2">
+                            <div className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-1">By Filter</div>
+                            <div className="text-slate-500 pb-1 mb-1 border-b border-slate-100">Date: {summaryStartDate} - {summaryEndDate} | Location: {locationFilter === 'all' ? 'All locations' : locationFilter}</div>
+                            <div className="flex justify-between"><span>Total invoice</span><span className="font-bold">{formatOMR(filteredInvoiceTotal)}</span></div>
+                            <div className="flex justify-between"><span>Total return</span><span className="font-bold">{formatOMR(filteredReturnTotal)}</span></div>
+                            <div className="flex justify-between"><span>Total paid</span><span className="font-bold">{formatOMR(filteredPaidTotal)}</span></div>
+                            <div className="flex justify-between"><span>Net invoice</span><span className="font-bold">{formatOMR(filteredNetInvoice)}</span></div>
+                            <div className="flex justify-between"><span>Balance due</span><span className="font-bold">{formatOMR(safeBalanceDue)}</span></div>
+                            <div className="flex justify-between"><span>Customer credit</span><span className="font-bold">{formatOMR(filteredCustomerCredit)}</span></div>
+                        </div>
+                        <div className="border border-slate-300 p-2">
+                            <div className="font-bold text-slate-800 border-b border-slate-200 pb-1 mb-1">Overall Summary</div>
+                            <div className="flex justify-between"><span>Total invoice</span><span className="font-bold">{formatOMR(overallInvoiceTotal)}</span></div>
+                            <div className="flex justify-between"><span>Total return</span><span className="font-bold">{formatOMR(overallReturnTotal)}</span></div>
+                            <div className="flex justify-between"><span>Total paid</span><span className="font-bold">{formatOMR(overallPaidTotal)}</span></div>
+                            <div className="flex justify-between"><span>Net invoice</span><span className="font-bold">{formatOMR(overallNetInvoice)}</span></div>
+                            <div className="flex justify-between"><span>Balance due</span><span className="font-bold">{formatOMR(overallSafeBalanceDue)}</span></div>
+                            <div className="flex justify-between"><span>Customer credit</span><span className="font-bold">{formatOMR(overallCarryForwardCredit)}</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="hidden print:block">
+                    <table className="w-full text-[9px] text-left border-collapse">
+                        <thead className="bg-slate-100 text-slate-700">
+                            <tr>
+                                <th className="px-2 py-1.5 border-b border-slate-300">Date</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300">Ref</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300">Type</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300">Description</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300 text-right">Debit</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300 text-right">Credit</th>
+                                <th className="px-2 py-1.5 border-b border-slate-300 text-right">Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {transactionsWithBalance.map((txn, idx) => (
+                                <tr key={`print-${idx}`}>
+                                    <td className="px-2 py-1 border-b border-slate-200 whitespace-nowrap">{formatLedgerDate(txn.date)}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200 whitespace-nowrap">{txn.ref || '--'}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200 whitespace-nowrap">{txn.type}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200">{txn.others || '--'}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200 text-right">{txn.debit > 0 ? formatRiyal(txn.debit) : ''}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200 text-right">{txn.credit > 0 ? formatRiyal(txn.credit) : ''}</td>
+                                    <td className="px-2 py-1 border-b border-slate-200 text-right font-bold">
+                                        {formatRiyal(Math.abs(txn.balance))} {txn.balance >= 0 ? 'DR' : 'CR'}
+                                    </td>
+                                </tr>
+                            ))}
+                            {transactionsWithBalance.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="px-2 py-6 text-center text-slate-400 italic">No ledger data for the selected period.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                        <tfoot>
+                            <tr className="bg-slate-100 font-bold">
+                                <td colSpan={4} className="px-2 py-1.5 text-right">Totals</td>
+                                <td className="px-2 py-1.5 text-right">{formatRiyal(totalDebit)}</td>
+                                <td className="px-2 py-1.5 text-right">{formatRiyal(totalCredit)}</td>
+                                <td className="px-2 py-1.5 text-right">{formatRiyal(Math.abs(runningBalance))} {runningBalance >= 0 ? 'DR' : 'CR'}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
                 {/* Ledger Table - Format 1 */}
                 {ledgerFormat === 'Format 1' && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto print:hidden">
                         <table className="w-full text-xs text-left">
                             <thead className="bg-[#0f4c75] text-white font-bold">
                                 <tr>
@@ -820,11 +1391,20 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                             <tbody className="divide-y divide-slate-100">
                                 {transactionsWithBalance.map((txn, idx) => (
                                     <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{txn.date}</td>
+                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{formatLedgerDate(txn.date)}</td>
                                         <td className="px-4 py-3 text-blue-600 font-medium whitespace-nowrap cursor-pointer hover:underline">{txn.ref}</td>
                                         <td className="px-4 py-3 whitespace-nowrap">{txn.type}</td>
                                         <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{txn.location}</td>
-                                        <td className="px-4 py-3 font-bold whitespace-nowrap">{txn.status}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap">
+                                            {txn.status ? (
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-white ${
+                                                    txn.status === 'Paid' ? 'bg-emerald-500' :
+                                                    txn.status === 'Partial' ? 'bg-sky-500' :
+                                                    txn.status === 'Overdue' ? 'bg-red-500' :
+                                                    txn.status === 'Due' ? 'bg-amber-500' : 'bg-slate-400'
+                                                }`}>{txn.status}</span>
+                                            ) : ''}
+                                        </td>
                                         <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
                                             {txn.debit > 0 ? formatRiyal(txn.debit) : ''}
                                         </td>
@@ -850,7 +1430,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
                 {/* Ledger Table - Format 2 */}
                 {ledgerFormat === 'Format 2' && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto print:hidden">
                         <table className="w-full text-[11px] text-left border-collapse">
                             <thead className="bg-[#0f4c75] text-white font-bold">
                                 <tr>
@@ -870,11 +1450,20 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                 {transactionsWithBalance.map((txn, idx) => (
                                     <React.Fragment key={idx}>
                                         <tr className="bg-white hover:bg-slate-50 transition-colors">
-                                            <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{txn.date}</td>
+                                            <td className="px-4 py-3 text-slate-700 whitespace-nowrap">{formatLedgerDate(txn.date)}</td>
                                             <td className="px-4 py-3 text-blue-600 font-bold whitespace-nowrap">{txn.ref}</td>
                                             <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-800">{txn.type}</td>
                                             <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{txn.location}</td>
-                                            <td className="px-4 py-3 font-bold whitespace-nowrap">{txn.status}</td>
+                                            <td className="px-4 py-3 whitespace-nowrap">
+                                            {txn.status ? (
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-white ${
+                                                    txn.status === 'Paid' ? 'bg-emerald-500' :
+                                                    txn.status === 'Partial' ? 'bg-sky-500' :
+                                                    txn.status === 'Overdue' ? 'bg-red-500' :
+                                                    txn.status === 'Due' ? 'bg-amber-500' : 'bg-slate-400'
+                                                }`}>{txn.status}</span>
+                                            ) : ''}
+                                        </td>
                                             <td className="px-4 py-3 text-right font-medium whitespace-nowrap text-slate-800">
                                                 {txn.debit > 0 ? formatRiyal(txn.debit) : ''}
                                             </td>
@@ -882,7 +1471,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                                 {txn.credit > 0 ? formatRiyal(txn.credit) : ''}
                                             </td>
                                             <td className="px-4 py-3 text-right font-bold text-slate-900 bg-slate-50 whitespace-nowrap border-l border-slate-200">
-                                                {formatRiyal(txn.balance)} <span className="text-[9px] text-slate-400">DR</span>
+                                                {formatRiyal(Math.abs(txn.balance))} <span className="text-[9px] text-slate-400">{txn.balance >= 0 ? 'DR' : 'CR'}</span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-slate-600">{txn.method}</td>
                                             <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{txn.others}</td>
@@ -930,7 +1519,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                     <td colSpan={5} className="px-4 py-3 text-right text-slate-600 uppercase text-[10px]">Grand Total:</td>
                                     <td className="px-4 py-3 text-right">{formatRiyal(totalDebit)}</td>
                                     <td className="px-4 py-3 text-right">{formatRiyal(totalCredit)}</td>
-                                    <td className="px-4 py-3 text-right bg-slate-200">{formatRiyal(runningBalance)}</td>
+                                    <td className="px-4 py-3 text-right bg-slate-200">{formatRiyal(Math.abs(runningBalance))} {runningBalance >= 0 ? 'DR' : 'CR'}</td>
                                     <td colSpan={2}></td>
                                 </tr>
                             </tfoot>
@@ -940,7 +1529,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
                 {/* Ledger Table - Format 3 */}
                 {ledgerFormat === 'Format 3' && (
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto print:hidden">
                         <table className="w-full text-sm text-left border-collapse">
                             <thead className="bg-slate-800 text-white font-bold uppercase text-xs">
                                 <tr>
@@ -957,6 +1546,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                         key={idx} 
                                         className={`hover:bg-slate-50 transition-colors group ${
                                             txn.type === 'Payment' ? 'bg-emerald-50/40' : 
+                                            txn.type === 'Sell Return' ? 'bg-amber-50/40' :
                                             txn.type === 'Sell' ? 'bg-white' : 'bg-slate-50/20'
                                         }`}
                                     >
@@ -964,22 +1554,29 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                             txn.type === 'Payment' ? 'border-emerald-500' : 
                                             txn.type === 'Sell' ? 'border-blue-500' : 'border-slate-300'
                                         }`}>
-                                            {txn.date.split(' ')[0]} <br/>
-                                            <span className="text-[10px] text-slate-400 font-normal">{txn.date.split(' ').slice(1).join(' ')}</span>
+                                            {formatLedgerDate(txn.date)}
                                         </td>
                                         <td className="px-6 py-4 align-top">
                                             <div className="flex flex-col gap-1">
                                                 <div className={`font-bold text-base flex items-center gap-2 ${
                                                     txn.type === 'Payment' ? 'text-emerald-700' : 
+                                                    txn.type === 'Sell Return' ? 'text-amber-700' :
                                                     txn.type === 'Sell' ? 'text-blue-700' : 'text-slate-700'
                                                 }`}>
                                                     {txn.type === 'Payment' && <CreditCard size={16} />}
+                                                    {txn.type === 'Sell Return' && <Undo2 size={16} />}
                                                     {txn.type === 'Sell' && <ShoppingBag size={16} />}
                                                     {txn.type === 'Opening Balance' && <Wallet size={16} />}
                                                     
                                                     {txn.type} 
                                                     <span className="text-slate-300 font-normal text-xs mx-1">|</span> 
-                                                    <span className={txn.type === 'Payment' ? 'text-emerald-600' : 'text-blue-600'}>
+                                                    <span className={
+                                                      txn.type === 'Payment'
+                                                        ? 'text-emerald-600'
+                                                        : txn.type === 'Sell Return'
+                                                          ? 'text-amber-600'
+                                                          : 'text-blue-600'
+                                                    }>
                                                         {txn.ref || 'N/A'}
                                                     </span>
                                                 </div>
@@ -1019,7 +1616,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                         </td>
                                         <td className="px-6 py-4 text-right align-top">
                                             <span className={`font-black ${txn.balance >= 0 ? 'text-slate-800' : 'text-red-600'}`}>
-                                                {formatRiyal(txn.balance)}
+                                                {formatRiyal(Math.abs(txn.balance))}
                                             </span>
                                             <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">
                                                 {txn.balance >= 0 ? 'DR' : 'CR'}
@@ -1033,7 +1630,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                     <td colSpan={2} className="px-6 py-4 text-right uppercase text-xs tracking-wider opacity-80">Totals</td>
                                     <td className="px-6 py-4 text-right text-blue-300">{formatRiyal(totalDebit)}</td>
                                     <td className="px-6 py-4 text-right text-emerald-400">{formatRiyal(totalCredit)}</td>
-                                    <td className="px-6 py-4 text-right bg-slate-900">{formatRiyal(runningBalance)}</td>
+                                    <td className="px-6 py-4 text-right bg-slate-900">{formatRiyal(Math.abs(runningBalance))} {runningBalance >= 0 ? 'DR' : 'CR'}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -1052,15 +1649,22 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                         <div className="flex flex-col md:flex-row gap-4">
                              <div className="group">
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Payment Status</label>
-                                <select className="px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none w-full md:w-40 bg-white">
-                                    <option>All</option>
-                                    <option>Paid</option>
-                                    <option>Due</option>
+                                <select
+                                    className="px-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none w-full md:w-40 bg-white"
+                                    value={salePayStatusFilter}
+                                    onChange={(e) => setSalePayStatusFilter(e.target.value)}
+                                >
+                                    <option value="All">All</option>
+                                    <option value="Paid">Paid</option>
+                                    <option value="Due">Due</option>
                                 </select>
                              </div>
                              <div className="group">
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Date Range</label>
-                                <DateRangeFilter />
+                                <DateRangeFilter onRangeSelect={(range) => {
+                            if (range.startDate) setSummaryStartDate(range.startDate.toISOString().split('T')[0]);
+                            if (range.endDate) setSummaryEndDate(range.endDate.toISOString().split('T')[0]);
+                        }} />
                              </div>
                         </div>
                     </div>
@@ -1068,7 +1672,26 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                     <div className="flex flex-col gap-2 items-end justify-end">
                         <div className="flex gap-1">
                             {/* Exports */}
-                             <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileText size={10}/> Export CSV</button>
+                             <button
+                                 onClick={() => {
+                                     const headers = ['Date', 'Invoice No', 'Location', 'Payment Status', 'Payment Method', 'Total Amount', 'Total Paid', 'Sell Due'];
+                                     const rows = salesData
+                                         .filter(s => salePayStatusFilter === 'All' || (isFinalizedSale(s) ? s.paymentStatus : '--') === salePayStatusFilter)
+                                         .map(s => [
+                                           s.date,
+                                           s.invoiceNo,
+                                           s.location || '',
+                                           isFinalizedSale(s) ? s.paymentStatus : '--',
+                                           isFinalizedSale(s) ? (s.paymentMethod || '') : '',
+                                           (s.grandTotal || 0).toFixed(3),
+                                           (s.totalPaid || 0).toFixed(3),
+                                           (isFinalizedSale(s) ? (s.sellDue || 0) : 0).toFixed(3),
+                                         ].join(','));
+                                     const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+                                     const link = document.createElement('a'); link.setAttribute('href', encodeURI(csv)); link.setAttribute('download', `sales_${customer?.id || 'customer'}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link);
+                                 }}
+                                 className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"
+                             ><FileText size={10}/> Export CSV</button>
                         </div>
                         <div className="flex items-center gap-2">
                              <input 
@@ -1109,6 +1732,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                         <tbody className="divide-y divide-slate-100">
                             {salesData
                                 .filter(s => (s.invoiceNo || '').toLowerCase().includes(searchTerm.toLowerCase()))
+                                .filter(s => salePayStatusFilter === 'All' || (isFinalizedSale(s) ? s.paymentStatus : '--') === salePayStatusFilter)
                                 .map((sale) => (
                                 <tr key={sale.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-4 py-3 text-center">
@@ -1129,15 +1753,26 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                     <td className="px-4 py-3 text-slate-600">{customer.mobile}</td>
                                     <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.location}</td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase text-white ${sale.paymentStatus === 'Paid' ? 'bg-[#74c365]' : 'bg-amber-400'}`}>
-                                            {sale.paymentStatus}
-                                        </span>
+                                        {isFinalizedSale(sale) ? (
+                                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-white ${
+                                              sale.paymentStatus === 'Paid' ? 'bg-emerald-500' :
+                                              sale.paymentStatus === 'Partial' ? 'bg-sky-500' :
+                                              sale.paymentStatus === 'Overdue' ? 'bg-red-500' :
+                                              'bg-amber-500'
+                                          }`}>
+                                              {sale.paymentStatus}
+                                          </span>
+                                        ) : (
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200">
+                                            --
+                                          </span>
+                                        )}
                                     </td>
-                                    <td className="px-4 py-3 text-center text-slate-600">{sale.paymentMethod || '--'}</td>
+                                    <td className="px-4 py-3 text-center text-slate-600">{isFinalizedSale(sale) ? (sale.paymentMethod || '--') : '--'}</td>
                                     <td className="px-4 py-3 text-right font-bold text-slate-800">{formatCurrency(sale.grandTotal ?? sale.totalAmount ?? 0)}</td>
                                     <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(sale.totalPaid ?? 0)}</td>
-                                    <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(sale.sellDue ?? 0)}</td>
-                                    <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(sale.sellReturnDue ?? 0)}</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(isFinalizedSale(sale) ? (sale.sellDue ?? 0) : 0)}</td>
+                                    <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(isFinalizedSale(sale) ? (sale.sellReturnDue ?? 0) : 0)}</td>
                                     <td className="px-4 py-3">
                                         <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-700 border border-emerald-200">
                                             {sale.shippingStatus || '--'}
@@ -1156,8 +1791,8 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                 <td colSpan={8} className="px-4 py-3 text-right">Total:</td>
                                 <td className="px-4 py-3 text-right bg-slate-300">{formatCurrency(salesData.reduce((acc, s) => acc + (s.grandTotal ?? s.totalAmount ?? 0), 0))}</td>
                                 <td className="px-4 py-3 text-right bg-slate-300">{formatCurrency(salesData.reduce((acc, s) => acc + (s.totalPaid ?? 0), 0))}</td>
-                                <td className="px-4 py-3 text-right bg-slate-300">{formatCurrency(salesData.reduce((acc, s) => acc + (s.sellDue ?? 0), 0))}</td>
-                                <td className="px-4 py-3 text-right bg-slate-300">{formatRiyal(0.000)}</td>
+                                <td className="px-4 py-3 text-right bg-slate-300">{formatCurrency(salesData.reduce((acc, s) => acc + (isFinalizedSale(s) ? (s.sellDue ?? 0) : 0), 0))}</td>
+                                <td className="px-4 py-3 text-right bg-slate-300">{formatCurrency(salesData.reduce((acc, s) => acc + (isFinalizedSale(s) ? (s.sellReturnDue ?? 0) : 0), 0))}</td>
                                 <td colSpan={6}></td>
                             </tr>
                         </tfoot>
@@ -1171,6 +1806,12 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
              <div className="bg-white rounded-b-xl border border-t-0 border-slate-200 shadow-sm overflow-hidden animate-in fade-in">
                   <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/30">
                        <h3 className="text-sm font-bold text-slate-700">Documents</h3>
+                       <button
+                           onClick={() => { setEditingDoc(null); setNewDocHeading(''); setIsDocModalOpen(true); }}
+                           className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors"
+                       >
+                           <Plus size={12}/> Add Document
+                       </button>
                   </div>
                   <div className="overflow-x-auto">
                         <table className="w-full text-xs text-left">
@@ -1185,13 +1826,13 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                             </thead>
                             <tbody className="divide-y divide-slate-100">
                                 {documentsData.length === 0 ? (
-                                    <tr><td colSpan={5} className="px-6 py-4 text-center text-slate-400 italic">No data available in table</td></tr>
+                                    <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">No documents added yet. Click "Add Document" to get started.</td></tr>
                                 ) : (
                                     documentsData.map(doc => (
                                         <tr key={doc.id} className="hover:bg-slate-50">
                                             <td className="px-6 py-4 flex gap-2">
-                                                <button className="text-blue-600"><Edit size={14}/></button>
-                                                <button className="text-red-600"><Trash2 size={14}/></button>
+                                                <button onClick={() => { setEditingDoc({ id: doc.id, heading: doc.heading }); setNewDocHeading(doc.heading); setIsDocModalOpen(true); }} className="text-blue-600 hover:text-blue-800" title="Edit"><Edit size={14}/></button>
+                                                <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-600 hover:text-red-800" title="Delete"><Trash2 size={14}/></button>
                                             </td>
                                             <td className="px-6 py-4 font-bold">{doc.heading}</td>
                                             <td className="px-6 py-4">{doc.addedBy}</td>
@@ -1204,6 +1845,34 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                         </table>
                   </div>
              </div>
+        )}
+
+        {/* Document Add/Edit Modal */}
+        {isDocModalOpen && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                        <h3 className="text-lg font-bold text-slate-800">{editingDoc ? 'Edit Document' : 'Add Document'}</h3>
+                        <button onClick={() => setIsDocModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                    </div>
+                    <div className="p-6">
+                        <label className="block text-sm font-bold text-slate-700 mb-2">Document Heading *</label>
+                        <input
+                            type="text"
+                            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="e.g. Trade License, VAT Certificate"
+                            value={newDocHeading}
+                            onChange={(e) => setNewDocHeading(e.target.value)}
+                            autoFocus
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveDoc()}
+                        />
+                    </div>
+                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+                        <button onClick={() => setIsDocModalOpen(false)} className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+                        <button onClick={handleSaveDoc} className="px-5 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700">{editingDoc ? 'Update' : 'Save'}</button>
+                    </div>
+                </div>
+            </div>
         )}
 
         {/* Tab Content: Payments */}
@@ -1407,9 +2076,9 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                 <div className="flex items-center">
                                     <label className="cursor-pointer bg-slate-100 border border-slate-300 text-slate-700 px-3 py-2 rounded-l text-sm hover:bg-slate-200 transition-colors whitespace-nowrap">
                                         Choose File
-                                        <input type="file" className="hidden" />
+                                        <input type="file" accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png" className="hidden" onChange={(e) => setPaymentFileName(e.target.files?.[0]?.name || '')} />
                                     </label>
-                                    <span className="px-3 py-2 border border-l-0 border-slate-300 rounded-r w-full text-sm text-slate-500 bg-white">No file chosen</span>
+                                    <span className="px-3 py-2 border border-l-0 border-slate-300 rounded-r w-full text-sm text-slate-500 bg-white truncate">{paymentFileName || 'No file chosen'}</span>
                                 </div>
                                 <p className="text-[10px] text-slate-500 mt-1">Allowed File: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</p>
                             </div>
@@ -1421,13 +2090,14 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                         <Banknote size={16} />
                                     </div>
                                     <select 
-                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white"
+                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded text-sm appearance-none bg-slate-100 cursor-not-allowed"
                                         value={paymentAccount}
                                         onChange={(e) => setPaymentAccount(e.target.value)}
+                                        disabled
                                     >
-                                        <option value="None">None</option>
-                                        <option value="Cash Account">Cash Account</option>
-                                        <option value="Bank Account">Bank Account</option>
+                                        <option value={resolveDefaultAccountFromMethod(paymentMethod || 'Cash')}>
+                                          {resolveDefaultAccountFromMethod(paymentMethod || 'Cash')}
+                                        </option>
                                     </select>
                                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                                 </div>
@@ -1437,7 +2107,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                         <div className="group mb-6">
                             <label className="block text-sm font-bold text-slate-800 mb-1">Payment Note:</label>
                             <textarea 
-                                className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm h-24 resize-none"
+                                className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 h-24 resize-none"
                                 value={paymentNote}
                                 onChange={(e) => setPaymentNote(e.target.value)}
                             ></textarea>
@@ -1448,7 +2118,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                     <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
                         <button 
                             onClick={processPayment}
-                            className="px-6 py-2 bg-[#6200ea] text-white rounded font-bold text-sm hover:bg-[#5000ca] transition-colors"
+                            className="px-6 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-blue-700 transition-colors"
                         >
                             Save
                         </button>
@@ -1465,9 +2135,10 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
         {/* Add Discount Modal */}
         {isDiscountModalOpen && (
-             <AddDiscountModal 
+             <AddDiscountModal
                 isOpen={isDiscountModalOpen}
                 onClose={() => setIsDiscountModalOpen(false)}
+                onSave={(formData) => globalAddDiscount({ ...formData, id: generateId('DISC') })}
             />
         )}
 
@@ -1531,48 +2202,52 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 
             {/* List Actions */}
             <div className="py-1">
-                 <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handlePackingSlip(activeActionId); }}
-                >
-                    <Package size={14} className="text-slate-400" /> Packing Slip
-                </button>
-                <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handleDeliveryNote(activeActionId); }}
-                >
-                    <ScrollText size={14} className="text-slate-400" /> Delivery Note
-                </button>
-                 <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handleEditShipping(activeActionId); }}
-                >
-                    <Truck size={14} className="text-slate-400" /> Edit Shipping
-                </button>
-                
-                <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                
-                 <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handleAddPaymentForSale(activeActionId); }}
-                >
-                    <CreditCard size={14} className="text-emerald-500" /> Add Payment
-                </button>
-                 <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handleViewPayments(activeActionId); }}
-                >
-                    <Banknote size={14} className="text-slate-400" /> View Payments
-                </button>
-                
-                <div className="h-px bg-slate-100 my-1 mx-2"></div>
-                
-                 <button 
-                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-                    onClick={() => { if (activeActionId) handleSellReturn(activeActionId); }}
-                >
-                    <Undo2 size={14} className="text-orange-500" /> Sell Return
-                </button>
+                {activeSaleIsFinal && (
+                  <>
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handlePackingSlip(activeActionId); }}
+                    >
+                      <Package size={14} className="text-slate-400" /> Packing Slip
+                    </button>
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handleDeliveryNote(activeActionId); }}
+                    >
+                      <ScrollText size={14} className="text-slate-400" /> Delivery Note
+                    </button>
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handleEditShipping(activeActionId); }}
+                    >
+                      <Truck size={14} className="text-slate-400" /> Edit Shipping
+                    </button>
+                    
+                    <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                    
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handleAddPaymentForSale(activeActionId); }}
+                    >
+                      <CreditCard size={14} className="text-emerald-500" /> Add Payment
+                    </button>
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handleViewPayments(activeActionId); }}
+                    >
+                      <Banknote size={14} className="text-slate-400" /> View Payments
+                    </button>
+                    
+                    <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                    
+                    <button 
+                      className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                      onClick={() => { if (activeActionId) handleSellReturn(activeActionId); }}
+                    >
+                      <Undo2 size={14} className="text-orange-500" /> Sell Return
+                    </button>
+                  </>
+                )}
                  <button 
                     className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
                     onClick={() => { if (activeActionId) handleInvoiceURL(activeActionId); }}
@@ -1598,6 +2273,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
             onClose={() => setPackingSlipModalOpen(false)} 
             invoiceNo={selectedSaleId ? salesData.find(s => s.id === selectedSaleId)?.invoiceNo : undefined}
             date={selectedSaleId ? salesData.find(s => s.id === selectedSaleId)?.date : undefined}
+            sale={selectedSaleId ? salesData.find(s => s.id === selectedSaleId) : undefined}
           />
       )}
 
@@ -1607,15 +2283,17 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
             onClose={() => setDeliveryNoteModalOpen(false)} 
             invoiceNo={selectedSaleId ? salesData.find(s => s.id === selectedSaleId)?.invoiceNo : undefined}
             date={selectedSaleId ? salesData.find(s => s.id === selectedSaleId)?.date : undefined}
+            sale={selectedSaleId ? salesData.find(s => s.id === selectedSaleId) : undefined}
           />
       )}
 
       {/* Edit Shipping Modal */}
       {editShippingModalOpen && (
-          <EditShippingModal 
+          <EditShippingModal
             isOpen={editShippingModalOpen}
             onClose={() => setEditShippingModalOpen(false)}
             sale={selectedSaleId ? salesData.find(s => s.id === selectedSaleId) : null}
+            onSave={(updatedSale) => globalUpdateSale(updatedSale)}
           />
       )}
 
@@ -1669,7 +2347,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
           onClose={() => setDeletePaymentModalOpen(false)}
           onConfirm={handleDeletePaymentConfirm}
           title="Delete Payment"
-          message={`Are you sure you want to delete payment ${selectedPayment?.refNo}? This action cannot be undone.`}
+          message={`Are you sure you want to delete payment ${selectedPayment?.refNo || selectedPayment?.referenceNo || '--'}? This action cannot be undone.`}
           confirmLabel="Delete"
           confirmVariant="danger"
           icon={<Trash2 size={32} />}
@@ -1680,5 +2358,3 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
 };
 
 export default ViewCustomer;
-
-

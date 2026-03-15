@@ -1,0 +1,1215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TaxType {
+  INCLUSIVE
+  EXCLUSIVE
+}
+
+enum PaymentStatus {
+  PAID
+  DUE
+  PARTIAL
+  OVERDUE
+}
+
+enum SaleStatus {
+  FINAL
+  DRAFT
+  QUOTATION
+  PROFORMA
+}
+
+enum ShippingStatus {
+  PENDING
+  ORDERED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  READY
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum SalesOrderType {
+  PAID
+  CREDIT
+}
+
+enum PurchaseStatus {
+  RECEIVED
+  PENDING
+  ORDERED
+}
+
+enum PaymentDirection {
+  RECEIVED
+  SENT
+}
+
+enum PaymentContactType {
+  CUSTOMER
+  SUPPLIER
+  EXPENSE
+}
+
+enum ProductType {
+  SINGLE
+  VARIABLE
+  COMBO
+}
+
+enum ProductPackagingType {
+  PIECE
+  PACK
+  CARTON
+}
+
+enum DiscountType {
+  FIXED
+  PERCENTAGE
+}
+
+enum StockTransferStatus {
+  PENDING
+  IN_TRANSIT
+  COMPLETED
+}
+
+enum StockAdjustmentType {
+  NORMAL
+  ABNORMAL
+}
+
+enum RegisterStatus {
+  OPEN
+  CLOSED
+}
+
+enum NotificationType {
+  SUCCESS
+  ERROR
+  INFO
+  WARNING
+}
+
+enum FieldPaymentStatus {
+  PENDING
+  APPROVED
+}
+
+enum InvoiceLayoutType {
+  SALE
+  POS
+}
+
+enum AccountTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum CustomFieldEntityType {
+  CUSTOMER
+  SUPPLIER
+  PRODUCT
+  SALE
+  PURCHASE
+  ORDER
+  EXPENSE
+}
+
+enum CustomFieldInputType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  CHECKBOX
+  TEXTAREA
+}
+
+model Role {
+  id          String @id
+  name        String @unique
+  description String @default("")
+  isSystem    Boolean @default(false)
+  users       AppUser[]
+  links       RolePermission[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Permission {
+  id        String @id
+  code      String @unique
+  label     String
+  module    String?
+  links     RolePermission[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  @@id([roleId, permissionId])
+}
+
+model AppUser {
+  id                 String @id
+  username           String @unique
+  name               String
+  email              String @unique
+  roleId             String?
+  status             UserStatus @default(ACTIVE)
+  passwordHash       String?
+  passwordSalt       String?
+  lastLogin          DateTime?
+  commissionPercent  Decimal? @db.Decimal(9, 3)
+  maxDiscountPercent Decimal? @db.Decimal(9, 3)
+  locationId         String?
+  mobile             String?
+  allowLogin         Boolean @default(true)
+  meta               Json?
+  role               Role? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  location           Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  salesAdded         Sale[] @relation("SaleAddedBy")
+  purchasesAdded     Purchase[] @relation("PurchaseAddedBy")
+  ordersAdded        SalesOrder[] @relation("OrderAddedBy")
+  ordersApproved     SalesOrder[] @relation("OrderApprovedBy")
+  expensesAdded      Expense[] @relation("ExpenseAddedBy")
+  registersOpened    RegisterSession[] @relation("RegisterOpenedBy")
+  registersClosed    RegisterSession[] @relation("RegisterClosedBy")
+  salesDelivered     Sale[] @relation("SaleDeliveryPerson")
+  salesRepProfile    SalesRepresentative?
+  helpArticlesAuthored HelpCenterArticle[] @relation("HelpArticleAuthor")
+  activityLogs       ActivityLog[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Location {
+  id                    String @id
+  name                  String @unique
+  city                  String?
+  state                 String?
+  country               String?
+  mobile                String?
+  email                 String?
+  isActive              Boolean @default(true)
+  invoiceSchemeId       String?
+  invoiceLayoutPosId    String?
+  invoiceLayoutSaleId   String?
+  receiptPrinterId      String?
+  meta                  Json?
+  invoiceScheme         InvoiceScheme? @relation(fields: [invoiceSchemeId], references: [id], onDelete: SetNull)
+  invoiceLayoutPos      InvoiceLayout? @relation("LocationPosLayout", fields: [invoiceLayoutPosId], references: [id], onDelete: SetNull)
+  invoiceLayoutSale     InvoiceLayout? @relation("LocationSaleLayout", fields: [invoiceLayoutSaleId], references: [id], onDelete: SetNull)
+  receiptPrinter        ReceiptPrinter? @relation(fields: [receiptPrinterId], references: [id], onDelete: SetNull)
+  sales                 Sale[]
+  sellReturns           SellReturn[]
+  purchases             Purchase[]
+  purchaseReturns       PurchaseReturn[]
+  orders                SalesOrder[]
+  expenses              Expense[]
+  payments              Payment[]
+  fieldPayments         FieldPayment[]
+  stockEntries          StockLedger[]
+  registerSessions      RegisterSession[]
+  locationPaymentMethods LocationPaymentMethod[]
+  stockTransfersFrom    StockTransfer[] @relation("TransferFrom")
+  stockTransfersTo      StockTransfer[] @relation("TransferTo")
+  stockAdjustments      StockAdjustment[]
+  stockLots             StockLot[]
+  inventory             ProductInventory[]
+  paymentAccounts       PaymentAccount[]
+  users                 AppUser[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model LocationPaymentMethod {
+  id                 String @id
+  locationId         String
+  name               String
+  enabled            Boolean @default(true)
+  accountId          String?
+  accountNameSnapshot String?
+  meta               Json?
+  location           Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  account            PaymentAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@unique([locationId, name])
+  @@index([accountId])
+}
+
+model TaxRate {
+  id          String @id
+  name        String @unique
+  rate        Decimal @default(0) @db.Decimal(9, 3)
+  type        TaxType @default(EXCLUSIVE)
+  description String?
+  products    Product[]
+  sales       Sale[]
+  purchases   Purchase[]
+  expenses    Expense[]
+}
+
+model CustomerGroup {
+  id              String @id
+  name            String @unique
+  discountPercent Decimal @default(0) @db.Decimal(9, 3)
+  status          ContactStatus @default(ACTIVE)
+  meta            Json?
+  customers       Customer[]
+}
+
+model Customer {
+  id                 String @id
+  businessName       String
+  name               String
+  email              String?
+  mobile             String?
+  taxNumber          String?
+  creditLimit        Decimal @default(0) @db.Decimal(18, 3)
+  openingBalance     Decimal @default(0) @db.Decimal(18, 3)
+  advanceBalance     Decimal @default(0) @db.Decimal(18, 3)
+  totalSellDue       Decimal @default(0) @db.Decimal(18, 3)
+  totalSellReturnDue Decimal @default(0) @db.Decimal(18, 3)
+  customerGroupId    String?
+  status             ContactStatus @default(ACTIVE)
+  meta               Json?
+  customerGroup      CustomerGroup? @relation(fields: [customerGroupId], references: [id], onDelete: SetNull)
+  sales              Sale[]
+  sellReturns        SellReturn[]
+  orders             SalesOrder[]
+  payments           Payment[] @relation("CustomerPayments")
+  fieldPayments      FieldPayment[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  @@index([status])
+  @@index([businessName])
+}
+
+model Supplier {
+  id               String @id
+  businessName     String
+  name             String
+  email            String?
+  mobile           String?
+  taxNumber        String?
+  openingBalance   Decimal @default(0) @db.Decimal(18, 3)
+  advanceBalance   Decimal @default(0) @db.Decimal(18, 3)
+  totalPurchaseDue Decimal @default(0) @db.Decimal(18, 3)
+  totalReturnDue   Decimal @default(0) @db.Decimal(18, 3)
+  status           ContactStatus @default(ACTIVE)
+  meta             Json?
+  purchases        Purchase[]
+  purchaseReturns  PurchaseReturn[]
+  payments         Payment[] @relation("SupplierPayments")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  @@index([status])
+  @@index([businessName])
+}
+
+model ProductCategory {
+  id          String @id
+  name        String @unique
+  code        String?
+  description String?
+  products    Product[]
+}
+
+model ProductBrand {
+  id       String @id
+  name     String @unique
+  note     String?
+  products Product[]
+}
+
+model ProductUnit {
+  id           String @id
+  name         String
+  shortName    String
+  allowDecimal Boolean @default(false)
+  products     Product[]
+}
+
+model ProductWarranty {
+  id          String @id
+  name        String @unique
+  description String?
+  products    Product[]
+}
+
+model Product {
+  id               String @id
+  name             String
+  sku              String @unique
+  type             ProductType @default(SINGLE)
+  categoryId       String?
+  brandId          String?
+  unitId           String?
+  warrantyId       String?
+  taxRateId        String?
+  packagingType    ProductPackagingType @default(PIECE)
+  unitsPerPackage  Int?
+  unitPurchasePrice Decimal @default(0) @db.Decimal(18, 3)
+  sellingPrice     Decimal @default(0) @db.Decimal(18, 3)
+  stock            Decimal @default(0) @db.Decimal(18, 3)
+  alertQuantity    Int?
+  image            String?
+  meta             Json?
+  category         ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand            ProductBrand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  unit             ProductUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  warranty         ProductWarranty? @relation(fields: [warrantyId], references: [id], onDelete: SetNull)
+  taxRate          TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+  inventory        ProductInventory[]
+  saleItems        SaleItem[]
+  sellReturnItems  SellReturnItem[]
+  purchaseItems    PurchaseItem[]
+  purchaseReturnItems PurchaseReturnItem[]
+  orderItems       SalesOrderItem[]
+  transferItems    StockTransferItem[]
+  adjustmentItems  StockAdjustmentItem[]
+  stockEntries     StockLedger[]
+  stockLots        StockLot[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  @@index([name])
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([taxRateId])
+}
+
+model ProductInventory {
+  id         String @id
+  productId  String
+  locationId String
+  stock      Decimal @default(0) @db.Decimal(18, 3)
+  unitCost   Decimal? @db.Decimal(18, 3)
+  rack       String?
+  row        String?
+  position   String?
+  lotNumber  String?
+  expiryDate DateTime?
+  meta       Json?
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@unique([productId, locationId])
+  @@index([locationId])
+}
+
+model SellingPriceGroup {
+  id                 String @id
+  name               String @unique
+  description        String?
+  discount           Decimal? @db.Decimal(9, 3)
+  priceCalcPercentage Decimal? @db.Decimal(9, 3)
+  meta               Json?
+}
+
+model Discount {
+  id             String @id
+  name           String
+  discountType   DiscountType?
+  discountAmount Decimal? @db.Decimal(18, 3)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  isActive       Boolean @default(true)
+  meta           Json?
+}
+
+model Purchase {
+  id            String @id
+  refNo         String @unique
+  date          DateTime
+  supplierId    String?
+  locationId    String?
+  taxRateId     String?
+  addedById     String?
+  status        PurchaseStatus @default(RECEIVED)
+  paymentStatus PaymentStatus @default(DUE)
+  subTotal      Decimal @default(0) @db.Decimal(18, 3)
+  taxAmount     Decimal @default(0) @db.Decimal(18, 3)
+  discountAmount Decimal @default(0) @db.Decimal(18, 3)
+  grandTotal    Decimal @default(0) @db.Decimal(18, 3)
+  paymentDue    Decimal @default(0) @db.Decimal(18, 3)
+  note          String?
+  meta          Json?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  taxRate       TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+  addedBy       AppUser? @relation("PurchaseAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  items         PurchaseItem[]
+  returns       PurchaseReturn[]
+  payments      PaymentAllocation[]
+  @@index([date])
+  @@index([supplierId])
+  @@index([locationId])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
+model PurchaseItem {
+  id         String @id
+  purchaseId String
+  productId  String?
+  name       String
+  qty        Decimal @default(0) @db.Decimal(18, 3)
+  unitCost   Decimal @default(0) @db.Decimal(18, 3)
+  discount   Decimal @default(0) @db.Decimal(18, 3)
+  tax        Decimal @default(0) @db.Decimal(18, 3)
+  lineTotal  Decimal @default(0) @db.Decimal(18, 3)
+  meta       Json?
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product    Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([productId])
+}
+
+model Sale {
+  id            String @id
+  invoiceNo     String @unique
+  date          DateTime
+  customerId    String?
+  locationId    String?
+  taxRateId     String?
+  paymentAccountId String?
+  addedById     String?
+  salesRepresentativeId String?
+  deliveryPersonId String?
+  status        SaleStatus @default(FINAL)
+  paymentStatus PaymentStatus @default(DUE)
+  shippingStatus ShippingStatus?
+  subTotal      Decimal @default(0) @db.Decimal(18, 3)
+  discountAmount Decimal @default(0) @db.Decimal(18, 3)
+  taxAmount     Decimal @default(0) @db.Decimal(18, 3)
+  shippingCharges Decimal @default(0) @db.Decimal(18, 3)
+  grandTotal    Decimal @default(0) @db.Decimal(18, 3)
+  totalPaid     Decimal @default(0) @db.Decimal(18, 3)
+  sellDue       Decimal @default(0) @db.Decimal(18, 3)
+  sellReturnDue Decimal @default(0) @db.Decimal(18, 3)
+  note          String?
+  meta          Json?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  taxRate       TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+  paymentAccount PaymentAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  addedBy       AppUser? @relation("SaleAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  salesRepresentative SalesRepresentative? @relation(fields: [salesRepresentativeId], references: [id], onDelete: SetNull)
+  deliveryPerson AppUser? @relation("SaleDeliveryPerson", fields: [deliveryPersonId], references: [id], onDelete: SetNull)
+  items         SaleItem[]
+  returns       SellReturn[]
+  shippingActivities SaleShippingActivity[]
+  payments      PaymentAllocation[]
+  stockEntries  StockLedger[]
+  @@index([date])
+  @@index([customerId])
+  @@index([locationId])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([shippingStatus])
+  @@index([salesRepresentativeId])
+}
+
+model SaleItem {
+  id          String @id
+  saleId      String
+  productId   String?
+  name        String
+  qty         Decimal @default(0) @db.Decimal(18, 3)
+  unitPrice   Decimal @default(0) @db.Decimal(18, 3)
+  discount    Decimal @default(0) @db.Decimal(18, 3)
+  tax         Decimal @default(0) @db.Decimal(18, 3)
+  lineTotal   Decimal @default(0) @db.Decimal(18, 3)
+  quantityMode ProductPackagingType @default(PIECE)
+  unitsPerPackage Int?
+  meta        Json?
+  sale        Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([productId])
+}
+
+model SaleShippingActivity {
+  id      String @id
+  saleId  String
+  date    DateTime
+  action  String
+  by      String
+  note    String?
+  sale    Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+}
+
+model SalesOrder {
+  id            String @id
+  orderNumber   String @unique
+  customerId    String?
+  locationId    String?
+  addedById     String?
+  approvedById  String?
+  orderDate     DateTime
+  deliveryDate  DateTime?
+  status        OrderStatus @default(PENDING)
+  paymentStatus PaymentStatus @default(DUE)
+  orderType     SalesOrderType @default(CREDIT)
+  subTotal      Decimal @default(0) @db.Decimal(18, 3)
+  taxAmount     Decimal @default(0) @db.Decimal(18, 3)
+  discountAmount Decimal @default(0) @db.Decimal(18, 3)
+  total         Decimal @default(0) @db.Decimal(18, 3)
+  isApproved    Boolean @default(false)
+  note          String?
+  meta          Json?
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  addedBy       AppUser? @relation("OrderAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  approvedBy    AppUser? @relation("OrderApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  items         SalesOrderItem[]
+  payments      PaymentAllocation[]
+  @@index([orderDate])
+  @@index([customerId])
+  @@index([locationId])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
+model SalesOrderItem {
+  id          String @id
+  salesOrderId String
+  productId   String?
+  name        String
+  qty         Decimal @default(0) @db.Decimal(18, 3)
+  unitPrice   Decimal @default(0) @db.Decimal(18, 3)
+  lineTotal   Decimal @default(0) @db.Decimal(18, 3)
+  quantityMode ProductPackagingType @default(PIECE)
+  meta        Json?
+  salesOrder  SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([productId])
+}
+
+model PaymentAccountType {
+  id       String @id
+  name     String @unique
+  isSystem Boolean @default(false)
+  isActive Boolean @default(true)
+  accounts PaymentAccount[]
+}
+
+model PaymentAccount {
+  id            String @id
+  name          String
+  locationId    String?
+  typeId        String?
+  accountNumber String?
+  balance       Decimal @default(0) @db.Decimal(18, 3)
+  status        ContactStatus @default(ACTIVE)
+  isSystem      Boolean @default(false)
+  meta          Json?
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  type          PaymentAccountType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  methods       LocationPaymentMethod[]
+  sales         Sale[]
+  payments      Payment[]
+  accountTransactions PaymentAccountTransaction[]
+  fieldPayments FieldPayment[]
+  expenses      Expense[]
+  @@unique([name, locationId])
+  @@index([locationId])
+  @@index([typeId])
+  @@index([status])
+}
+
+model Payment {
+  id           String @id
+  date         DateTime
+  contactType  PaymentContactType
+  direction    PaymentDirection
+  customerId   String?
+  supplierId   String?
+  expenseId    String?
+  locationId   String?
+  accountId    String?
+  referenceNo  String
+  method       String
+  amount       Decimal @default(0) @db.Decimal(18, 3)
+  note         String?
+  meta         Json?
+  customer     Customer? @relation("CustomerPayments", fields: [customerId], references: [id], onDelete: SetNull)
+  supplier     Supplier? @relation("SupplierPayments", fields: [supplierId], references: [id], onDelete: SetNull)
+  expense      Expense? @relation("ExpensePayments", fields: [expenseId], references: [id], onDelete: SetNull)
+  location     Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  account      PaymentAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  allocations  PaymentAllocation[]
+  @@index([date])
+  @@index([customerId])
+  @@index([supplierId])
+  @@index([expenseId])
+  @@index([locationId])
+  @@index([accountId])
+  @@index([contactType])
+  @@index([direction])
+}
+
+model PaymentAllocation {
+  id         String @id
+  paymentId  String
+  saleId     String?
+  purchaseId String?
+  orderId    String?
+  invoiceNo  String?
+  amount     Decimal @default(0) @db.Decimal(18, 3)
+  payment    Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  sale       Sale? @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  purchase   Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  order      SalesOrder? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  @@index([saleId])
+  @@index([purchaseId])
+  @@index([orderId])
+}
+
+model FieldPayment {
+  id          String @id
+  referenceNo String @unique
+  customerId  String
+  locationId  String?
+  accountId   String?
+  date        DateTime
+  amount      Decimal @default(0) @db.Decimal(18, 3)
+  method      String
+  status      FieldPaymentStatus @default(PENDING)
+  note        String?
+  meta        Json?
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  location    Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  account     PaymentAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  allocations FieldPaymentAllocation[]
+  @@index([date])
+  @@index([customerId])
+  @@index([locationId])
+  @@index([accountId])
+  @@index([status])
+}
+
+model FieldPaymentAllocation {
+  id             String @id
+  fieldPaymentId String
+  invoiceNo      String
+  amountApplied  Decimal @default(0) @db.Decimal(18, 3)
+  remainingAfter Decimal? @db.Decimal(18, 3)
+  fieldPayment   FieldPayment @relation(fields: [fieldPaymentId], references: [id], onDelete: Cascade)
+}
+
+model ExpenseCategory {
+  id          String @id
+  name        String @unique
+  description String?
+  code        String?
+  expenses    Expense[]
+}
+
+model Expense {
+  id               String @id
+  refNo            String @unique
+  date             DateTime
+  categoryId       String?
+  locationId       String?
+  taxRateId        String?
+  paymentAccountId String?
+  addedById        String?
+  amount           Decimal @default(0) @db.Decimal(18, 3)
+  tax              Decimal @default(0) @db.Decimal(18, 3)
+  totalAmount      Decimal @default(0) @db.Decimal(18, 3)
+  paymentStatus    PaymentStatus @default(DUE)
+  paymentDue       Decimal @default(0) @db.Decimal(18, 3)
+  note             String?
+  isRecurring      Boolean @default(false)
+  isRefund         Boolean @default(false)
+  meta             Json?
+  category         ExpenseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  location         Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  taxRate          TaxRate? @relation(fields: [taxRateId], references: [id], onDelete: SetNull)
+  paymentAccount   PaymentAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: SetNull)
+  addedBy          AppUser? @relation("ExpenseAddedBy", fields: [addedById], references: [id], onDelete: SetNull)
+  payments         Payment[] @relation("ExpensePayments")
+  @@index([date])
+  @@index([categoryId])
+  @@index([locationId])
+  @@index([paymentStatus])
+}
+
+model StockTransfer {
+  id             String @id
+  refNo          String @unique
+  date           DateTime
+  locationFromId String
+  locationToId   String
+  status         StockTransferStatus @default(PENDING)
+  shippingCharges Decimal @default(0) @db.Decimal(18, 3)
+  totalAmount    Decimal @default(0) @db.Decimal(18, 3)
+  note           String?
+  meta           Json?
+  locationFrom   Location @relation("TransferFrom", fields: [locationFromId], references: [id], onDelete: Restrict)
+  locationTo     Location @relation("TransferTo", fields: [locationToId], references: [id], onDelete: Restrict)
+  items          StockTransferItem[]
+  @@index([date])
+  @@index([locationFromId])
+  @@index([locationToId])
+  @@index([status])
+}
+
+model StockTransferItem {
+  id              String @id
+  stockTransferId String
+  productId       String?
+  productName     String
+  sku             String
+  qty             Decimal @default(0) @db.Decimal(18, 3)
+  unitCost        Decimal? @db.Decimal(18, 3)
+  stockTransfer   StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  product         Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model StockAdjustment {
+  id              String @id
+  referenceNo     String @unique
+  date            DateTime
+  locationId      String
+  adjustmentType  StockAdjustmentType @default(NORMAL)
+  reason          String?
+  totalAmount     Decimal @default(0) @db.Decimal(18, 3)
+  totalRecovered  Decimal @default(0) @db.Decimal(18, 3)
+  meta            Json?
+  location        Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  items           StockAdjustmentItem[]
+  @@index([date])
+  @@index([locationId])
+  @@index([adjustmentType])
+}
+
+model StockAdjustmentItem {
+  id                String @id
+  stockAdjustmentId String
+  productId         String?
+  productName       String
+  sku               String
+  quantity          Decimal @default(0) @db.Decimal(18, 3)
+  unitCost          Decimal @default(0) @db.Decimal(18, 3)
+  currentStockBefore Decimal @default(0) @db.Decimal(18, 3)
+  stockAdjustment   StockAdjustment @relation(fields: [stockAdjustmentId], references: [id], onDelete: Cascade)
+  product           Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model StockLedger {
+  id           String @id
+  productId    String
+  saleId       String?
+  locationId   String?
+  entryType    String
+  changeQty    Decimal @default(0) @db.Decimal(18, 3)
+  newQty       Decimal @default(0) @db.Decimal(18, 3)
+  date         DateTime
+  ref          String
+  party        String
+  note         String?
+  meta         Json?
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sale         Sale? @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  location     Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  @@index([date])
+  @@index([productId, locationId])
+  @@index([saleId])
+}
+
+model StockLot {
+  id         String @id
+  productId  String
+  locationId String
+  lotNumber  String @default("--")
+  expiryDate DateTime?
+  unitCost   Decimal @default(0) @db.Decimal(18, 3)
+  qty        Decimal @default(0) @db.Decimal(18, 3)
+  meta       Json?
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  @@unique([productId, locationId, lotNumber, expiryDate])
+}
+
+model RegisterSession {
+  id             String @id
+  locationId     String
+  openedById     String?
+  closedById     String?
+  openedAt       DateTime
+  closedAt       DateTime?
+  status         RegisterStatus @default(OPEN)
+  cashInHand     Decimal @default(0) @db.Decimal(18, 3)
+  closingBalance Decimal? @db.Decimal(18, 3)
+  meta           Json?
+  location       Location @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  openedBy       AppUser? @relation("RegisterOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  closedBy       AppUser? @relation("RegisterClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  transactions   RegisterTransaction[]
+  @@index([locationId])
+  @@index([status])
+  @@index([openedAt])
+}
+
+model RegisterTransaction {
+  id              String @id
+  sessionId       String
+  date            DateTime
+  transactionType String
+  amount          Decimal @default(0) @db.Decimal(18, 3)
+  method          String?
+  invoiceNo       String?
+  note            String?
+  meta            Json?
+  session         RegisterSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  @@index([date])
+  @@index([sessionId])
+}
+
+model ActivityLog {
+  id          String @id
+  userId      String?
+  userName    String
+  action      String
+  module      String
+  description String
+  date        DateTime
+  ipAddress   String?
+  meta        Json?
+  user        AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([date])
+  @@index([module])
+  @@index([userId])
+}
+
+model Notification {
+  id             String @id
+  title          String
+  message        String
+  type           NotificationType @default(INFO)
+  read           Boolean @default(false)
+  actionRequired Boolean @default(false)
+  navigateTo     String?
+  module         String?
+  timestamp      DateTime @default(now())
+  meta           Json?
+  @@index([read])
+  @@index([timestamp])
+}
+
+model Currency {
+  code       String @id
+  name       String
+  symbol     String
+  precision  Int @default(3)
+  isActive   Boolean @default(true)
+  isDefault  Boolean @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model InvoiceScheme {
+  id            String @id
+  name          String @unique
+  prefix        String
+  startFrom     Int @default(1)
+  digitLength   Int @default(4)
+  isDefault     Boolean @default(false)
+  meta          Json?
+  locations     Location[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model InvoiceLayout {
+  id             String @id
+  name           String @unique
+  type           InvoiceLayoutType
+  headerHtml     String?
+  footerHtml     String?
+  bodyTemplate   Json?
+  showClientLogo Boolean @default(true)
+  isDefault      Boolean @default(false)
+  meta           Json?
+  saleLocations  Location[] @relation("LocationSaleLayout")
+  posLocations   Location[] @relation("LocationPosLayout")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  @@index([type])
+  @@index([isDefault])
+}
+
+model ReceiptPrinter {
+  id          String @id
+  name        String @unique
+  connection  String?
+  charactersPerLine Int @default(48)
+  paperWidthMm Int @default(80)
+  isDefault   Boolean @default(false)
+  meta        Json?
+  locations   Location[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model BarcodeSetting {
+  id            String @id
+  name          String @unique
+  paperWidthMm  Decimal @default(210) @db.Decimal(9, 3)
+  paperHeightMm Decimal @default(297) @db.Decimal(9, 3)
+  labelWidthMm  Decimal @default(50) @db.Decimal(9, 3)
+  labelHeightMm Decimal @default(25) @db.Decimal(9, 3)
+  labelsPerRow  Int @default(4)
+  labelsPerPage Int @default(40)
+  isDefault     Boolean @default(false)
+  meta          Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([isDefault])
+}
+
+model SalesRepresentative {
+  id                   String @id
+  userId               String? @unique
+  name                 String
+  contactNo            String?
+  commissionPercentage Decimal @default(0) @db.Decimal(9, 3)
+  isActive             Boolean @default(true)
+  meta                 Json?
+  user                 AppUser? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sales                Sale[]
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  @@index([isActive])
+}
+
+model SellReturn {
+  id            String @id
+  refNo         String @unique
+  date          DateTime
+  saleId        String?
+  customerId    String?
+  locationId    String?
+  paymentStatus PaymentStatus @default(DUE)
+  subTotal      Decimal @default(0) @db.Decimal(18, 3)
+  discountAmount Decimal @default(0) @db.Decimal(18, 3)
+  taxAmount     Decimal @default(0) @db.Decimal(18, 3)
+  grandTotal    Decimal @default(0) @db.Decimal(18, 3)
+  totalRefunded Decimal @default(0) @db.Decimal(18, 3)
+  note          String?
+  meta          Json?
+  sale          Sale? @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  items         SellReturnItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([date])
+  @@index([saleId])
+  @@index([customerId])
+  @@index([locationId])
+  @@index([paymentStatus])
+}
+
+model SellReturnItem {
+  id            String @id
+  sellReturnId  String
+  productId     String?
+  name          String
+  qty           Decimal @default(0) @db.Decimal(18, 3)
+  unitPrice     Decimal @default(0) @db.Decimal(18, 3)
+  tax           Decimal @default(0) @db.Decimal(18, 3)
+  lineTotal     Decimal @default(0) @db.Decimal(18, 3)
+  meta          Json?
+  sellReturn    SellReturn @relation(fields: [sellReturnId], references: [id], onDelete: Cascade)
+  product       Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([productId])
+}
+
+model PurchaseReturn {
+  id            String @id
+  refNo         String @unique
+  date          DateTime
+  purchaseId    String?
+  supplierId    String?
+  locationId    String?
+  paymentStatus PaymentStatus @default(DUE)
+  subTotal      Decimal @default(0) @db.Decimal(18, 3)
+  discountAmount Decimal @default(0) @db.Decimal(18, 3)
+  taxAmount     Decimal @default(0) @db.Decimal(18, 3)
+  grandTotal    Decimal @default(0) @db.Decimal(18, 3)
+  totalRefunded Decimal @default(0) @db.Decimal(18, 3)
+  note          String?
+  meta          Json?
+  purchase      Purchase? @relation(fields: [purchaseId], references: [id], onDelete: SetNull)
+  supplier      Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  location      Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  items         PurchaseReturnItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@index([date])
+  @@index([purchaseId])
+  @@index([supplierId])
+  @@index([locationId])
+  @@index([paymentStatus])
+}
+
+model PurchaseReturnItem {
+  id               String @id
+  purchaseReturnId String
+  productId        String?
+  name             String
+  qty              Decimal @default(0) @db.Decimal(18, 3)
+  unitCost         Decimal @default(0) @db.Decimal(18, 3)
+  tax              Decimal @default(0) @db.Decimal(18, 3)
+  lineTotal        Decimal @default(0) @db.Decimal(18, 3)
+  meta             Json?
+  purchaseReturn   PurchaseReturn @relation(fields: [purchaseReturnId], references: [id], onDelete: Cascade)
+  product          Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  @@index([productId])
+}
+
+model PaymentAccountTransaction {
+  id         String @id
+  accountId  String
+  date       DateTime
+  type       AccountTransactionType
+  amount     Decimal @default(0) @db.Decimal(18, 3)
+  refType    String?
+  refId      String?
+  note       String?
+  meta       Json?
+  account    PaymentAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  @@index([accountId, date])
+  @@index([type])
+}
+
+model HelpCenterCategory {
+  id          String @id
+  name        String @unique
+  description String?
+  sortOrder   Int @default(0)
+  isActive    Boolean @default(true)
+  articles    HelpCenterArticle[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model HelpCenterArticle {
+  id          String @id
+  categoryId  String?
+  authorId    String?
+  title       String
+  slug        String @unique
+  summary     String?
+  content     String
+  routeTarget String?
+  isPublished Boolean @default(true)
+  sortOrder   Int @default(0)
+  meta        Json?
+  category    HelpCenterCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  author      AppUser? @relation("HelpArticleAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([categoryId])
+  @@index([isPublished])
+}
+
+model CustomFieldDefinition {
+  id          String @id
+  entityType  CustomFieldEntityType
+  key         String
+  label       String
+  inputType   CustomFieldInputType
+  isRequired  Boolean @default(false)
+  isActive    Boolean @default(true)
+  optionsJson Json?
+  helpText    String?
+  sortOrder   Int @default(0)
+  meta        Json?
+  values      CustomFieldValue[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([entityType, key])
+}
+
+model CustomFieldValue {
+  id            String @id
+  definitionId  String
+  entityId      String
+  valueJson     Json?
+  valueText     String?
+  definition    CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  @@unique([definitionId, entityId])
+  @@index([entityId])
+}
+
+model AppSetting {
+  id                     String @id @default("SETTINGS")
+  businessName           String
+  currency               String @default("OMR")
+  currencySymbol         String @default("OMR")
+  currencyPrecision      Int @default(3)
+  quantityPrecision      Int @default(3)
+  salesInvoicePrefix     String @default("INV")
+  purchasePrefix         String @default("PO")
+  quotationPrefix        String @default("QT")
+  paymentPrefix          String @default("PAY")
+  stockTransferPrefix    String @default("ST")
+  stockAdjustmentPrefix  String @default("SA")
+  sellReturnPrefix       String @default("CN")
+  defaultSalePaymentMethod String @default("Cash")
+  defaultPurchasePaymentMethod String @default("Cash")
+  themeColor             String @default("default")
+  meta                   Json?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// Compatibility + transition
+model AppStateSnapshot {
+  id        String   @id
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OptionCollection {
+  key       String   @id
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

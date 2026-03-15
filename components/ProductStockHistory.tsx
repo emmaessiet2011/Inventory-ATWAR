@@ -1,273 +1,502 @@
-
-import React, { useState } from 'react';
-import { 
-  X, FileText, FileSpreadsheet, Printer, Columns, 
-  ChevronDown, Search, ArrowUpDown, History,
-  Plus, Minus, User, MapPin, Package, Download, Info
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  X,
+  FileText,
+  FileSpreadsheet,
+  Printer,
+  Columns,
+  ChevronDown,
+  Search,
+  Download
 } from 'lucide-react';
-import { useGlobalContext } from '../src/context/GlobalContext';
+import { Product, useGlobalContext } from '../src/context/GlobalContext';
+import { printDocument } from '../src/utils/printUtils';
 
 interface ProductStockHistoryProps {
-  isOpen: boolean;
-  onClose: () => void;
-  product: any;
+  isOpen?: boolean;
+  onClose?: () => void;
+  product: Product | null;
+  pageMode?: boolean;
 }
 
-const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen, onClose, product }) => {
-  const { locations } = useGlobalContext();
+interface StockLedgerEntry {
+  id: string;
+  productId: string;
+  type: string;
+  change: number;
+  newQty: number;
+  date: string;
+  ref: string;
+  party: string;
+  location?: string;
+  note?: string;
+}
+
+interface HistoryRow {
+  id: string;
+  type: string;
+  change: number;
+  newQty?: number;
+  date: string;
+  ref: string;
+  party: string;
+  location?: string;
+  note?: string;
+}
+
+type ColKey = 'type' | 'change' | 'newQty' | 'date' | 'ref' | 'party' | 'location' | 'note';
+
+const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
+
+const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
+
+const readStockLedger = (): StockLedgerEntry[] => {
+  try {
+    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const toCsvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+const formatDateTime = (value: string): string => {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d
+    .toLocaleString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    })
+    .replace(',', '');
+};
+
+const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen = true, onClose, product, pageMode = false }) => {
+  const { sales, sellReturns, purchases, purchaseReturns, locations, settings, currentUser } = useGlobalContext();
+  const visible = pageMode ? !!product : (isOpen && !!product);
+  const handleClose = () => {
+    onClose?.();
+  };
+
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [showColMenu, setShowColMenu] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState<ColKey[]>(['location', 'note']);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const productId = String(product?.id || '').trim();
+  const productSku = String(product?.sku || 'product').trim() || 'product';
+  const productName = String(product?.name || '').trim();
+  const productLocation = String(product?.businessLocation || '').trim();
 
-  if (!isOpen) return null;
+  const rows = useMemo<HistoryRow[]>(() => {
+    if (!product) return [];
 
-  // Mock Data mimicking the screenshot's specific record set
-  const historyData = [
-    { type: 'Sell', change: -8.000, newQty: 231.000, date: '16/02/2026 04:19 PM', ref: '2026-1616', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell Return', change: 0.000, newQty: 239.000, date: '06/01/2026 04:20 PM', ref: 'CN2026/0139', party: 'Modern Auto New Spare Parts (Mobailah)' },
-    { type: 'Sell Return', change: 1.000, newQty: 239.000, date: '05/01/2026 04:19 PM', ref: 'CN2026/0137', party: 'Blue Zone Auto Center (Al Khoud)' },
-    { type: 'Sell', change: -8.000, newQty: 238.000, date: '04/01/2026 04:24 PM', ref: '2026-1600', party: 'Fix It (Mobailah)' },
-    { type: 'Sell', change: -8.000, newQty: 246.000, date: '04/01/2026 04:22 PM', ref: '2026-1599', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell', change: -8.000, newQty: 254.000, date: '15/12/2025 08:18 AM', ref: '2025-1591', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell', change: -4.000, newQty: 262.000, date: '04/12/2025 07:47 PM', ref: '2025-1588', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell', change: -4.000, newQty: 266.000, date: '23/11/2025 01:09 PM', ref: '2025-1585', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell', change: -8.000, newQty: 270.000, date: '20/11/2025 07:50 AM', ref: '2025-1583', party: 'Auto Lab (Mobailah)' },
-    { type: 'Sell', change: -1.000, newQty: 278.000, date: '13/11/2025 04:37 PM', ref: '2025-1580', party: 'Modern Auto New Spare Parts (Mobailah)' },
-    { type: 'Sell', change: -4.000, newQty: 279.000, date: '12/11/2025 08:37 AM', ref: '2025-1578', party: 'Kennol Workshop (Sandan)' },
-    { type: 'Sell', change: -1.000, newQty: 283.000, date: '11/11/2025 08:12 AM', ref: '2025-1575', party: 'Blue Zone Auto Center (Al Khoud)' },
-  ];
+    const normalizedProductId = normalize(productId);
+    const normalizedProductSku = normalize(productSku);
+    const normalizedProductName = normalize(productName);
+    const matchesProduct = (itemId: unknown, itemName: unknown) => {
+      const normalizedItemId = normalize(itemId);
+      if (normalizedItemId) {
+        if (normalizedItemId === normalizedProductId || normalizedItemId === normalizedProductSku) return true;
+      }
+      const normalizedItemName = normalize(itemName);
+      return !!normalizedItemName && normalizedItemName === normalizedProductName;
+    };
+    const toTimestamp = (value: string) => {
+      const parsed = Date.parse(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    const ledgerRows = readStockLedger()
+      .filter(r => r.productId === productId)
+      .map(r => ({
+        id: r.id,
+        type: r.type,
+        change: Number(r.change) || 0,
+        newQty: Number(r.newQty),
+        date: r.date,
+        ref: r.ref,
+        party: r.party,
+        location: r.location,
+        note: r.note,
+      }));
+
+    const saleRows: HistoryRow[] = sales
+      .filter(s => (s.status || s.saleStatus) === 'Final')
+      .flatMap((sale) =>
+        (sale.items || [])
+          .filter(item => matchesProduct(item.id, item.name))
+          .map((item, idx) => ({
+            id: `SALE-${sale.id}-${idx}`,
+            type: 'Sell',
+            change: -(Number(item.qty) || 0),
+            date: sale.date || '',
+            ref: sale.invoiceNo || sale.id,
+            party: sale.customerName || String(sale.customerId),
+            location: sale.location || productLocation,
+            note: sale.sellNote || '',
+          }))
+      );
+
+    const sellReturnRows: HistoryRow[] = sellReturns.flatMap((sellReturn) =>
+      (sellReturn.items || [])
+        .filter(item => matchesProduct(item.productId, item.productName))
+        .map((item, idx) => ({
+          id: `SRET-${sellReturn.id}-${idx}`,
+          type: 'Sell Return',
+          change: Number(item.qty) || 0,
+          date: sellReturn.date || '',
+          ref: sellReturn.referenceNo || sellReturn.id,
+          party: sellReturn.customerName || String(sellReturn.customerId || ''),
+          location: sellReturn.location || productLocation,
+          note: sellReturn.note || '',
+        }))
+    );
+
+    const purchaseRows: HistoryRow[] = purchases
+      .filter(purchase => purchase.status === 'Received')
+      .flatMap((purchase) =>
+        (purchase.items || [])
+          .filter(item => matchesProduct(item.id, item.name))
+          .map((item, idx) => ({
+            id: `PUR-${purchase.id}-${idx}`,
+            type: 'Purchase',
+            change: Number(item.qty) || 0,
+            date: purchase.date || '',
+            ref: purchase.refNo || purchase.id,
+            party: purchase.supplier || '',
+            location: purchase.location || productLocation,
+            note: purchase.notes || purchase.shippingDetails || '',
+          }))
+      );
+
+    const purchaseReturnRows: HistoryRow[] = purchaseReturns.flatMap((purchaseReturn) =>
+      (purchaseReturn.items || [])
+        .filter(item => matchesProduct(item.productId, item.productName))
+        .map((item, idx) => ({
+          id: `PRET-${purchaseReturn.id}-${idx}`,
+          type: 'Purchase Return',
+          change: -(Number(item.quantity) || 0),
+          date: purchaseReturn.date || '',
+          ref: purchaseReturn.referenceNo || purchaseReturn.id,
+          party: purchaseReturn.supplierName || '',
+          location: purchaseReturn.location || productLocation,
+          note: '',
+        }))
+    );
+
+    return [...ledgerRows, ...purchaseRows, ...purchaseReturnRows, ...saleRows, ...sellReturnRows]
+      .sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
+  }, [product, productId, productSku, productName, productLocation, sales, sellReturns, purchases, purchaseReturns]);
+
+  const filteredRows = useMemo(() => {
+    const q = normalize(searchTerm);
+    return rows.filter((r) => {
+      if (selectedLocation !== 'all' && (r.location || '') !== selectedLocation) return false;
+      if (!q) return true;
+      const hay = [r.type, r.ref, r.party, r.note, r.location].map(normalize);
+      return hay.some(v => v.includes(q));
+    });
+  }, [rows, searchTerm, selectedLocation]);
+
+  const totals = useMemo(() => filteredRows.reduce((acc, row) => {
+    if (row.change > 0) acc.in += row.change;
+    if (row.change < 0) acc.out += Math.abs(row.change);
+    return acc;
+  }, { in: 0, out: 0 }), [filteredRows]);
+
+  const movementSummary = useMemo(() => (
+    filteredRows.reduce((acc, row) => {
+      const rowType = normalize(row.type);
+      const qty = Math.abs(Number(row.change) || 0);
+      if (!qty) return acc;
+
+      if (rowType === 'purchase') acc.totalPurchase += qty;
+      if (rowType === 'opening stock' || rowType === 'opening stock import') acc.openingStock += qty;
+      if (rowType === 'sell return') acc.totalSellReturn += qty;
+      if (rowType === 'stock transfer in' || rowType === 'stock transfer reversal in') acc.stockTransferIn += qty;
+
+      if (rowType === 'sell') acc.totalSold += qty;
+      if (rowType === 'stock adjustment' && Number(row.change) < 0) acc.totalStockAdjustment += qty;
+      if (rowType === 'purchase return') acc.totalPurchaseReturn += qty;
+      if (rowType === 'stock transfer out' || rowType === 'stock transfer reversal out') acc.stockTransferOut += qty;
+
+      return acc;
+    }, {
+      totalPurchase: 0,
+      openingStock: 0,
+      totalSellReturn: 0,
+      stockTransferIn: 0,
+      totalSold: 0,
+      totalStockAdjustment: 0,
+      totalPurchaseReturn: 0,
+      stockTransferOut: 0,
+    })
+  ), [filteredRows]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedLocation, rowsPerPage]);
+
+  const totalRows = filteredRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const startIndex = (safeCurrentPage - 1) * rowsPerPage;
+  const paginatedRows = filteredRows.slice(startIndex, startIndex + rowsPerPage);
+  const showingStart = totalRows === 0 ? 0 : startIndex + 1;
+  const showingEnd = totalRows === 0 ? 0 : startIndex + paginatedRows.length;
+
+  const toggleCol = (col: ColKey) => {
+    setHiddenCols(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+  };
+
+  const exportCSV = () => {
+    const headers = ['Type', 'Change', 'New Qty', 'Date', 'Reference', 'Party', 'Location', 'Note'];
+    const lines = filteredRows.map(r => [
+      toCsvCell(r.type),
+      toCsvCell(r.change.toFixed(3)),
+      toCsvCell(r.newQty != null ? r.newQty.toFixed(3) : '--'),
+      toCsvCell(formatDateTime(r.date)),
+      toCsvCell(r.ref),
+      toCsvCell(r.party),
+      toCsvCell(r.location || ''),
+      toCsvCell(r.note || ''),
+    ].join(','));
+    const csv = [headers.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `product-stock-history-${productSku}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    const headers = ['Type', 'Change', 'New Qty', 'Date', 'Reference', 'Party', 'Location', 'Note'];
+    const lines = filteredRows.map(r => [
+      r.type,
+      r.change.toFixed(3),
+      r.newQty != null ? r.newQty.toFixed(3) : '--',
+      formatDateTime(r.date),
+      r.ref,
+      r.party,
+      r.location || '',
+      r.note || '',
+    ].join('\t'));
+    const tsv = [headers.join('\t'), ...lines].join('\n');
+    const blob = new Blob([tsv], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `product-stock-history-${productSku}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintHistory = () => {
+    printDocument({
+      title: 'Product Stock History',
+      subtitle: `Product: ${productName} (${productSku})${selectedLocation === 'all' ? '' : ` | Location: ${selectedLocation}`}`,
+      businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+      businessAddress: settings?.address || '',
+      printedBy: currentUser?.name || '',
+      columns: [
+        { label: 'Type', width: '90px' },
+        { label: 'Quantity Change', width: '95px', align: 'right' },
+        { label: 'New Quantity', width: '95px', align: 'right' },
+        { label: 'Date', width: '95px' },
+        { label: 'Reference No', width: '110px' },
+        { label: 'Customer/Supplier Information' },
+      ],
+      rows: filteredRows.map((row) => [
+        row.type || '--',
+        Number(row.change || 0).toFixed(3),
+        row.newQty != null ? Number(row.newQty).toFixed(3) : '--',
+        formatDateTime(row.date),
+        row.ref || '--',
+        row.party || '--',
+      ]),
+      stats: [
+        { label: 'Total Rows', value: String(filteredRows.length), color: 'blue' },
+        { label: 'Qty In', value: `${totals.in.toFixed(3)} ${product.unit || ''}`.trim(), color: 'green' },
+        { label: 'Qty Out', value: `${totals.out.toFixed(3)} ${product.unit || ''}`.trim(), color: 'rose' },
+        { label: 'Current Stock', value: `${Number(product.stock || 0).toFixed(3)} ${product.unit || ''}`.trim(), color: 'slate' },
+      ],
+    });
+  };
+
+  if (!visible || !product) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md overflow-y-auto animate-in fade-in duration-300">
-      <div className="bg-white w-full max-w-[98%] rounded-2xl shadow-2xl border border-slate-200 relative animate-in zoom-in-95 duration-200 flex flex-col max-h-[95vh]">
-         
-         {/* 1. Header with Glow */}
-         <div className="flex justify-between items-center px-8 py-5 border-b border-slate-100 bg-slate-50/50 sticky top-0 z-20 rounded-t-2xl">
-             <div className="flex items-center gap-3">
-                 <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
-                    <History size={20} />
-                 </div>
-                 <div>
-                    <h3 className="text-xl font-black text-slate-900 tracking-tight">Product Stock History</h3>
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{product?.name || 'Kennol 5W-30 (5L)'}</p>
-                 </div>
-             </div>
-             <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-all">
-                 <X size={24} />
-             </button>
-         </div>
+    <div className={pageMode ? 'space-y-4 animate-fade-in pb-20' : 'fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm p-3'}>
+      <div className={`${pageMode ? 'bg-slate-100 w-full rounded-xl border border-slate-300 shadow-sm overflow-hidden flex flex-col min-h-[calc(100vh-10rem)]' : 'bg-slate-100 w-full h-full rounded-xl border border-slate-300 shadow-xl overflow-hidden flex flex-col'}`}>
+        <div className="px-4 py-3 border-b border-slate-300 bg-slate-100 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-slate-900">Product stock history</h3>
+          <button onClick={handleClose} className="text-slate-500 hover:text-slate-700"><X size={18} /></button>
+        </div>
 
-         <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
-             
-             {/* 2. Top Navigation/Filters Panel */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-slate-50 rounded-[1.5rem] border border-slate-200 shadow-sm">
-                  <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Active Product Intelligence</label>
-                      <div className="relative group">
-                          <Package className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500" size={18} />
-                          <input 
-                              type="text" 
-                              value={`${product?.name || 'Kennol 5W-30 (5L)'} - ${product?.sku || '0004'}`} 
-                              readOnly 
-                              className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-800 shadow-sm focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                          />
-                      </div>
-                  </div>
-                  <div className="space-y-2">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Business Analytics Location</label>
-                      <div className="relative">
-                          <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500" size={18} />
-                          <select className="w-full pl-12 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none appearance-none shadow-sm focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all cursor-pointer">
-                              {locations.map(loc => (
-                                  <option key={loc.id} value={loc.id}>{loc.name}</option>
-                              ))}
-                          </select>
-                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                      </div>
-                  </div>
-             </div>
+        <div className="p-3 overflow-auto space-y-3 text-[11px]">
+          <div className="rounded border border-slate-300 bg-slate-100 p-3 space-y-2">
+            <div className="font-medium text-slate-700">{productName} ({productSku})</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block mb-1 font-semibold text-slate-700">Product:</label>
+                <select className="w-full px-2 py-1.5 border border-slate-300 bg-white rounded" value={productId} disabled>
+                  <option value={productId}>{productName} - {productSku}</option>
+                </select>
+              </div>
+              <div>
+                <label className="block mb-1 font-semibold text-slate-700">Business Location:</label>
+                <select value={selectedLocation} onChange={(e) => setSelectedLocation(e.target.value)} className="w-full px-2 py-1.5 border border-slate-300 bg-white rounded">
+                  <option value="all">All locations</option>
+                  {locations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
 
-             {/* 3. Metrics Summary Cloud */}
-             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                 {/* Quantities In */}
-                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm relative overflow-hidden group">
-                     <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                     <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <Plus size={14} className="text-emerald-500" /> Quantities In
-                     </h4>
-                     <div className="space-y-3">
-                         {[
-                             { label: 'Total Purchase', val: '0.000 Pc(s)' },
-                             { label: 'Opening Stock', val: '912.000 Pc(s)' },
-                             { label: 'Total Sell Return', val: '15.000 Pc(s)' },
-                             { label: 'Stock Transfers (In)', val: '0.000 Pc(s)' }
-                         ].map((item, i) => (
-                             <div key={i} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                                 <span className="text-sm font-bold text-slate-600">{item.label}</span>
-                                 <span className="font-mono text-sm font-bold text-slate-900">{item.val}</span>
-                             </div>
-                         ))}
-                     </div>
-                 </div>
+          <div className="rounded border border-slate-300 bg-slate-100 p-3">
+            <div className="font-medium text-slate-700 mb-2">{productName} ({productSku})</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-1">
+                <div className="font-semibold text-slate-700">Quantities In</div>
+                <div className="flex justify-between"><span>Total Purchase</span><span>{movementSummary.totalPurchase.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Opening Stock</span><span>{movementSummary.openingStock.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Total Sell Return</span><span>{movementSummary.totalSellReturn.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Stock Transfers (In)</span><span>{movementSummary.stockTransferIn.toFixed(3)} {product.unit}</span></div>
+              </div>
+              <div className="space-y-1">
+                <div className="font-semibold text-slate-700">Quantities Out</div>
+                <div className="flex justify-between"><span>Total Sold</span><span>{movementSummary.totalSold.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Total Stock Adjustment</span><span>{movementSummary.totalStockAdjustment.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Total Purchase Return</span><span>{movementSummary.totalPurchaseReturn.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Stock Transfers (Out)</span><span>{movementSummary.stockTransferOut.toFixed(3)} {product.unit}</span></div>
+              </div>
+              <div className="space-y-1">
+                <div className="font-semibold text-slate-700">Totals</div>
+                <div className="flex justify-between font-bold"><span>Current stock</span><span>{Number(product.stock || 0).toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Qty In</span><span>{totals.in.toFixed(3)} {product.unit}</span></div>
+                <div className="flex justify-between"><span>Qty Out</span><span>{totals.out.toFixed(3)} {product.unit}</span></div>
+              </div>
+            </div>
+          </div>
 
-                 {/* Quantities Out */}
-                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm relative overflow-hidden group">
-                     <div className="absolute top-0 left-0 w-1 h-full bg-rose-500"></div>
-                     <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <Minus size={14} className="text-rose-500" /> Quantities Out
-                     </h4>
-                     <div className="space-y-3">
-                         {[
-                             { label: 'Total Sold', val: '696.000 Pc(s)' },
-                             { label: 'Total Stock Adjustment', val: '0.000 Pc(s)' },
-                             { label: 'Total Purchase Return', val: '0.000 Pc(s)' },
-                             { label: 'Stock Transfers (Out)', val: '0.000 Pc(s)' }
-                         ].map((item, i) => (
-                             <div key={i} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-                                 <span className="text-sm font-bold text-slate-600">{item.label}</span>
-                                 <span className="font-mono text-sm font-bold text-slate-900">{item.val}</span>
-                             </div>
-                         ))}
-                     </div>
-                 </div>
+          <div className="rounded border border-slate-300 bg-white overflow-hidden">
+            <div className="p-2 border-b border-slate-200 flex flex-col lg:flex-row gap-2 lg:items-center lg:justify-between print:hidden">
+              <div className="flex items-center gap-2">
+                <span>Show</span>
+                <select
+                  value={rowsPerPage}
+                  onChange={(e) => setRowsPerPage(Number(e.target.value) || 25)}
+                  className="px-2 py-1 border border-slate-300 rounded bg-white"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span>entries</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1">
+                <button onClick={exportCSV} className="px-2 py-1 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1"><FileText size={10} /> Export CSV</button>
+                <button onClick={exportExcel} className="px-2 py-1 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1"><FileSpreadsheet size={10} /> Export Excel</button>
+                <button onClick={handlePrintHistory} className="px-2 py-1 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1"><Printer size={10} /> Print</button>
+                <button onClick={() => setShowColMenu(v => !v)} className="px-2 py-1 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1"><Columns size={10} /> Column visibility <ChevronDown size={10} /></button>
+                <button onClick={handlePrintHistory} className="px-2 py-1 border border-slate-300 rounded text-[10px] font-semibold flex items-center gap-1"><Download size={10} /> Export PDF</button>
+              </div>
+              <div className="relative w-full lg:w-56">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-7 pr-2 py-1 border border-slate-300 rounded text-[11px]" placeholder="Search..." />
+              </div>
+            </div>
 
-                 {/* Totals Summary */}
-                 <div className="bg-slate-900 rounded-2xl p-6 shadow-xl relative overflow-hidden group flex flex-col justify-center">
-                     <div className="absolute -right-4 -bottom-4 opacity-10 text-white transform rotate-12 group-hover:scale-110 transition-transform duration-700">
-                         <Package size={140} />
-                     </div>
-                     <h4 className="text-[11px] font-black text-indigo-300 uppercase tracking-widest mb-2">Live Inventory Total</h4>
-                     <div className="space-y-1">
-                         <div className="text-5xl font-black text-white tracking-tighter">
-                             231.000
-                         </div>
-                         <div className="text-sm font-bold text-indigo-400 flex items-center gap-2 uppercase">
-                             Pieces <span className="w-1 h-1 rounded-full bg-indigo-500"></span> Current Stock
-                         </div>
-                     </div>
-                     <div className="mt-6 flex items-center gap-2 text-xs font-bold text-indigo-200 bg-white/10 w-fit px-3 py-1.5 rounded-lg backdrop-blur-sm">
-                         <Info size={14} /> Synced 1m ago
-                     </div>
-                 </div>
-             </div>
+            {showColMenu && (
+              <div className="p-2 border-b border-slate-200 bg-slate-50 grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px] print:hidden">
+                {([
+                  { key: 'type', label: 'Type' },
+                  { key: 'change', label: 'Quantity change' },
+                  { key: 'newQty', label: 'New Quantity' },
+                  { key: 'date', label: 'Date' },
+                  { key: 'ref', label: 'Reference No' },
+                  { key: 'party', label: 'Customer/Supplier information' },
+                  { key: 'location', label: 'Location' },
+                  { key: 'note', label: 'Note' },
+                ] as { key: ColKey; label: string }[]).map(col => (
+                  <label key={col.key} className="flex items-center gap-1">
+                    <input type="checkbox" checked={!hiddenCols.includes(col.key)} onChange={() => toggleCol(col.key)} />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+            )}
 
-             {/* 4. Table Controls Bar */}
-             <div className="flex flex-col xl:flex-row justify-between items-center gap-6 pt-4">
-                  <div className="flex items-center gap-4 w-full xl:w-auto">
-                      <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Display</span>
-                          <select className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500/20 shadow-sm cursor-pointer">
-                              <option>25</option>
-                              <option>50</option>
-                              <option>100</option>
-                          </select>
-                      </div>
-                      <div className="h-4 w-px bg-slate-200 mx-2"></div>
-                      <div className="relative group">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={14} />
-                          <input 
-                            type="text" 
-                            placeholder="Filter records..." 
-                            className="pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all outline-none min-w-[240px]"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                          />
-                      </div>
-                  </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1050px] text-[11px]">
+                <thead className="bg-slate-50 border-y border-slate-200">
+                  <tr>
+                    {!hiddenCols.includes('type') && <th className="px-3 py-2 text-left font-semibold">Type</th>}
+                    {!hiddenCols.includes('change') && <th className="px-3 py-2 text-left font-semibold">Quantity change</th>}
+                    {!hiddenCols.includes('newQty') && <th className="px-3 py-2 text-left font-semibold">New Quantity</th>}
+                    {!hiddenCols.includes('date') && <th className="px-3 py-2 text-left font-semibold">Date</th>}
+                    {!hiddenCols.includes('ref') && <th className="px-3 py-2 text-left font-semibold">Reference No</th>}
+                    {!hiddenCols.includes('party') && <th className="px-3 py-2 text-left font-semibold">Customer/Supplier information</th>}
+                    {!hiddenCols.includes('location') && <th className="px-3 py-2 text-left font-semibold">Location</th>}
+                    {!hiddenCols.includes('note') && <th className="px-3 py-2 text-left font-semibold">Note</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedRows.map(row => (
+                    <tr key={row.id} className="border-b border-slate-100">
+                      {!hiddenCols.includes('type') && <td className="px-3 py-1.5">{row.type}</td>}
+                      {!hiddenCols.includes('change') && <td className={`px-3 py-1.5 font-bold ${row.change >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{row.change.toFixed(3)}</td>}
+                      {!hiddenCols.includes('newQty') && <td className="px-3 py-1.5">{row.newQty != null ? row.newQty.toFixed(3) : '--'}</td>}
+                      {!hiddenCols.includes('date') && <td className="px-3 py-1.5">{formatDateTime(row.date)}</td>}
+                      {!hiddenCols.includes('ref') && <td className="px-3 py-1.5 font-mono">{row.ref}</td>}
+                      {!hiddenCols.includes('party') && <td className="px-3 py-1.5">{row.party || '--'}</td>}
+                      {!hiddenCols.includes('location') && <td className="px-3 py-1.5">{row.location || '--'}</td>}
+                      {!hiddenCols.includes('note') && <td className="px-3 py-1.5">{row.note || '--'}</td>}
+                    </tr>
+                  ))}
+                  {paginatedRows.length === 0 && (
+                    <tr>
+                      <td className="px-3 py-8 text-center text-slate-400 italic" colSpan={8}>No stock history rows found.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-                  <div className="flex flex-wrap items-center gap-2 justify-center">
-                      {[
-                        { icon: FileText, label: 'Export CSV' },
-                        { icon: FileSpreadsheet, label: 'Export Excel' },
-                        { icon: Printer, label: 'Print History' },
-                        { icon: Columns, label: 'Manage Columns' },
-                        { icon: Download, label: 'Export PDF' }
-                      ].map((action, i) => (
-                          <button key={i} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-500 hover:text-indigo-600 hover:bg-slate-50 hover:border-indigo-200 transition-all shadow-sm active:scale-95 uppercase tracking-widest whitespace-nowrap">
-                              <action.icon size={12} /> {action.label}
-                          </button>
-                      ))}
-                  </div>
-             </div>
-
-             {/* 5. Detailed Ledger Table */}
-             <div className="overflow-x-auto rounded-[1.5rem] border border-slate-200 shadow-sm">
-                 <table className="w-full text-left border-collapse min-w-[1000px]">
-                     <thead>
-                         <tr className="bg-slate-50 border-b border-slate-200">
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                 <div className="flex items-center gap-2">Type <ArrowUpDown size={12}/></div>
-                             </th>
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                 <div className="flex items-center gap-2">Quantity Change <ArrowUpDown size={12}/></div>
-                             </th>
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                 <div className="flex items-center gap-2">New Net Qty <ArrowUpDown size={12}/></div>
-                             </th>
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                 <div className="flex items-center gap-2">Date <ArrowUpDown size={12}/></div>
-                             </th>
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Reference No</th>
-                             <th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Stakeholder Intelligence</th>
-                         </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100">
-                        {historyData.map((row, index) => (
-                            <tr key={index} className="hover:bg-slate-50/80 transition-all group">
-                                <td className="px-6 py-4">
-                                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${
-                                        row.type.includes('Return') 
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100' 
-                                        : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                                    }`}>
-                                        {row.type}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className={`text-sm font-black flex items-center gap-1 ${row.change < 0 ? 'text-rose-600' : row.change > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
-                                        {row.change > 0 ? '+' : ''}{row.change.toFixed(3)}
-                                        {row.change !== 0 && (row.change < 0 ? <Minus size={12} strokeWidth={3} /> : <Plus size={12} strokeWidth={3} />)}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className="text-sm font-black text-slate-900 bg-slate-100 px-3 py-1 rounded-lg w-fit group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
-                                        {row.newQty.toFixed(3)}
-                                    </div>
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className="text-xs font-bold text-slate-500 whitespace-nowrap">{row.date}</div>
-                                </td>
-                                <td className="px-6 py-4 font-mono text-xs font-black text-indigo-600">
-                                    {row.ref}
-                                </td>
-                                <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 group-hover:bg-indigo-100 group-hover:text-indigo-600 transition-colors">
-                                            <User size={14} />
-                                        </div>
-                                        <div className="text-sm font-bold text-slate-700 leading-tight">
-                                            {row.party}
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                     </tbody>
-                 </table>
-             </div>
-             
-             {/* 6. Footer / Pagination */}
-             <div className="flex flex-col sm:flex-row justify-between items-center py-4 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
-                 <div>Showing 1 to 25 of 169 velocity events</div>
-                 <div className="flex gap-2 mt-4 sm:mt-0">
-                     <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 disabled:opacity-50 transition-all font-bold" disabled>Prev</button>
-                     {[1, 2, 3, 4, 5].map(p => (
-                         <button key={p} className={`w-8 h-8 rounded-xl font-bold transition-all ${p === 1 ? 'bg-indigo-600 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-500 hover:bg-slate-50'}`}>
-                             {p}
-                         </button>
-                     ))}
-                     <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-all font-bold">Next</button>
-                 </div>
-             </div>
-         </div>
+            <div className="p-2 border-t border-slate-200 flex items-center justify-between text-[11px] print:hidden">
+              <div>Showing {showingStart} to {showingEnd} of {totalRows} entries</div>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safeCurrentPage <= 1}
+                  className="px-2 py-1 border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <span className="px-2 py-1 bg-blue-600 text-white rounded">{safeCurrentPage}</span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={safeCurrentPage >= totalPages}
+                  className="px-2 py-1 border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

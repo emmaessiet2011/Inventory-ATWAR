@@ -1,24 +1,29 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Plus, Search, Edit, Trash2, 
-  User, Mail, Phone, MapPin, 
-  Building2, FileText, CreditCard,
-  MoreVertical, Filter, FileSpreadsheet,
-  Printer, Import, Download, Eye,
-  Briefcase, Wallet, Calendar,
+  User, Mail, Phone,
+  Building2, FileText,
+  MoreVertical, FileSpreadsheet,
+  Printer, Import,
+  Briefcase, Wallet,
   Users as UsersIcon, X, CheckCircle2
 } from 'lucide-react';
 import { useNotifications } from '../src/context/NotificationContext';
 import { useGlobalContext, Contact } from '../src/context/GlobalContext';
 
-const Contacts: React.FC = () => {
+interface ContactsProps {
+  onNavigate?: (page: string) => void;
+}
+
+const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
-  const { contacts, addContact, updateContact, deleteContact } = useGlobalContext();
+  const { contacts, addContact, updateContact, deleteContact, sales, purchases, payments, customers, suppliers, formatCurrency } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'All' | 'Supplier' | 'Customer'>('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeActionId, setActiveActionId] = useState<number | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<{ id: number; name: string } | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -95,11 +100,16 @@ const Contacts: React.FC = () => {
   };
 
   const handleDeleteContact = (id: number) => {
-    if (confirm('Are you sure you want to delete this contact?')) {
-      deleteContact(id);
-      addNotification({ title: 'Contact Deleted', message: 'Contact removed successfully.', type: 'info' });
-    }
+    const contact = contacts.find(c => c.id === id);
+    setContactToDelete({ id, name: contact?.businessName || contact?.name || 'this contact' });
     setActiveActionId(null);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!contactToDelete) return;
+    deleteContact(contactToDelete.id);
+    addNotification({ title: 'Contact Deleted', message: `"${contactToDelete.name}" was removed successfully.`, type: 'info' });
+    setContactToDelete(null);
   };
 
   const handleEditContact = (contact: Contact) => {
@@ -128,6 +138,18 @@ const Contacts: React.FC = () => {
       setActiveActionId(null);
   };
 
+  const handleImportContacts = () => {
+    if (onNavigate) {
+      onNavigate('import-contacts');
+      return;
+    }
+    addNotification({
+      title: 'Import Contacts',
+      message: 'Contacts import screen is available at Contacts > Import Contacts.',
+      type: 'info',
+    });
+  };
+
   const resetForm = () => {
     setFormData({
       id: null,
@@ -145,6 +167,164 @@ const Contacts: React.FC = () => {
       shippingAddress: ''
     });
   };
+
+  const totalDue = useMemo(
+    () =>
+      contacts.reduce(
+        (sum, contact) => (contact.balance < 0 ? sum + Math.abs(Number(contact.balance || 0)) : sum),
+        0
+      ),
+    [contacts]
+  );
+
+  const normalizeText = (value: unknown): string => String(value || '').trim().toLowerCase();
+
+  const handlePayContact = (contact: Contact) => {
+    const contactKey = normalizeText(contact.contactId);
+    const businessKey = normalizeText(contact.businessName || contact.name);
+    const personKey = normalizeText(contact.name);
+    const mobileKey = normalizeText(contact.mobile);
+
+    if (contact.type === 'Supplier') {
+      const supplierMatch = suppliers.find(supplier =>
+        normalizeText(supplier.id) === contactKey ||
+        normalizeText(supplier.businessName) === businessKey ||
+        normalizeText(supplier.name) === personKey ||
+        normalizeText(supplier.mobile) === mobileKey
+      );
+      if (supplierMatch && onNavigate) {
+        onNavigate(`view-supplier/${supplierMatch.id}:add-payment`);
+      } else {
+        addNotification({
+          title: 'Supplier Not Linked',
+          message: 'This contact is not linked to a supplier profile yet.',
+          type: 'warning',
+        });
+      }
+      setActiveActionId(null);
+      return;
+    }
+
+    const customerMatch = customers.find(customer =>
+      normalizeText(customer.id) === contactKey ||
+      normalizeText(customer.businessName) === businessKey ||
+      normalizeText(customer.name) === personKey ||
+      normalizeText(customer.mobile) === mobileKey
+    );
+    if (customerMatch && onNavigate) {
+      onNavigate(`view-customer/${customerMatch.id}:add-payment`);
+    } else {
+      addNotification({
+        title: 'Customer Not Linked',
+        message: 'This contact is not linked to a customer profile yet.',
+        type: 'warning',
+      });
+    }
+    setActiveActionId(null);
+  };
+
+  const toEpochMs = (value: string): number => {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  };
+
+  const formatStatementDate = (value: string): string => {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value || '--';
+    return parsed.toLocaleDateString('en-GB');
+  };
+
+  const statementRows = useMemo(() => {
+    if (!selectedContactForStatement) return [] as Array<{
+      date: string;
+      description: string;
+      debit: number;
+      credit: number;
+      balance: number;
+    }>;
+
+    const isCustomer = selectedContactForStatement.type === 'Customer';
+    const contactName = normalizeText(selectedContactForStatement.businessName || selectedContactForStatement.name);
+    const contactRef = normalizeText(selectedContactForStatement.contactId);
+    const rows: Array<{ date: string; description: string; debit: number; credit: number; sortMs: number }> = [];
+
+    if (isCustomer) {
+      sales.forEach(sale => {
+        const saleCustomerName = normalizeText(sale.customerName);
+        const saleCustomerId = normalizeText(sale.customerId);
+        if (saleCustomerName !== contactName && saleCustomerId !== contactRef) return;
+        const amount = Number(sale.grandTotal || sale.totalAmount || 0);
+        if (amount <= 0) return;
+        rows.push({
+          date: String(sale.date || ''),
+          description: `Invoice #${sale.invoiceNo || sale.id}`,
+          debit: amount,
+          credit: 0,
+          sortMs: toEpochMs(String(sale.date || '')),
+        });
+      });
+    } else {
+      purchases.forEach(purchase => {
+        const supplierName = normalizeText(purchase.supplier);
+        const supplierId = normalizeText(purchase.supplierId);
+        if (supplierName !== contactName && supplierId !== contactRef) return;
+        const amount = Number(purchase.grandTotal || 0);
+        if (amount <= 0) return;
+        rows.push({
+          date: String(purchase.date || ''),
+          description: `Purchase #${purchase.refNo || purchase.id}`,
+          debit: amount,
+          credit: 0,
+          sortMs: toEpochMs(String(purchase.date || '')),
+        });
+      });
+    }
+
+    payments.forEach(payment => {
+      const paymentName = normalizeText(payment.contactName);
+      const paymentId = normalizeText(payment.contactId);
+      const contactTypeMatches = payment.contactType === (isCustomer ? 'Customer' : 'Supplier');
+      if (!contactTypeMatches) return;
+      if (paymentName !== contactName && paymentId !== contactRef) return;
+      const amount = Number(payment.amount || 0);
+      if (amount <= 0) return;
+      const label = payment.type === 'received' ? 'Payment Received' : 'Payment Sent';
+      rows.push({
+        date: String(payment.date || ''),
+        description: `${label}${payment.method ? ` (${payment.method})` : ''}`,
+        debit: 0,
+        credit: amount,
+        sortMs: toEpochMs(String(payment.date || '')),
+      });
+    });
+
+    rows.sort((a, b) => a.sortMs - b.sortMs);
+
+    if (rows.length === 0) {
+      const balance = Number(selectedContactForStatement.balance || 0);
+      return [
+        {
+          date: '',
+          description: 'Current Balance Snapshot',
+          debit: balance < 0 ? Math.abs(balance) : 0,
+          credit: balance > 0 ? balance : 0,
+          balance: balance < 0 ? Math.abs(balance) : -Math.abs(balance),
+        },
+      ];
+    }
+
+    let running = 0;
+    return rows.map(row => {
+      running += row.debit - row.credit;
+      return {
+        date: row.date,
+        description: row.description,
+        debit: row.debit,
+        credit: row.credit,
+        balance: running,
+      };
+    });
+  }, [payments, purchases, sales, selectedContactForStatement]);
 
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
@@ -170,7 +350,10 @@ const Contacts: React.FC = () => {
           <p className="text-slate-500 mt-1">Manage suppliers and customers directory.</p>
         </div>
         <div className="flex gap-3">
-          <button className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition shadow-sm flex items-center gap-2">
+          <button
+            onClick={handleImportContacts}
+            className="bg-white border border-slate-200 text-slate-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition shadow-sm flex items-center gap-2"
+          >
             <Import size={18} /> Import
           </button>
           <button 
@@ -188,7 +371,7 @@ const Contacts: React.FC = () => {
           { label: 'Total Contacts', value: contacts.length, icon: UsersIcon, color: 'text-blue-600', bg: 'bg-blue-50' },
           { label: 'Suppliers', value: contacts.filter(c => c.type === 'Supplier').length, icon: Building2, color: 'text-amber-600', bg: 'bg-amber-50' },
           { label: 'Customers', value: contacts.filter(c => c.type === 'Customer').length, icon: User, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: 'Total Due', value: '1,250.00', icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
+          { label: 'Total Due', value: formatCurrency(totalDue), icon: Wallet, color: 'text-rose-600', bg: 'bg-rose-50' },
         ].map((stat, i) => (
           <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
             <div className={`p-3 rounded-xl ${stat.bg} ${stat.color}`}>
@@ -204,6 +387,7 @@ const Contacts: React.FC = () => {
 
       {/* Main Content Card */}
       <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         {/* Toolbar */}
         <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col xl:flex-row justify-between gap-4 items-center">
           <div className="flex gap-2 w-full md:w-auto overflow-x-auto pb-2 md:pb-0">
@@ -288,7 +472,10 @@ const Contacts: React.FC = () => {
                           >
                             <FileText size={14} className="text-blue-500" /> Account Statement
                           </button>
-                          <button className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3">
+                          <button
+                            onClick={() => handlePayContact(contact)}
+                            className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3"
+                          >
                             <Wallet size={14} className="text-emerald-500" /> Pay
                           </button>
                           <button 
@@ -323,7 +510,7 @@ const Contacts: React.FC = () => {
                       </div>
                     </td>
                     <td className={`px-6 py-4 text-right font-bold ${contact.balance < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                      {contact.balance.toFixed(2)}
+                      {Number(contact.balance || 0).toFixed(3)}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
@@ -483,15 +670,39 @@ const Contacts: React.FC = () => {
                     <div className="group">
                       <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-wider ml-1">Pay Term</label>
                       <div className="flex gap-2">
+                        {(() => {
+                          const match = String(formData.payTerm || '').match(/^\s*(\d+)\s*(Days|Months)\s*$/i);
+                          const termValue = match ? match[1] : '';
+                          const termUnit = match ? (match[2].toLowerCase() === 'months' ? 'Months' : 'Days') : 'Days';
+                          return (
+                            <>
                         <input 
                           type="number" 
+                          min={0}
+                          step={1}
                           className="w-24 px-4 py-3.5 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800"
                           placeholder="0"
+                          value={termValue}
+                          onChange={(e) => {
+                            const rawValue = e.target.value;
+                            const nextValue = rawValue === '' ? '' : String(Math.max(0, Math.floor(Number(rawValue) || 0)));
+                            setFormData({ ...formData, payTerm: nextValue ? `${nextValue} ${termUnit}` : '' });
+                          }}
                         />
-                        <select className="flex-1 px-4 py-3.5 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 appearance-none cursor-pointer">
+                        <select
+                          className="flex-1 px-4 py-3.5 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 appearance-none cursor-pointer"
+                          value={termUnit}
+                          onChange={(e) => {
+                            const unit = e.target.value === 'Months' ? 'Months' : 'Days';
+                            setFormData({ ...formData, payTerm: termValue ? `${termValue} ${unit}` : '' });
+                          }}
+                        >
                           <option value="Days">Days</option>
                           <option value="Months">Months</option>
                         </select>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -601,7 +812,7 @@ const Contacts: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Transactions Table (Mock Data) */}
+                    {/* Transactions Table */}
                     <table className="w-full text-sm text-left">
                         <thead className="text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
                             <tr>
@@ -613,33 +824,51 @@ const Contacts: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            <tr>
-                                <td className="py-4 font-medium text-slate-700">01 Feb 2026</td>
-                                <td className="py-4 text-slate-600">Opening Balance</td>
-                                <td className="py-4 text-right text-slate-600">-</td>
-                                <td className="py-4 text-right text-slate-600">-</td>
-                                <td className="py-4 text-right font-bold text-slate-900">0.000</td>
-                            </tr>
-                            <tr>
-                                <td className="py-4 font-medium text-slate-700">05 Feb 2026</td>
-                                <td className="py-4 text-slate-600">Invoice #INV-001</td>
-                                <td className="py-4 text-right text-rose-600">150.000</td>
-                                <td className="py-4 text-right text-slate-600">-</td>
-                                <td className="py-4 text-right font-bold text-slate-900">150.000</td>
-                            </tr>
-                            <tr>
-                                <td className="py-4 font-medium text-slate-700">10 Feb 2026</td>
-                                <td className="py-4 text-slate-600">Payment Received (Cash)</td>
-                                <td className="py-4 text-right text-slate-600">-</td>
-                                <td className="py-4 text-right text-emerald-600">100.000</td>
-                                <td className="py-4 text-right font-bold text-slate-900">50.000</td>
-                            </tr>
+                            {statementRows.map((row, idx) => (
+                              <tr key={`${row.description}-${idx}`}>
+                                  <td className="py-4 font-medium text-slate-700">{row.date ? formatStatementDate(row.date) : '--'}</td>
+                                  <td className="py-4 text-slate-600">{row.description}</td>
+                                  <td className="py-4 text-right text-rose-600">{row.debit > 0 ? row.debit.toFixed(3) : '-'}</td>
+                                  <td className="py-4 text-right text-emerald-600">{row.credit > 0 ? row.credit.toFixed(3) : '-'}</td>
+                                  <td className="py-4 text-right font-bold text-slate-900">
+                                    {Math.abs(row.balance).toFixed(3)}{row.balance < 0 ? ' (Adv.)' : ''}
+                                  </td>
+                              </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {contactToDelete && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Contact</h3>
+            <p className="text-sm text-slate-600 mb-1">
+              Are you sure you want to delete <span className="font-bold text-slate-900">"{contactToDelete.name}"</span>?
+            </p>
+            <p className="text-xs text-rose-600 mb-5">This action cannot be undone. Any linked sales or purchase records will lose the contact reference.</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setContactToDelete(null)}
+                className="px-4 py-2 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition"
+              >
+                Delete Contact
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

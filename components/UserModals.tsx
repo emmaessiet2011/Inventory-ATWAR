@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Lock, ShieldAlert, AlertTriangle, CheckCircle2, Ban, Trash2, Eye, EyeOff } from 'lucide-react';
+import { X, Lock, ShieldAlert, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 interface ModalProps {
     isOpen: boolean;
@@ -74,6 +74,15 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ isOpen
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (!isOpen) {
+            setPassword('');
+            setConfirmPassword('');
+            setShowPassword(false);
+            setError('');
+        }
+    }, [isOpen]);
 
     if (!isOpen) return null;
 

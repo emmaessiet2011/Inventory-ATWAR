@@ -1,0 +1,1192 @@
+{
+  "generatedAt": "2026-03-14T14:51:40.858Z",
+  "counts": {
+    "total": 109,
+    "open": 0,
+    "closed": 109
+  },
+  "moduleSummary": [
+    {
+      "module": "Contacts",
+      "open": 0,
+      "closed": 4,
+      "total": 4
+    },
+    {
+      "module": "Dashboard",
+      "open": 0,
+      "closed": 1,
+      "total": 1
+    },
+    {
+      "module": "General",
+      "open": 0,
+      "closed": 33,
+      "total": 33
+    },
+    {
+      "module": "Operations",
+      "open": 0,
+      "closed": 1,
+      "total": 1
+    },
+    {
+      "module": "Payments",
+      "open": 0,
+      "closed": 5,
+      "total": 5
+    },
+    {
+      "module": "Purchases",
+      "open": 0,
+      "closed": 5,
+      "total": 5
+    },
+    {
+      "module": "Release",
+      "open": 0,
+      "closed": 12,
+      "total": 12
+    },
+    {
+      "module": "Reports",
+      "open": 0,
+      "closed": 18,
+      "total": 18
+    },
+    {
+      "module": "Security",
+      "open": 0,
+      "closed": 5,
+      "total": 5
+    },
+    {
+      "module": "Sell",
+      "open": 0,
+      "closed": 10,
+      "total": 10
+    },
+    {
+      "module": "Settings",
+      "open": 0,
+      "closed": 6,
+      "total": 6
+    },
+    {
+      "module": "Stock",
+      "open": 0,
+      "closed": 5,
+      "total": 5
+    },
+    {
+      "module": "Support",
+      "open": 0,
+      "closed": 1,
+      "total": 1
+    },
+    {
+      "module": "Users",
+      "open": 0,
+      "closed": 3,
+      "total": 3
+    }
+  ],
+  "queue": [
+    {
+      "id": "GAP-001",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Activity Log",
+      "route": "activity-log",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-002",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Add Draft",
+      "route": "add-draft",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-003",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Add Expense",
+      "route": "add-expense",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-004",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Add Order",
+      "route": "add-order",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-005",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Add Product",
+      "route": "add-product",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-006",
+      "type": "Route Certification",
+      "module": "Purchases",
+      "page": "Add Purchase",
+      "route": "add-purchase",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-007",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Add Quotation",
+      "route": "add-quotation",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-008",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Add Sale",
+      "route": "add-sale",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-009",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Add Sell Return",
+      "route": "add-sell-return",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-010",
+      "type": "Route Certification",
+      "module": "Stock",
+      "page": "Add Stock Adjustment",
+      "route": "add-stock-adjustment",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-011",
+      "type": "Route Certification",
+      "module": "Stock",
+      "page": "Add Stock Transfer",
+      "route": "add-stock-transfer",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-012",
+      "type": "Route Certification",
+      "module": "Users",
+      "page": "Add User",
+      "route": "add-user",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-013",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Balance Sheet",
+      "route": "balance-sheet",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-014",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Barcode Settings",
+      "route": "barcode-settings",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-015",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Brands",
+      "route": "brands",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-016",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Cash Flow",
+      "route": "cash-flow",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-017",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Categories",
+      "route": "categories",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-018",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Convert Order To Invoice",
+      "route": "convert-order-to-invoice",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-019",
+      "type": "Route Certification",
+      "module": "Contacts",
+      "page": "Customer Groups",
+      "route": "customer-groups",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-020",
+      "type": "Route Certification",
+      "module": "Contacts",
+      "page": "Customers",
+      "route": "customers",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-021",
+      "type": "Route Certification",
+      "module": "Dashboard",
+      "page": "Dashboard",
+      "route": "dashboard",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-022",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Discounts",
+      "route": "discounts",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-023",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Drafts",
+      "route": "drafts",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-024",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Edit Expense",
+      "route": "edit-expense",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-025",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Edit Order",
+      "route": "edit-order",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-026",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Edit Sale",
+      "route": "edit-sale",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-027",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Expense Categories",
+      "route": "expense-categories",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-028",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Expenses",
+      "route": "expenses",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-029",
+      "type": "Route Certification",
+      "module": "Payments",
+      "page": "Field Payments",
+      "route": "field-payments",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-030",
+      "type": "Route Certification",
+      "module": "Support",
+      "page": "Help Center",
+      "route": "help-center",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-031",
+      "type": "Route Certification",
+      "module": "Contacts",
+      "page": "Import Contacts",
+      "route": "import-contacts",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-032",
+      "type": "Route Certification",
+      "module": "Stock",
+      "page": "Import Opening Stock",
+      "route": "import-opening-stock",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-033",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Import Products",
+      "route": "import-products",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-034",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Import Sales",
+      "route": "import-sales",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-035",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Invoice Settings",
+      "route": "invoice-settings",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-036",
+      "type": "Route Certification",
+      "module": "Payments",
+      "page": "List Accounts",
+      "route": "list-accounts",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-037",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "List Orders",
+      "route": "list-orders",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-038",
+      "type": "Route Certification",
+      "module": "Payments",
+      "page": "List Payments",
+      "route": "list-payments",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-039",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "List POS",
+      "route": "list-pos",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-040",
+      "type": "Route Certification",
+      "module": "Stock",
+      "page": "List Stock Adjustments",
+      "route": "list-stock-adjustments",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-041",
+      "type": "Route Certification",
+      "module": "Stock",
+      "page": "List Stock Transfers",
+      "route": "list-stock-transfers",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-042",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Locations",
+      "route": "locations",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-043",
+      "type": "Route Certification",
+      "module": "Payments",
+      "page": "New Payment",
+      "route": "new-payment",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-044",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Open Register",
+      "route": "open-register",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-045",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Orders",
+      "route": "orders",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-046",
+      "type": "Route Certification",
+      "module": "Payments",
+      "page": "Payment Account Report",
+      "route": "payment-account-report",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-047",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "POS",
+      "route": "pos",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-048",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Print Labels",
+      "route": "print-labels",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-049",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Printers",
+      "route": "printers",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-050",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Products",
+      "route": "products",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-051",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Public View Invoice",
+      "route": "public-view-invoice",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-052",
+      "type": "Route Certification",
+      "module": "Purchases",
+      "page": "Purchase Order",
+      "route": "purchase-order",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-053",
+      "type": "Route Certification",
+      "module": "Purchases",
+      "page": "Purchase Requisition",
+      "route": "purchase-requisition",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-054",
+      "type": "Route Certification",
+      "module": "Purchases",
+      "page": "Purchase Return",
+      "route": "purchase-return",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-055",
+      "type": "Route Certification",
+      "module": "Purchases",
+      "page": "Purchases",
+      "route": "purchases",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-056",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Quotations",
+      "route": "quotations",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-057",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Customer Groups",
+      "route": "report-customer-groups",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-058",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Expense",
+      "route": "report-expense",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-059",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Items",
+      "route": "report-items",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-060",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Lot",
+      "route": "report-lot",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-061",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Product Purchase",
+      "route": "report-product-purchase",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-062",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Product Sell",
+      "route": "report-product-sell",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-063",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Profit / Loss Report",
+      "route": "report-profit-loss",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-064",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Purchase Payment",
+      "route": "report-purchase-payment",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-065",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Purchase Sale",
+      "route": "report-purchase-sale",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-066",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Register",
+      "route": "report-register",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-067",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Sales Rep",
+      "route": "report-sales-rep",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-068",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Sell Payment",
+      "route": "report-sell-payment",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-069",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Stock",
+      "route": "report-stock",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-070",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Stock Adjustment",
+      "route": "report-stock-adjustment",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-071",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Stock Expiry",
+      "route": "report-stock-expiry",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-072",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Supplier Customer",
+      "route": "report-supplier-customer",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-073",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Tax",
+      "route": "report-tax",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-074",
+      "type": "Route Certification",
+      "module": "Reports",
+      "page": "Report Trending Products",
+      "route": "report-trending-products",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-075",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Returns",
+      "route": "returns",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-076",
+      "type": "Route Certification",
+      "module": "Users",
+      "page": "Roles",
+      "route": "roles",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-077",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Sales",
+      "route": "sales",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-078",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Sales Commission Agents",
+      "route": "sales-commission-agents",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-079",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Selling Price Groups",
+      "route": "selling-price-groups",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-080",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Settings",
+      "route": "settings",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-081",
+      "type": "Route Certification",
+      "module": "Sell",
+      "page": "Shipments",
+      "route": "shipments",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-082",
+      "type": "Route Certification",
+      "module": "Contacts",
+      "page": "Suppliers",
+      "route": "suppliers",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-083",
+      "type": "Route Certification",
+      "module": "Settings",
+      "page": "Tax Rates",
+      "route": "tax-rates",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-084",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Trial Balance",
+      "route": "trial-balance",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-085",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Units",
+      "route": "units",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-086",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Update Price",
+      "route": "update-price",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-087",
+      "type": "Route Certification",
+      "module": "Users",
+      "page": "Users",
+      "route": "users",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-088",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Variations",
+      "route": "variations",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-089",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "VAT Bills",
+      "route": "vat-bills",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-090",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "View Order",
+      "route": "view-order",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-091",
+      "type": "Route Certification",
+      "module": "General",
+      "page": "Warranties",
+      "route": "warranties",
+      "status": "CLOSED",
+      "whatIsMissing": "This page has passed all launch checks.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-092",
+      "type": "Launch Hardening",
+      "module": "Security",
+      "page": "Login",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-093",
+      "type": "Launch Hardening",
+      "module": "Security",
+      "page": "User Seed Data",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-094",
+      "type": "Launch Hardening",
+      "module": "Security",
+      "page": "Session/Auth",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-095",
+      "type": "Launch Hardening",
+      "module": "Security",
+      "page": "Sales/Payments/Users Data",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-096",
+      "type": "Launch Hardening",
+      "module": "Security",
+      "page": "Permissions",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-097",
+      "type": "Launch Hardening",
+      "module": "Operations",
+      "page": "Recovery",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "This hardening task appears completed by current code scan.",
+      "nextAction": "No action needed.",
+      "autoClose": true
+    },
+    {
+      "id": "GAP-098",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-099",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-100",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-101",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-102",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-103",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-104",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-105",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-106",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-107",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-108",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    },
+    {
+      "id": "GAP-109",
+      "type": "Release Process",
+      "module": "Release",
+      "page": "Launch Checklist",
+      "route": "--",
+      "status": "CLOSED",
+      "whatIsMissing": "Release process item is already checked.",
+      "nextAction": "No action needed."
+    }
+  ]
+}

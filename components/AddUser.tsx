@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { 
   UserPlus, Save, X, Info, Shield, 
   DollarSign, Briefcase, MapPin, 
@@ -25,7 +25,7 @@ const SectionHeader = ({ icon: Icon, title, subtitle }: { icon: any, title: stri
   </div>
 );
 
-const InputGroup = ({ label, name, type = "text", placeholder, required = false, icon: Icon, options }: any) => {
+const InputGroup = ({ label, name, type = "text", placeholder, required = false, icon: Icon, options, min, max, step }: any) => {
   const { formData, handleChange } = React.useContext(FormContext);
   return (
     <div className="space-y-1.5">
@@ -39,7 +39,7 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
             name={name}
             value={(formData as any)[name]}
             onChange={handleChange}
-            className={`w-full ${Icon ? 'pl-11' : 'px-4'} pr-10 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-sm font-bold text-slate-800 appearance-none cursor-pointer`}
+            className={`w-full ${Icon ? 'pl-11' : 'px-4'} pr-10 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 appearance-none cursor-pointer`}
           >
             <option value="">Please Select</option>
             {options.map((opt: any) => (
@@ -53,7 +53,7 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
             onChange={handleChange}
             placeholder={placeholder}
             rows={3}
-            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-sm font-medium text-slate-800 resize-none"
+            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-800 resize-none"
           />
         ) : (
           <input 
@@ -63,7 +63,10 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
             onChange={handleChange}
             placeholder={placeholder}
             required={required}
-            className={`w-full ${Icon ? 'pl-11' : 'px-4'} py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all text-sm font-bold text-slate-800`}
+            min={min}
+            max={max}
+            step={step}
+            className={`w-full ${Icon ? 'pl-11' : 'px-4'} py-3 rounded-xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800`}
           />
         )}
         {type === 'select' && <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />}
@@ -71,6 +74,9 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
     </div>
   );
 };
+
+const FALLBACK_ROLE_NAMES = ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
+const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const CheckboxGroup = ({ label, name, checked, info }: any) => {
   const { handleChange } = React.useContext(FormContext);
@@ -82,7 +88,7 @@ const CheckboxGroup = ({ label, name, checked, info }: any) => {
           name={name}
           checked={checked}
           onChange={handleChange}
-          className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-indigo-600 checked:border-indigo-600 transition-all"
+          className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-blue-600 checked:border-indigo-600 transition-all"
         />
         <Check className="absolute left-1 top-1 h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
       </div>
@@ -102,7 +108,12 @@ interface AddUserProps {
 
 const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
   const { addNotification } = useNotifications();
-  const { users, addUser, updateUser, locations } = useGlobalContext();
+  const { users, addUser, updateUser, locations, roles, currentUser } = useGlobalContext();
+  const availableRoleNames = useMemo(() => {
+    const roleNames = roles.map((role: any) => String(role?.name || '').trim()).filter(Boolean);
+    const uniqueRoleNames = Array.from(new Set(roleNames));
+    return uniqueRoleNames.length > 0 ? uniqueRoleNames : FALLBACK_ROLE_NAMES;
+  }, [roles]);
   
   // --- Form State ---
   const [formData, setFormData] = useState({
@@ -133,10 +144,6 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     twitter: '',
     social1: '',
     social2: '',
-    customField1: '',
-    customField2: '',
-    customField3: '',
-    customField4: '',
     guardianName: '',
     idProofName: '',
     idProofNumber: '',
@@ -152,17 +159,45 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
 
   React.useEffect(() => {
     if (isEdit && userId) {
-      const userToEdit = users.find(u => u.id === userId);
-      if (userToEdit) {
+      const u = users.find(u => u.id === userId);
+      if (u) {
         setFormData(prev => ({
           ...prev,
-          firstName: userToEdit.name.split(' ')[0] || '',
-          lastName: userToEdit.name.split(' ').slice(1).join(' ') || '',
-          email: userToEdit.email,
-          username: userToEdit.username,
-          role: userToEdit.role,
-          commissionPercent: userToEdit.commissionPercent?.toString() || '',
-          isActive: userToEdit.status === 'Active'
+          prefix: u.prefix || '',
+          firstName: u.name.split(' ')[0] || '',
+          lastName: u.name.split(' ').slice(1).join(' ') || '',
+          email: u.email,
+          username: u.username,
+          role: u.role,
+          isActive: u.status === 'Active',
+          allowLogin: u.allowLogin !== false,
+          enableServiceStaffPin: u.enableServiceStaffPin || false,
+          commissionPercent: u.commissionPercent?.toString() || '',
+          maxDiscountPercent: u.maxDiscountPercent?.toString() || '',
+          allowSelectedContacts: u.allowSelectedContacts || false,
+          accessLocations: u.accessLocations || ['All Locations'],
+          mobile: u.mobile || '',
+          altContact: u.altContact || '',
+          familyContact: u.familyContact || '',
+          dob: u.dob || '',
+          gender: u.gender || '',
+          maritalStatus: u.maritalStatus || '',
+          bloodGroup: u.bloodGroup || '',
+          facebook: u.facebook || '',
+          twitter: u.twitter || '',
+          social1: u.social1 || '',
+          social2: u.social2 || '',
+          guardianName: u.guardianName || '',
+          idProofName: u.idProofName || '',
+          idProofNumber: u.idProofNumber || '',
+          permanentAddress: u.permanentAddress || '',
+          currentAddress: u.currentAddress || '',
+          accountHolder: u.accountHolder || '',
+          accountNumber: u.accountNumber || '',
+          bankName: u.bankName || '',
+          bankIdentifierCode: u.bankIdentifierCode || '',
+          branch: u.branch || '',
+          taxPayerId: u.taxPayerId || '',
         }));
       }
     }
@@ -204,17 +239,190 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const normalizedFirstName = formData.firstName.trim();
+    const normalizedLastName = formData.lastName.trim();
+    const normalizedUsername = formData.username.trim();
+    const normalizedEmail = formData.email.trim();
+    const normalizedRole = String(formData.role || '').trim();
+    const enteredPassword = formData.password.trim();
+    const commissionPercent = Number(formData.commissionPercent || 0);
+    const maxDiscountPercent = formData.maxDiscountPercent === ''
+      ? undefined
+      : Number(formData.maxDiscountPercent);
+    const existingUser = isEdit && userId ? users.find(u => u.id === userId) : undefined;
+
+    if (!normalizedFirstName || !normalizedUsername || !normalizedEmail || !normalizedRole) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'First name, username, email, and role are required.',
+        type: 'error',
+      });
+      return;
+    }
+    const isKnownRole = availableRoleNames.some(
+      roleName => normalizeText(roleName) === normalizeText(normalizedRole),
+    );
+    if (!isKnownRole) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Selected role is not valid. Please choose a role from the configured list.',
+        type: 'error',
+      });
+      return;
+    }
+    if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Sales Commission Percentage must be between 0 and 100.',
+        type: 'error',
+      });
+      return;
+    }
+    if (
+      maxDiscountPercent !== undefined &&
+      (!Number.isFinite(maxDiscountPercent) || maxDiscountPercent < 0 || maxDiscountPercent > 100)
+    ) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Max sales discount percent must be between 0 and 100.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const duplicateUsername = users.some(
+      u => u.username.toLowerCase() === normalizedUsername.toLowerCase() && (!isEdit || u.id !== userId)
+    );
+    if (duplicateUsername) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Username already exists. Please choose another username.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const duplicateEmail = users.some(
+      u => u.email.toLowerCase() === normalizedEmail.toLowerCase() && (!isEdit || u.id !== userId)
+    );
+    if (duplicateEmail) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Email already exists. Please use another email address.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (!isEdit && !enteredPassword) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Password is required when creating a new user.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (enteredPassword || !isEdit) {
+      if (enteredPassword.length < 6) {
+        addNotification({
+          title: 'Validation Error',
+          message: 'Password must be at least 6 characters.',
+          type: 'error',
+        });
+        return;
+      }
+      if (enteredPassword !== formData.confirmPassword) {
+        addNotification({
+          title: 'Validation Error',
+          message: 'Password and confirm password do not match.',
+          type: 'error',
+        });
+        return;
+      }
+    }
     
+    const hasNewPassword = enteredPassword.length > 0;
+
     const newUser: AppUser = {
       id: isEdit && userId ? userId : `USR-${Date.now()}`,
-      username: formData.username,
-      name: `${formData.firstName} ${formData.lastName}`.trim(),
-      role: formData.role,
-      email: formData.email,
+      username: normalizedUsername,
+      name: `${normalizedFirstName} ${normalizedLastName}`.trim(),
+      role: normalizedRole,
+      email: normalizedEmail,
+      password: hasNewPassword ? enteredPassword : undefined,
+      passwordHash: hasNewPassword ? undefined : existingUser?.passwordHash,
+      passwordSalt: hasNewPassword ? undefined : existingUser?.passwordSalt,
+      passwordUpdatedAt: hasNewPassword
+        ? new Date().toISOString()
+        : existingUser?.passwordUpdatedAt,
       status: formData.isActive ? 'Active' : 'Inactive',
-      lastLogin: isEdit && userId ? users.find(u => u.id === userId)?.lastLogin || 'Never' : 'Never',
-      commissionPercent: formData.commissionPercent ? parseFloat(formData.commissionPercent) : 0
+      lastLogin: isEdit && userId ? existingUser?.lastLogin || 'Never' : 'Never',
+      commissionPercent: Number(commissionPercent.toFixed(2)),
+      maxDiscountPercent: maxDiscountPercent === undefined ? undefined : Number(maxDiscountPercent.toFixed(2)),
+      allowSelectedContacts: formData.allowSelectedContacts,
+      accessLocations: Array.isArray(formData.accessLocations) ? formData.accessLocations : [],
+      allowLogin: formData.allowLogin,
+      enableServiceStaffPin: formData.enableServiceStaffPin,
+      prefix: formData.prefix || undefined,
+      mobile: formData.mobile || undefined,
+      altContact: formData.altContact || undefined,
+      familyContact: formData.familyContact || undefined,
+      dob: formData.dob || undefined,
+      gender: formData.gender || undefined,
+      maritalStatus: formData.maritalStatus || undefined,
+      bloodGroup: formData.bloodGroup || undefined,
+      facebook: formData.facebook || undefined,
+      twitter: formData.twitter || undefined,
+      social1: formData.social1 || undefined,
+      social2: formData.social2 || undefined,
+      guardianName: formData.guardianName || undefined,
+      idProofName: formData.idProofName || undefined,
+      idProofNumber: formData.idProofNumber || undefined,
+      permanentAddress: formData.permanentAddress || undefined,
+      currentAddress: formData.currentAddress || undefined,
+      accountHolder: formData.accountHolder || undefined,
+      accountNumber: formData.accountNumber || undefined,
+      bankName: formData.bankName || undefined,
+      bankIdentifierCode: formData.bankIdentifierCode || undefined,
+      branch: formData.branch || undefined,
+      taxPayerId: formData.taxPayerId || undefined,
     };
+
+    const projectedUsers = (isEdit && userId)
+      ? users.map(u => u.id === userId ? newUser : u)
+      : [...users, newUser];
+    const activeAdminLoginUsers = projectedUsers.filter(
+      u => u.role === 'Admin' && u.status === 'Active' && u.allowLogin !== false
+    );
+    if (activeAdminLoginUsers.length === 0) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'At least one active Admin with login access must remain in the system.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (isEdit && userId && currentUser?.id === userId) {
+      if (newUser.status !== 'Active') {
+        addNotification({
+          title: 'Validation Error',
+          message: 'You cannot deactivate your own account while logged in.',
+          type: 'error',
+        });
+        return;
+      }
+      if (newUser.allowLogin === false) {
+        addNotification({
+          title: 'Validation Error',
+          message: 'You cannot disable your own login while logged in.',
+          type: 'error',
+        });
+        return;
+      }
+    }
 
     if (isEdit) {
       updateUser(newUser);
@@ -236,11 +444,15 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
         {/* Header */}
         <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-            {isEdit ? <Edit className="text-indigo-600" size={32} /> : <UserPlus className="text-indigo-600" size={32} />}
-            {isEdit ? 'Edit User' : 'Add User'}
-          </h2>
-          <p className="text-slate-500 mt-1">Configure system access and personal details for system staff.</p>
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
+              {isEdit ? <Edit size={24} className="text-white" /> : <UserPlus size={24} className="text-white" />}
+            </div>
+            <div>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">{isEdit ? 'Edit User' : 'Add User'}</h2>
+              <p className="text-slate-500 text-sm mt-0.5">Configure system access and personal details</p>
+            </div>
+          </div>
         </div>
         <button 
           onClick={() => onNavigate?.('users')}
@@ -277,16 +489,16 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
             <CheckboxGroup label="Allow login" name="allowLogin" checked={formData.allowLogin} />
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              <InputGroup label="Username" name="username" placeholder="Emmanuel" icon={User} />
-              <InputGroup label="Password" name="password" type="password" placeholder="********" required icon={Lock} />
-              <InputGroup label="Confirm Password" name="confirmPassword" type="password" placeholder="********" required icon={Lock} />
+              <InputGroup label="Username" name="username" placeholder="Emmanuel" required icon={User} />
+              <InputGroup label="Password" name="password" type="password" placeholder="********" required={!isEdit} icon={Lock} />
+              <InputGroup label="Confirm Password" name="confirmPassword" type="password" placeholder="********" required={!isEdit} icon={Lock} />
               
-              <InputGroup 
-                label="Role" 
-                name="role" 
-                type="select" 
+              <InputGroup
+                label="Role"
+                name="role"
+                type="select"
                 icon={Briefcase}
-                options={['Admin', 'Cashier', 'Manager', 'Sales Agent']} 
+                options={availableRoleNames.map((roleName) => ({ value: roleName, label: roleName }))}
               />
               
               <div className="lg:col-span-2 space-y-4">
@@ -298,7 +510,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
                         type="checkbox" 
                         checked={formData.accessLocations?.includes('All Locations')}
                         onChange={(e) => handleLocationChange('All Locations', e.target.checked)}
-                        className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-indigo-600 checked:border-indigo-600 transition-all"
+                        className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-blue-600 checked:border-indigo-600 transition-all"
                       />
                       <Check className="absolute left-1 top-1 h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
                     </div>
@@ -315,7 +527,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
                           type="checkbox" 
                           checked={formData.accessLocations?.includes('All Locations') || formData.accessLocations?.includes(loc.id)}
                           onChange={(e) => handleLocationChange(loc.id, e.target.checked)}
-                          className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-indigo-600 checked:border-indigo-600 transition-all"
+                          className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-blue-600 checked:border-indigo-600 transition-all"
                         />
                         <Check className="absolute left-1 top-1 h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
                       </div>
@@ -336,8 +548,26 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
           <SectionHeader icon={DollarSign} title="Sales" />
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <InputGroup label="Sales Commission Percentage (%)" name="commissionPercent" type="number" placeholder="Sales Commission Percentage (%)" icon={Percent} />
-            <InputGroup label="Max sales discount percent" name="maxDiscountPercent" type="number" placeholder="Max sales discount percent" icon={Percent} />
+            <InputGroup
+              label="Sales Commission Percentage (%)"
+              name="commissionPercent"
+              type="number"
+              placeholder="Sales Commission Percentage (%)"
+              icon={Percent}
+              min={0}
+              max={100}
+              step="0.01"
+            />
+            <InputGroup
+              label="Max sales discount percent"
+              name="maxDiscountPercent"
+              type="number"
+              placeholder="Max sales discount percent"
+              icon={Percent}
+              min={0}
+              max={100}
+              step="0.01"
+            />
             <div className="lg:col-span-2">
               <CheckboxGroup label="Allow Selected Contacts" name="allowSelectedContacts" checked={formData.allowSelectedContacts} info />
             </div>
@@ -363,11 +593,6 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
             <InputGroup label="Twitter Link" name="twitter" type="url" placeholder="Twitter Link" icon={Twitter} />
             <InputGroup label="Social Media 1" name="social1" type="url" placeholder="Social Media 1" icon={Share2} />
             <InputGroup label="Social Media 2" name="social2" type="url" placeholder="Social Media 2" icon={Share2} />
-            <InputGroup label="Custom Field 1" name="customField1" placeholder="Custom Field 1" icon={FileText} />
-            
-            <InputGroup label="Custom Field 2" name="customField2" placeholder="Custom Field 2" icon={FileText} />
-            <InputGroup label="Custom Field 3" name="customField3" placeholder="Custom Field 3" icon={FileText} />
-            <InputGroup label="Custom Field 4" name="customField4" placeholder="Custom Field 4" icon={FileText} />
             <InputGroup label="Guardian Name" name="guardianName" placeholder="Guardian Name" icon={User} />
             
             <InputGroup label="ID proof name" name="idProofName" placeholder="ID proof name" icon={FileText} />
@@ -402,7 +627,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
         <div className="flex justify-center pt-8">
           <button 
             type="submit"
-            className="px-16 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-900/30 active:scale-95 flex items-center gap-3"
+            className="px-16 py-4 bg-blue-600 text-white rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-blue-700 transition-all shadow-2xl shadow-indigo-900/30 active:scale-95 flex items-center gap-3"
           >
             <Save size={20} /> {isEdit ? 'Update User' : 'Save'}
           </button>

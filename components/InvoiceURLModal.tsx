@@ -13,11 +13,16 @@ const InvoiceURLModal: React.FC<InvoiceURLModalProps> = ({ isOpen, onClose, invo
   
   // Generate a real link pointing to the current app with query parameters
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  const url = `${origin}?page=public-view-invoice&id=${saleId || '12345'}`;
+  const normalizedSaleId = String(saleId || '').trim();
+  const hasValidSaleId = normalizedSaleId.length > 0;
+  const url = hasValidSaleId
+    ? `${origin}?page=public-view-invoice&id=${encodeURIComponent(normalizedSaleId)}`
+    : '';
 
   if (!isOpen) return null;
 
   const handleCopy = () => {
+    if (!url) return;
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -44,13 +49,19 @@ const InvoiceURLModal: React.FC<InvoiceURLModalProps> = ({ isOpen, onClose, invo
                 {invoiceNo && <span className="font-bold text-slate-800"> {invoiceNo}</span>}.
             </p>
 
-            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <div className={`flex items-center gap-2 p-2 rounded-xl border ${hasValidSaleId ? 'bg-slate-50 border-slate-200' : 'bg-rose-50 border-rose-200'}`}>
                 <div className="flex-1 px-2 overflow-hidden">
-                    <p className="text-xs text-slate-500 truncate font-mono select-all">{url}</p>
+                    <p className={`text-xs truncate font-mono ${hasValidSaleId ? 'text-slate-500 select-all' : 'text-rose-600'}`}>
+                      {hasValidSaleId ? url : 'Invoice link unavailable: sale record is missing.'}
+                    </p>
                 </div>
                 <button 
                     onClick={handleCopy}
+                    disabled={!hasValidSaleId}
                     className={`p-2 rounded-lg transition-all flex items-center gap-2 text-xs font-bold ${
+                        !hasValidSaleId
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        :
                         copied 
                         ? 'bg-emerald-100 text-emerald-700' 
                         : 'bg-white border border-slate-200 text-slate-700 hover:border-slate-300 shadow-sm'
@@ -69,10 +80,18 @@ const InvoiceURLModal: React.FC<InvoiceURLModalProps> = ({ isOpen, onClose, invo
                     Close
                 </button>
                 <a 
-                    href={url} 
+                    href={hasValidSaleId ? url : '#'} 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-900/20"
+                    aria-disabled={!hasValidSaleId}
+                    onClick={(event) => {
+                      if (!hasValidSaleId) event.preventDefault();
+                    }}
+                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-lg ${
+                      hasValidSaleId
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-900/20'
+                        : 'bg-slate-200 text-slate-500 cursor-not-allowed shadow-slate-200/20'
+                    }`}
                 >
                     Open Link <ExternalLink size={14} />
                 </a>

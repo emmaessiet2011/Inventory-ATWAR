@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  Plus, Search, User, Users, Mail, ShieldCheck, 
-  ChevronDown, Edit, Trash2, MoreVertical, 
-  Filter, CheckCircle2, Ban, X, Key,
+  Search, Users, Mail, ShieldCheck, 
+  Edit, Trash2, MoreVertical, 
+  CheckCircle2, Ban, Key,
   UserPlus, ShieldAlert, BadgeCheck, Zap,
   Eye, Percent
 } from 'lucide-react';
@@ -26,12 +26,11 @@ interface UserManagementProps {
 
 const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
-  const { users: globalUsers, updateUser, deleteUser } = useGlobalContext();
-  const [users, setUsers] = useState<AppUser[]>(globalUsers);
+  const { users: globalUsers, updateUser, deleteUser, roles, currentUser } = useGlobalContext();
+  const users = globalUsers;
   const [searchTerm, setSearchTerm] = useState('');
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-left' });
-  const [availableRoles, setAvailableRoles] = useState<string[]>(['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier']);
   
   // Modal States
   const [modalState, setModalState] = useState<{
@@ -43,24 +42,27 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       role: [] as string[],
       status: [] as string[]
   });
-
-  useEffect(() => {
-    setUsers(globalUsers);
-  }, [globalUsers]);
-
-  useEffect(() => {
-    const savedRoles = localStorage.getItem('app_roles');
-    if (savedRoles) {
-      try {
-        const parsed = JSON.parse(savedRoles);
-        setAvailableRoles(parsed.map((r: any) => r.name));
-      } catch (e) {
-        console.error("Failed to load roles", e);
-      }
-    }
-  }, []);
+  const [currentPage, setCurrentPage] = useState(1);
+  const entriesPerPage = 25;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const availableRoles = useMemo(() => {
+    const roleNames = roles.map(r => String(r.name || '').trim()).filter(Boolean);
+    const uniqueRoleNames = Array.from(new Set(roleNames));
+    return uniqueRoleNames.length > 0
+      ? uniqueRoleNames
+      : ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
+  }, [roles]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setActiveActionId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const getRoleColor = (role: string) => {
     switch(role) {
@@ -77,6 +79,29 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   };
 
   const handleToggleStatus = (user: AppUser) => {
+    if (currentUser?.id === user.id) {
+      addNotification({
+        title: 'Action Blocked',
+        message: 'You cannot deactivate your own account while logged in.',
+        type: 'error'
+      });
+      setModalState({ type: null, user: null });
+      return;
+    }
+
+    if (user.role === 'Admin' && user.status === 'Active') {
+      const otherActiveAdmins = users.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== user.id);
+      if (otherActiveAdmins.length === 0) {
+        addNotification({
+          title: 'Action Blocked',
+          message: 'At least one active Admin must remain in the system.',
+          type: 'error'
+        });
+        setModalState({ type: null, user: null });
+        return;
+      }
+    }
+
     const updatedUser = { ...user, status: user.status === 'Active' ? 'Inactive' : 'Active' } as AppUser;
     updateUser(updatedUser);
     addNotification({
@@ -88,6 +113,29 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   };
 
   const handleDelete = (user: AppUser) => {
+    if (currentUser?.id === user.id) {
+      addNotification({
+        title: 'Action Blocked',
+        message: 'You cannot delete your own account while logged in.',
+        type: 'error'
+      });
+      setModalState({ type: null, user: null });
+      return;
+    }
+
+    if (user.role === 'Admin') {
+      const otherActiveAdmins = users.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== user.id);
+      if (otherActiveAdmins.length === 0) {
+        addNotification({
+          title: 'Action Blocked',
+          message: 'At least one active Admin must remain in the system.',
+          type: 'error'
+        });
+        setModalState({ type: null, user: null });
+        return;
+      }
+    }
+
     deleteUser(user.id);
     addNotification({
         title: 'User Deleted',
@@ -98,7 +146,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   };
 
   const handleChangePassword = (user: AppUser, newPassword: string) => {
-    // In a real app, you'd call an API here
+    updateUser({ ...user, password: newPassword });
     addNotification({
         title: 'Password Changed',
         message: `The password for ${user.name} has been successfully updated.`,
@@ -117,27 +165,51 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       setActiveActionId(null);
   };
 
+  const search = searchTerm.trim().toLowerCase();
   const filteredUsers = users.filter(u => 
-    (u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (
+      search === '' ||
+      u.name.toLowerCase().includes(search) ||
+      u.username.toLowerCase().includes(search) ||
+      u.email.toLowerCase().includes(search) ||
+      u.id.toLowerCase().includes(search)
+    ) &&
     (filters.role.length === 0 || filters.role.includes(u.role)) &&
     (filters.status.length === 0 || filters.status.includes(u.status))
   );
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / entriesPerPage));
+  const pageStart = (currentPage - 1) * entriesPerPage;
+  const paginatedUsers = filteredUsers.slice(pageStart, pageStart + entriesPerPage);
+  const pageFrom = filteredUsers.length === 0 ? 0 : pageStart + 1;
+  const pageTo = filteredUsers.length === 0 ? 0 : Math.min(pageStart + entriesPerPage, filteredUsers.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filters.role, filters.status]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-              <ShieldCheck className="text-blue-600" size={32} />
-              User Management
-          </h2>
-          <p className="text-slate-500 mt-1">Manage system access, roles, and user profiles.</p>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
+            <ShieldCheck size={24} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">User Management</h2>
+            <p className="text-slate-500 mt-0.5 text-sm">Manage system access, roles, and user profiles.</p>
+          </div>
         </div>
-        <button 
+        <button
           onClick={() => onNavigate('add-user')}
-          className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20 flex items-center gap-2 transform active:scale-95 duration-150"
+          className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95"
         >
           <UserPlus size={18} /> Add User
         </button>
@@ -147,7 +219,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
               { label: 'Total Users', value: users.length, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
-              { label: 'Active Sessions', value: users.filter(u => u.status === 'Active').length, icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+              { label: 'Active Users', value: users.filter(u => u.status === 'Active').length, icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
               { label: 'Managers', value: users.filter(u => u.role === 'Manager').length, icon: ShieldAlert, color: 'text-indigo-600', bg: 'bg-indigo-50' },
               { label: 'System Admins', value: users.filter(u => u.role === 'Admin').length, icon: BadgeCheck, color: 'text-slate-900', bg: 'bg-slate-100' },
           ].map((stat, i) => (
@@ -169,12 +241,12 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
           
           {/* Toolbar */}
           <div className="p-6 border-b border-slate-100 bg-slate-50/30 flex flex-col xl:flex-row justify-between gap-6 items-center">
-               <div className="relative w-full md:w-96 group">
-                   <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
-                   <input 
-                      type="text" 
-                      placeholder="Search by name, email or ID..." 
-                      className="w-full pl-11 pr-4 py-3 rounded-xl border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium text-sm shadow-sm"
+               <div className="relative w-full md:w-96">
+                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      placeholder="Search by name, username, email or ID..."
+                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border-0 bg-slate-50 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm"
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                    />
@@ -212,8 +284,8 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                      {filteredUsers.length > 0 ? (
-                          filteredUsers.map(user => (
+                      {paginatedUsers.length > 0 ? (
+                          paginatedUsers.map(user => (
                               <tr key={user.id} className="hover:bg-slate-50/80 transition-colors group">
                                   <td className="px-6 py-4 relative">
                                       <button 
@@ -322,11 +394,27 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
 
           {/* Footer / Pagination */}
           <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-slate-50/30">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Showing {filteredUsers.length} Users</span>
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                Showing {pageFrom} to {pageTo} of {filteredUsers.length} Users
+              </span>
               <div className="flex gap-2">
-                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50" disabled>Prev</button>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-900/20">1</button>
-                  <button className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50" disabled>Next</button>
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                    className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    disabled={currentPage <= 1}
+                  >
+                    Prev
+                  </button>
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-900/20">
+                    {currentPage}
+                  </button>
+                  <button
+                    onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                    className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    disabled={currentPage >= totalPages}
+                  >
+                    Next
+                  </button>
               </div>
           </div>
       </div>

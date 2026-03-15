@@ -1,27 +1,82 @@
 import React from 'react';
 import { X, Printer } from 'lucide-react';
+import { useGlobalContext } from '../src/context/GlobalContext';
+import { formatDateTimeBySettings } from '../src/utils/dateTime';
+import { printShippingDocument } from '../src/utils/printUtils';
+
+interface SaleItem {
+  name: string;
+  qty: number;
+  unit?: string;
+}
 
 interface DeliveryNoteProps {
     onClose: () => void;
     invoiceNo?: string;
     date?: string;
+    sale?: {
+        invoiceNo?: string;
+        date?: string;
+        customerName?: string;
+        contactNumber?: string;
+        billingAddress?: string;
+        shippingAddress?: string;
+        items?: SaleItem[];
+        location?: string;
+    };
+    customer?: {
+        businessName?: string;
+        address?: string;
+        mobile?: string;
+    };
 }
 
-const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026-2506', date = '14/02/2026 04:19 PM' }) => {
-  
+const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo, date, sale, customer }) => {
+  const { settings, locations } = useGlobalContext();
+
+  const displayInvoiceNo = sale?.invoiceNo || invoiceNo || '--';
+  const displayDate = sale?.date || date || '--';
+  const displayCustomer = sale?.customerName || customer?.businessName || 'Direct Customer';
+  const displayMobile = sale?.contactNumber || customer?.mobile || '--';
+  const displayAddress = sale?.shippingAddress || sale?.billingAddress || customer?.address || '';
+  const displayItems: SaleItem[] = sale?.items || [];
+  const locationObj = locations.find(loc => loc.name === sale?.location);
+  const businessName = settings.businessName || 'Business';
+  const businessSubLine = [locationObj?.city, locationObj?.country].filter(Boolean).join(', ') || sale?.location || '--';
+
+  const formatDateTimeDisplay = (value?: string) => {
+    return formatDateTimeBySettings(
+      value,
+      settings.dateFormat,
+      settings.timeFormat,
+      settings.timeZone
+    );
+  };
+
   const handlePrint = () => {
-      window.print();
+    printShippingDocument({
+      documentType: 'Delivery Note',
+      invoiceNo: displayInvoiceNo,
+      date: formatDateTimeDisplay(displayDate),
+      customerName: displayCustomer,
+      mobile: displayMobile,
+      shippingAddress: displayAddress,
+      items: displayItems.map(item => ({ name: item.name, qty: item.qty, unit: item.unit })),
+      businessName,
+      businessAddress: businessSubLine,
+      printedBy: settings.businessName || undefined,
+    });
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200 print:p-0 print:bg-white print:static print:h-auto print:block">
         <div className="bg-white w-full max-w-[210mm] h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 print:shadow-none print:h-auto print:max-w-none print:rounded-none print:overflow-visible">
-            
+
             {/* Modal Header - Hidden in Print */}
             <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0 print:hidden">
                  <h2 className="text-lg font-bold text-slate-700">Delivery Note Preview</h2>
                  <div className="flex gap-3">
-                     <button 
+                     <button
                         onClick={handlePrint}
                         className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-colors"
                      >
@@ -36,34 +91,29 @@ const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026
             {/* Scrollable Content */}
             <div className="flex-1 overflow-y-auto bg-slate-100 custom-scrollbar print:p-0 print:bg-white print:overflow-visible">
                 <div className="max-w-[210mm] mx-auto bg-white shadow-sm p-12 min-h-[297mm] flex flex-col print:shadow-none print:p-0">
-                    
+
                     {/* Header Section */}
                     <div className="flex justify-between items-start mb-8">
                         <div className="w-1/2">
                              <div className="w-24 h-24 mb-4 relative">
-                               {/* Logo Placeholder */}
-                               <div className="w-full h-full flex items-center justify-center">
-                                    <svg viewBox="0 0 100 100" className="w-full h-full">
-                                        <path d="M50 20 L80 80 L50 65 L20 80 Z" fill="#dc2626" opacity="0.9" />
-                                        <path d="M50 20 L70 50 L30 50 Z" fill="#991b1b" />
-                                    </svg>
+                               <div className="w-full h-full flex items-center justify-center rounded bg-slate-900 text-white text-3xl font-black">
+                                    {(businessName || 'B').trim().charAt(0).toUpperCase()}
                                </div>
-                               <div className="absolute -bottom-2 left-0 w-full text-center text-[8px] text-red-600 font-bold uppercase tracking-tighter">Gulf Land Treasures United</div>
+                               <div className="absolute -bottom-2 left-0 w-full text-center text-[8px] text-slate-600 font-bold uppercase tracking-tighter">{businessName}</div>
                             </div>
-                            
-                            <h1 className="text-xl font-bold uppercase tracking-wide text-slate-900 mb-1">KNWZ ARD ALKHLYJ <br/> ALMTHDH CR:1282649</h1>
-                            <p className="text-xs text-slate-600 mb-1">Muscat, Oman</p>
-                            <p className="text-xs font-bold text-slate-800">VATIN: OM1100435179</p>
+
+                            <h1 className="text-xl font-bold uppercase tracking-wide text-slate-900 mb-1">{businessName}</h1>
+                            <p className="text-xs text-slate-600 mb-1">{businessSubLine}</p>
                         </div>
-                        
+
                         <div className="w-1/2 text-right">
                              <h2 className="text-3xl text-slate-700 font-bold mb-6">Delivery Note</h2>
                              <div className="grid grid-cols-2 gap-x-4 text-sm justify-end">
                                  <div className="text-slate-600 text-right font-medium">Invoice No.</div>
-                                 <div className="text-slate-900 text-right font-bold">{invoiceNo}</div>
-                                 
+                                 <div className="text-slate-900 text-right font-bold">{displayInvoiceNo}</div>
+
                                  <div className="text-slate-600 text-right font-medium">Date</div>
-                                 <div className="text-slate-900 text-right font-bold">{date}</div>
+                                 <div className="text-slate-900 text-right font-bold">{formatDateTimeDisplay(displayDate)}</div>
                              </div>
                         </div>
                     </div>
@@ -71,8 +121,8 @@ const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026
                     {/* Customer Section */}
                     <div className="mb-12">
                         <h3 className="text-sm font-bold text-slate-900 mb-1">Customer</h3>
-                        <p className="text-sm text-slate-700 font-medium">Kholil</p>
-                        <p className="text-sm font-bold text-slate-900">Mobile: <span className="font-normal">99133338</span></p>
+                        <p className="text-sm text-slate-700 font-medium">{displayCustomer}</p>
+                        <p className="text-sm font-bold text-slate-900">Mobile: <span className="font-normal">{displayMobile}</span></p>
                     </div>
 
                     {/* Table */}
@@ -86,36 +136,17 @@ const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                <tr>
-                                    <td className="py-3 text-slate-500">1</td>
-                                    <td className="py-3 text-slate-800">X Pets Kitten (Chicken + Milk) Pate 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-3 text-slate-500">2</td>
-                                    <td className="py-3 text-slate-800">X Pets Cat (Duck) Pate 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-3 text-slate-500">3</td>
-                                    <td className="py-3 text-slate-800">X Pets Cat (Chicken) Chunks 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-3 text-slate-500">4</td>
-                                    <td className="py-3 text-slate-800">X Pets Cat (Salmon) Pate 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-3 text-slate-500">5</td>
-                                    <td className="py-3 text-slate-800">X Pets Puppy (Lamb) Pate 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
-                                <tr>
-                                    <td className="py-3 text-slate-500">6</td>
-                                    <td className="py-3 text-slate-800">X Pets Dog (Veal) Chunks 400g</td>
-                                    <td className="py-3 text-right text-slate-800">2.000 Pc(s)</td>
-                                </tr>
+                                {displayItems.length > 0 ? displayItems.map((item, i) => (
+                                    <tr key={i}>
+                                        <td className="py-3 text-slate-500">{i + 1}</td>
+                                        <td className="py-3 text-slate-800">{item.name}</td>
+                                        <td className="py-3 text-right text-slate-800">{Number(item.qty).toFixed(3)} {item.unit || 'Pc(s)'}</td>
+                                    </tr>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={3} className="py-3 text-center text-slate-400 text-xs">No items</td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                         <div className="border-t border-slate-200 mt-2"></div>
@@ -136,13 +167,15 @@ const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026
                     <div className="mt-auto">
                         <div className="mb-8">
                             <p className="text-sm font-bold text-slate-800 mb-6">Authorized Signatory</p>
-                            
+
                             <p className="text-sm font-bold text-slate-800 underline italic mb-4">Received By</p>
                             <div className="flex gap-2 text-sm font-bold text-slate-800 mb-4">
                                 <span>Name:</span>
+                                <span className="border-b border-slate-300 w-48 inline-block"></span>
                             </div>
                              <div className="flex gap-2 text-sm font-bold text-slate-800">
                                 <span>Signature:</span>
+                                <span className="border-b border-slate-300 w-48 inline-block"></span>
                             </div>
                         </div>
 
@@ -151,12 +184,8 @@ const DeliveryNote: React.FC<DeliveryNoteProps> = ({ onClose, invoiceNo = 'K2026
                         </p>
 
                         <div className="flex justify-between items-center pt-2 border-t border-slate-300 text-[10px] text-slate-500">
-                             <span>2/14/26, 5:36 PM</span>
-                             <span>All sales - Atwar Al Mustaqbal</span>
-                        </div>
-                         <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1">
-                             <span>https://wingitalpos.com/atwaralmustaqbal/public/sells</span>
-                             <span>1/1</span>
+                             <span>{formatDateTimeDisplay(new Date().toISOString())}</span>
+                             <span>All sales - {businessName}</span>
                         </div>
                     </div>
 

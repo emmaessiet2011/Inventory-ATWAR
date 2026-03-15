@@ -8,6 +8,8 @@ export interface Product {
   cost: number;
   stock: number;
   unit: string;
+  packagingType?: 'Piece' | 'Pack' | 'Carton';
+  unitsPerPackage?: number;
   image?: string;
 }
 

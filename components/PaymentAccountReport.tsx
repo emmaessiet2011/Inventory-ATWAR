@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   BarChart3, Search, Download, Printer,
   CreditCard, Banknote, FileText, FileSpreadsheet
@@ -6,21 +6,38 @@ import {
 import MultiSelect from './MultiSelect';
 import { useGlobalContext } from '../src/context/GlobalContext';
 
+
+import { printActiveReportTable } from '../src/utils/printUtils';
+import { inferPaymentAccountName } from '../src/utils/paymentAccounts';
+import { paymentLocationCandidates } from '../src/utils/accountingSnapshot';
+import { getExpensePaidAmount, parseExpenseDateToMs } from '../src/utils/expenses';
+
 interface ReportRow {
   id: string;
   date: string;
   ref: string;
   inv: string;
   amount: number;
-  type: 'Sell' | 'Purchase';
+  type: 'Sell' | 'Purchase' | 'Expense';
+  direction: 'Inflow' | 'Outflow';
   method: string;
   account: string;
   desc: string;
   location: string;
 }
 
+const ACCOUNT_REPORT_FOCUS_KEY = 'app_payment_account_report_focus';
+const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+const parseReportDateToMs = (value: unknown): number => {
+  const raw = String(value || '').trim();
+  if (!raw) return Number.NaN;
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return direct;
+  return parseExpenseDateToMs(raw);
+};
+
 const PaymentAccountReport: React.FC = () => {
-  const { locations, payments, formatCurrency } = useGlobalContext();
+  const { locations, payments, sales, expenses, formatCurrency } = useGlobalContext();
   const [filters, setFilters] = useState({
     location: [] as string[],
     account: [] as string[],
@@ -29,43 +46,159 @@ const PaymentAccountReport: React.FC = () => {
   const [endDate, setEndDate] = useState('');
   const [search, setSearch] = useState('');
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ACCOUNT_REPORT_FOCUS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { account?: string; location?: string };
+      const focusedAccount = String(parsed?.account || '').trim();
+      const focusedLocation = String(parsed?.location || '').trim();
+      if (focusedAccount || focusedLocation) {
+        setFilters({
+          account: focusedAccount ? [focusedAccount] : [],
+          location: focusedLocation ? [focusedLocation] : [],
+        });
+      }
+      localStorage.removeItem(ACCOUNT_REPORT_FOCUS_KEY);
+    } catch {
+      // ignore malformed report focus payloads
+    }
+  }, []);
+
+  const salesByInvoice = useMemo(() => {
+    const map = new Map<string, string>();
+    sales.forEach((sale) => {
+      if (!sale.invoiceNo) return;
+      map.set(String(sale.invoiceNo), String(sale.location || '').trim());
+    });
+    return map;
+  }, [sales]);
+
+  const expensesById = useMemo(() => {
+    const map = new Map<string, any>();
+    expenses.forEach((expense) => map.set(String(expense.id || '').trim(), expense));
+    return map;
+  }, [expenses]);
+
   const rows = useMemo<ReportRow[]>(() => {
-    return payments.map((p) => {
-      const inferredAccount = p.account || (p.method === 'Cash' ? 'Cash' : 'Bank');
+    const ledgerBackedExpenseIds = new Set(
+      payments
+        .filter((payment) => payment.contactType === 'Expense')
+        .map((payment) => String(payment.expenseId || payment.contactId || '').trim())
+        .filter(Boolean),
+    );
+
+    const paymentRows = payments.map((p) => {
+      const inferredAccount = inferPaymentAccountName(p);
       const invoice = p.linkedInvoices?.[0] || '-';
+      const inferredLocation = paymentLocationCandidates({
+        payment: p,
+        salesLocationByInvoice: salesByInvoice,
+        expensesById,
+      })[0] || '';
+      const paymentType: ReportRow['type'] = p.contactType === 'Expense'
+        ? 'Expense'
+        : p.contactType === 'Supplier'
+          ? 'Purchase'
+          : p.contactType === 'Customer'
+            ? 'Sell'
+            : p.type === 'received'
+              ? 'Sell'
+              : 'Purchase';
+      const direction: ReportRow['direction'] = p.type === 'received' ? 'Inflow' : 'Outflow';
       return {
         id: p.id,
         date: p.date,
         ref: p.referenceNo || p.id,
         inv: invoice,
         amount: p.amount || 0,
-        type: p.type === 'received' ? 'Sell' : 'Purchase',
+        type: paymentType,
+        direction,
         method: p.method || '-',
         account: inferredAccount,
-        desc: `${p.contactType}: ${p.contactName}`,
-        location: '',
+        desc: p.contactType === 'Expense'
+          ? `Expense: ${p.contactName || p.note || 'Expense payment'}`
+          : `${p.contactType || 'Contact'}: ${p.contactName || '-'}`,
+        location: inferredLocation,
       };
-    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [payments]);
+    });
+
+    const expenseFallbackRows: ReportRow[] = expenses
+      .filter((expense) => {
+        const expenseId = String(expense.id || '').trim();
+        if (!expenseId || ledgerBackedExpenseIds.has(expenseId)) return false;
+        return getExpensePaidAmount(expense) > 0;
+      })
+      .map((expense) => ({
+        id: `EXP-${expense.id}`,
+        date: expense.paidOn || expense.date,
+        ref: expense.refNo || expense.id,
+        inv: expense.refNo || '-',
+        amount: getExpensePaidAmount(expense),
+        type: 'Expense',
+        direction: expense.isRefund ? 'Inflow' : 'Outflow',
+        method: expense.paymentMethod || 'Expense',
+        account: String(expense.paymentAccount || 'Expense').trim() || 'Expense',
+        desc: `${expense.isRefund ? 'Expense refund' : 'Expense'}: ${expense.category || expense.note || expense.refNo || expense.id}`,
+        location: String(expense.location || '').trim(),
+      }));
+
+    return [...paymentRows, ...expenseFallbackRows].sort((a, b) => {
+      const left = parseReportDateToMs(a.date);
+      const right = parseReportDateToMs(b.date);
+      return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
+    });
+  }, [payments, salesByInvoice, expensesById]);
 
   const filteredData = useMemo(() => {
     const lowerSearch = search.toLowerCase();
-    const startMs = startDate ? new Date(startDate).getTime() : Number.NEGATIVE_INFINITY;
-    const endMs = endDate ? (new Date(endDate).getTime() + (24 * 60 * 60 * 1000 - 1)) : Number.POSITIVE_INFINITY;
+    const parsedStart = startDate ? parseReportDateToMs(startDate) : Number.NaN;
+    const parsedEnd = endDate ? parseReportDateToMs(endDate) : Number.NaN;
+    const startMs = Number.isFinite(parsedStart) ? parsedStart : Number.NEGATIVE_INFINITY;
+    const endMs = Number.isFinite(parsedEnd) ? (parsedEnd + (24 * 60 * 60 * 1000 - 1)) : Number.POSITIVE_INFINITY;
+    const hasDateFilter = !!startDate || !!endDate;
+    const selectedLocationKeys = new Set(filters.location.map(value => normalizeText(value)).filter(Boolean));
+    const selectedAccountKeys = new Set(filters.account.map(value => normalizeText(value)).filter(Boolean));
     return rows.filter(item => {
-      const ts = new Date(item.date).getTime();
-      const matchesLocation = filters.location.length === 0 || filters.location.includes(item.location);
-      const matchesAccount = filters.account.length === 0 || filters.account.includes(item.account);
-      const matchesDate = ts >= startMs && ts <= endMs;
+      const ts = parseReportDateToMs(item.date);
+      const matchesLocation = selectedLocationKeys.size === 0 || selectedLocationKeys.has(normalizeText(item.location));
+      const matchesAccount = selectedAccountKeys.size === 0 || selectedAccountKeys.has(normalizeText(item.account));
+      const matchesDate = !hasDateFilter || (Number.isFinite(ts) && ts >= startMs && ts <= endMs);
       const matchesSearch = !lowerSearch || `${item.ref} ${item.inv} ${item.method} ${item.desc}`.toLowerCase().includes(lowerSearch);
       return matchesLocation && matchesAccount && matchesDate && matchesSearch;
     });
   }, [rows, filters, startDate, endDate, search]);
 
-  const accountOptions = useMemo(
-    () => Array.from(new Set(rows.map(r => r.account))).filter(Boolean).sort(),
-    [rows]
-  );
+  const locationOptions = useMemo(() => {
+    const labelsByKey = new Map<string, string>();
+    locations.forEach((location) => {
+      const label = String(location.name || '').trim();
+      const key = normalizeText(label);
+      if (!key || labelsByKey.has(key)) return;
+      labelsByKey.set(key, label);
+    });
+    rows.forEach((row) => {
+      const label = String(row.location || '').trim();
+      const key = normalizeText(label);
+      if (!key || labelsByKey.has(key)) return;
+      labelsByKey.set(key, label);
+    });
+    return Array.from(labelsByKey.values()).sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: 'base' }),
+    );
+  }, [locations, rows]);
+
+  const accountOptions = useMemo(() => {
+    const labelsByKey = new Map<string, string>();
+    rows.forEach((row) => {
+      const key = normalizeText(row.account);
+      if (!key || labelsByKey.has(key)) return;
+      labelsByKey.set(key, row.account);
+    });
+    return Array.from(labelsByKey.values()).sort((left, right) =>
+      left.localeCompare(right, undefined, { sensitivity: 'base' }),
+    );
+  }, [rows]);
 
   const distribution = useMemo(() => {
     const totals = filteredData.reduce<Record<string, number>>((acc, row) => {
@@ -93,27 +226,118 @@ const PaymentAccountReport: React.FC = () => {
   }, [filteredData]);
 
   const monthlyBars = useMemo(() => {
+    const rowTimes = filteredData
+      .map((row) => parseReportDateToMs(row.date))
+      .filter((value): value is number => Number.isFinite(value));
+    const parsedStart = startDate ? parseReportDateToMs(startDate) : Number.NaN;
+    const parsedEnd = endDate ? parseReportDateToMs(endDate) : Number.NaN;
     const now = new Date();
-    const months = Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      return { key, label: d.toLocaleString('en-US', { month: 'short' }), inflow: 0, outflow: 0 };
-    });
+
+    const startDateObj = Number.isFinite(parsedStart)
+      ? new Date(new Date(parsedStart).getFullYear(), new Date(parsedStart).getMonth(), 1)
+      : null;
+    const endDateObj = Number.isFinite(parsedEnd)
+      ? new Date(new Date(parsedEnd).getFullYear(), new Date(parsedEnd).getMonth(), 1)
+      : null;
+    const latestRowDateObj = rowTimes.length > 0
+      ? new Date(new Date(Math.max(...rowTimes)).getFullYear(), new Date(Math.max(...rowTimes)).getMonth(), 1)
+      : null;
+
+    let rangeEnd = endDateObj || latestRowDateObj || new Date(now.getFullYear(), now.getMonth(), 1);
+    let rangeStart = startDateObj || new Date(rangeEnd.getFullYear(), rangeEnd.getMonth() - 11, 1);
+
+    if (rangeStart.getTime() > rangeEnd.getTime()) {
+      const swap = rangeStart;
+      rangeStart = rangeEnd;
+      rangeEnd = swap;
+    }
+
+    const months: Array<{ key: string; label: string; inflow: number; outflow: number }> = [];
+    let cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+    while (cursor.getTime() <= rangeEnd.getTime()) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      months.push({
+        key,
+        label: cursor.toLocaleString('en-US', { month: 'short' }),
+        inflow: 0,
+        outflow: 0,
+      });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    }
+    if (months.length > 12) {
+      months.splice(0, months.length - 12);
+    }
+
     filteredData.forEach(row => {
-      const d = new Date(row.date);
+      const parsed = parseReportDateToMs(row.date);
+      if (!Number.isFinite(parsed)) return;
+      const d = new Date(parsed);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const month = months.find(m => m.key === key);
       if (!month) return;
-      if (row.type === 'Sell') month.inflow += row.amount;
+      if (row.direction === 'Inflow') month.inflow += row.amount;
       else month.outflow += row.amount;
     });
     const maxValue = Math.max(...months.map(m => Math.max(m.inflow, m.outflow)), 1);
     return months.map(m => ({
       ...m,
-      inflowPct: Math.max(4, Math.round((m.inflow / maxValue) * 100)),
-      outflowPct: Math.max(4, Math.round((m.outflow / maxValue) * 100)),
+      inflowPct: m.inflow > 0 ? Math.max(2, Math.round((m.inflow / maxValue) * 100)) : 0,
+      outflowPct: m.outflow > 0 ? Math.max(2, Math.round((m.outflow / maxValue) * 100)) : 0,
     }));
-  }, [filteredData]);
+  }, [filteredData, startDate, endDate]);
+
+  const handleExportCSV = () => {
+    const headers = ['Date', 'Payment Ref No.', 'Invoice No./Ref. No.', 'Amount', 'Payment Type', 'Direction', 'Payment Method', 'Account', 'Location', 'Description'];
+    const rowsForExport = filteredData.map((row) => ([
+      row.date,
+      row.ref,
+      row.inv,
+      row.amount,
+      row.type,
+      row.direction,
+      row.method,
+      row.account,
+      row.location || '--',
+      row.desc,
+    ]));
+    const csv = [
+      headers.join(','),
+      ...rowsForExport.map(line => line
+        .map(value => `"${String(value ?? '').replace(/"/g, '""')}"`)
+        .join(',')),
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'payment_account_report.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportExcel = () => {
+    const headers = ['Date', 'Payment Ref No.', 'Invoice No./Ref. No.', 'Amount', 'Payment Type', 'Direction', 'Payment Method', 'Account', 'Location', 'Description'];
+    const rowsForExport = filteredData.map((row) => ([
+      row.date,
+      row.ref,
+      row.inv,
+      row.amount,
+      row.type,
+      row.direction,
+      row.method,
+      row.account,
+      row.location || '--',
+      row.desc,
+    ]));
+    const tsv = [headers.join('\t'), ...rowsForExport.map(line => line.join('\t'))].join('\n');
+    const blob = new Blob([tsv], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'payment_account_report.xls';
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -126,20 +350,27 @@ const PaymentAccountReport: React.FC = () => {
           <p className="text-slate-500 mt-1">Detailed analysis of account transactions and performance.</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition shadow-sm">
+          <button
+            onClick={() => printActiveReportTable()}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition shadow-sm"
+          >
             <Printer size={16} /> Print
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 transition shadow-lg shadow-cyan-900/20">
-            <Download size={16} /> Export
+          <button
+            onClick={handleExportCSV}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white rounded-xl text-sm font-bold hover:bg-cyan-700 transition shadow-lg shadow-cyan-900/20"
+          >
+            <Download size={16} /> Export CSV
           </button>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-wrap gap-4 items-end">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
         <div className="flex-1 min-w-[200px] space-y-2">
           <MultiSelect
             label="Location"
-            options={locations.map(loc => loc.name)}
+            options={locationOptions}
             selected={filters.location}
             onChange={(val) => setFilters({ ...filters, location: val })}
           />
@@ -164,6 +395,7 @@ const PaymentAccountReport: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
           <div className="flex justify-between items-center mb-8">
             <h3 className="font-black text-slate-900 text-lg">Transaction Volume</h3>
             <div className="flex gap-4">
@@ -186,6 +418,7 @@ const PaymentAccountReport: React.FC = () => {
         </div>
 
         <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-6">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
           <h3 className="font-black text-slate-900 text-lg mb-2">Account Distribution</h3>
           <div className="space-y-4">
             {distribution.length > 0 ? distribution.map((item) => (
@@ -217,11 +450,27 @@ const PaymentAccountReport: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex flex-wrap gap-2">
-            <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"><FileText size={12} /> Export CSV</button>
-            <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"><FileSpreadsheet size={12} /> Export Excel</button>
-            <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"><Printer size={12} /> Print</button>
+            <button
+              onClick={handleExportCSV}
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <FileText size={12} /> Export CSV
+            </button>
+            <button
+              onClick={handleExportExcel}
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <FileSpreadsheet size={12} /> Export Excel
+            </button>
+            <button
+              onClick={() => printActiveReportTable()}
+              className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 shadow-sm transition-colors"
+            >
+              <Printer size={12} /> Print
+            </button>
           </div>
           <div className="relative w-full md:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -278,3 +527,5 @@ const PaymentAccountReport: React.FC = () => {
 };
 
 export default PaymentAccountReport;
+
+

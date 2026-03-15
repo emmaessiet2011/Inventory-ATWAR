@@ -1,15 +1,19 @@
-import React, { useState } from 'react';
-import { 
-  Filter, FileText, FileSpreadsheet, Printer, 
-  Columns, Search, ArrowUpDown, History, Info, ChevronDown
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ArrowUpDown,
+  Columns,
+  FileSpreadsheet,
+  FileText,
+  Filter,
+  History,
+  Printer,
+  Search,Warehouse} from 'lucide-react';
 import MultiSelect from './MultiSelect';
 import { useGlobalContext } from '../src/context/GlobalContext';
 
-// Utility for currency formatting
-const formatRiyal = (amount: number) => {
-  return `${amount.toLocaleString('en-OM', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ريال`;
-};
+import ProductStockHistory from './ProductStockHistory';
+
+import { printActiveReportTable } from '../src/utils/printUtils';
 
 interface StockReportItem {
   id: string;
@@ -17,6 +21,7 @@ interface StockReportItem {
   product: string;
   variation: string;
   category: string;
+  subCategory: string;
   location: string;
   unitSellingPrice: number;
   currentStock: number;
@@ -26,279 +31,784 @@ interface StockReportItem {
   totalUnitSold: number;
   totalUnitTransferred: number;
   totalUnitAdjusted: number;
-  brand?: string; // Added for filtering
-  unit?: string; // Added for filtering
+  brand: string;
+  unit: string;
 }
 
-const ReportStock: React.FC = () => {
-  const { locations } = useGlobalContext();
+interface StockLedgerEntry {
+  id: string;
+  productId: string;
+  type: string;
+  change: number;
+  newQty: number;
+  date: string;
+  ref: string;
+  party: string;
+  location?: string;
+  note?: string;
+}
+
+interface ReportStockProps {
+  canViewValueMetrics?: boolean;
+}
+
+type ColumnKey =
+  | 'sku'
+  | 'product'
+  | 'variation'
+  | 'category'
+  | 'location'
+  | 'unitSellingPrice'
+  | 'currentStock'
+  | 'stockValuePurchase'
+  | 'stockValueSale'
+  | 'potentialProfit'
+  | 'totalUnitSold'
+  | 'totalUnitTransferred'
+  | 'totalUnitAdjusted';
+
+const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
+
+const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const hasStatus = (value: unknown, expected: string) => normalize(value) === normalize(expected);
+const stockKey = (left: unknown, right: unknown) => `${normalize(left)}@@${normalize(right)}`;
+const toCsvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const formatQty = (value: number, unit?: string) => `${value.toFixed(3)}${unit ? ` ${unit}` : ''}`;
+const buildPageItems = (currentPage: number, totalPages: number): Array<number | '...'> => {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  const items: Array<number | '...'> = [1];
+  const left = Math.max(2, currentPage - 1);
+  const right = Math.min(totalPages - 1, currentPage + 1);
+  if (left > 2) items.push('...');
+  for (let page = left; page <= right; page += 1) {
+    items.push(page);
+  }
+  if (right < totalPages - 1) items.push('...');
+  items.push(totalPages);
+  return items;
+};
+
+const readStockLedger = (): StockLedgerEntry[] => {
+  try {
+    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true }) => {
+  const { products, locations, sales, formatCurrency } = useGlobalContext();
+
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
-  
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const [entriesPerPage, setEntriesPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [historyProductId, setHistoryProductId] = useState<string | null>(null);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
   const [filters, setFilters] = useState({
-      location: [] as string[],
-      category: [] as string[],
-      subCategory: [] as string[],
-      brand: [] as string[],
-      unit: [] as string[]
+    location: [] as string[],
+    category: [] as string[],
+    subCategory: [] as string[],
+    brand: [] as string[],
+    unit: [] as string[],
   });
 
-  // Mock Data matching the screenshot
-  const stockData: StockReportItem[] = [
-    { id: '1', sku: '0004', product: 'Kennol 5W-30 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 13.000, currentStock: 239.000, stockValuePurchase: 0.000, stockValueSale: 3107.000, potentialProfit: 3107.000, totalUnitSold: 673.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '2', sku: '0006', product: 'Kennol 5W-40 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 13.000, currentStock: 360.000, stockValuePurchase: 0.000, stockValueSale: 4680.000, potentialProfit: 4680.000, totalUnitSold: 790.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '3', sku: '0008', product: 'Kennol 0W-20 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 73.000, stockValuePurchase: 0.000, stockValueSale: 1095.000, potentialProfit: 1095.000, totalUnitSold: 175.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '4', sku: '0009', product: 'Kennol 5W-30 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 3.500, currentStock: 728.000, stockValuePurchase: 0.000, stockValueSale: 2548.000, potentialProfit: 2548.000, totalUnitSold: 576.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '5', sku: '0010', product: 'Kennol 5W-40 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 3.500, currentStock: 315.000, stockValuePurchase: 0.000, stockValueSale: 1102.500, potentialProfit: 1102.500, totalUnitSold: 730.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '6', sku: '0011', product: 'Kennol 0W-20 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 4.000, currentStock: 63.000, stockValuePurchase: 0.000, stockValueSale: 252.000, potentialProfit: 252.000, totalUnitSold: 173.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Kennol', unit: 'Pc(s)' },
-    { id: '7', sku: '0012', product: 'Cebican (Daily Care)_20kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 11.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 939.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 7.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '8', sku: '0012', product: 'Cebican (Daily Care)_20kg', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH CR:1282649', unitSellingPrice: 11.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 995.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 1.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '9', sku: '0013', product: 'Garpidog (Adult)', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 10.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 74.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Garpidog', unit: 'Pc(s)' },
-    { id: '10', sku: '0014', product: 'Cebican (High Energy)_20kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 144.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '11', sku: '0014', product: 'Cebican (High Energy)_20kg', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH CR:1282649', unitSellingPrice: 15.000, currentStock: 1.000, stockValuePurchase: 33.000, stockValueSale: 15.000, potentialProfit: -18.000, totalUnitSold: 136.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '12', sku: '0015', product: 'Cebican (Cat) Mix_20KG', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 1.000, stockValuePurchase: 0.000, stockValueSale: 15.000, potentialProfit: 15.000, totalUnitSold: 88.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '13', sku: '0015', product: 'Cebican (Cat) Mix_20KG', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH CR:1282649', unitSellingPrice: 15.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 72.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '14', sku: '0016', product: 'Cebican (Puppy)_20kg', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH CR:1282649', unitSellingPrice: 15.000, currentStock: 1.000, stockValuePurchase: 11.200, stockValueSale: 15.000, potentialProfit: 3.800, totalUnitSold: 37.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '15', sku: '0016', product: 'Cebican (Puppy)_20kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 75.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 1.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '16', sku: '0017', product: 'Migos (Puppy)_20KG', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 14.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 14.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Migos', unit: 'Pc(s)' },
-    { id: '17', sku: '0018', product: 'Migos (Cat Supreme) _10kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 8.500, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 39.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Migos', unit: 'Pc(s)' },
-    { id: '18', sku: '0020', product: 'Cebican (Puppy)_3KG', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 8.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 81.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Cebican', unit: 'Pc(s)' },
-    { id: '19', sku: '0022', product: 'Indomie (Vegetable)', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 5.450, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 61.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Indomie', unit: 'Pc(s)' },
-    { id: '20', sku: '0023', product: 'Indomie (Curry)', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 5.450, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 59.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Indomie', unit: 'Pc(s)' },
-    { id: '21', sku: '0024', product: 'Merinda', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 6.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 28.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Merinda', unit: 'Pc(s)' },
-    { id: '22', sku: '0025', product: 'Zomoroda', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 1.900, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 198.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Zomoroda', unit: 'Pc(s)' },
-    { id: '23', sku: '0026', product: 'Redbull', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 11.000, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 147.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Redbull', unit: 'Pc(s)' },
-    { id: '24', sku: '0027', product: 'Code Red', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 10.700, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 310.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Code Red', unit: 'Pc(s)' },
-    { id: '25', sku: '0028', product: 'Fanta', variation: '', category: 'Food product', location: 'CR:1450968', unitSellingPrice: 5.500, currentStock: 0.000, stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 5.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000, brand: 'Fanta', unit: 'Pc(s)' },
-  ];
+  const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>({
+    sku: true,
+    product: true,
+    variation: true,
+    category: true,
+    location: true,
+    unitSellingPrice: canViewValueMetrics,
+    currentStock: true,
+    stockValuePurchase: canViewValueMetrics,
+    stockValueSale: canViewValueMetrics,
+    potentialProfit: canViewValueMetrics,
+    totalUnitSold: true,
+    totalUnitTransferred: true,
+    totalUnitAdjusted: true,
+  });
 
-  const filteredData = stockData.filter(item => 
-    (item.product.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.category.toLowerCase().includes(searchTerm.toLowerCase())) &&
-    (filters.location.length === 0 || filters.location.includes(item.location)) &&
-    (filters.category.length === 0 || filters.category.includes(item.category)) &&
-    (filters.brand.length === 0 || (item.brand && filters.brand.includes(item.brand))) &&
-    (filters.unit.length === 0 || (item.unit && filters.unit.includes(item.unit)))
+  useEffect(() => {
+    setVisibleColumns((prev) => ({
+      ...prev,
+      unitSellingPrice: canViewValueMetrics ? prev.unitSellingPrice : false,
+      stockValuePurchase: canViewValueMetrics ? prev.stockValuePurchase : false,
+      stockValueSale: canViewValueMetrics ? prev.stockValueSale : false,
+      potentialProfit: canViewValueMetrics ? prev.potentialProfit : false,
+    }));
+  }, [canViewValueMetrics]);
+
+  useEffect(() => {
+    const onMouseDown = (event: MouseEvent) => {
+      if (!(event.target instanceof HTMLElement)) return;
+      const withinMenu = event.target.closest('[data-stock-col-menu]');
+      const withinButton = event.target.closest('[data-stock-col-button]');
+      if (!withinMenu && !withinButton) setShowColumnMenu(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowColumnMenu(false);
+        setHistoryProductId(null);
+      }
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
+    const refreshLedger = () => setLedgerVersion((prev) => prev + 1);
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === STOCK_LEDGER_KEY) refreshLedger();
+    };
+    window.addEventListener('focus', refreshLedger);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('focus', refreshLedger);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  const columns = useMemo(
+    () => ([
+      { key: 'sku' as ColumnKey, label: 'SKU' },
+      { key: 'product' as ColumnKey, label: 'Product' },
+      { key: 'variation' as ColumnKey, label: 'Variation' },
+      { key: 'category' as ColumnKey, label: 'Category' },
+      { key: 'location' as ColumnKey, label: 'Location' },
+      { key: 'unitSellingPrice' as ColumnKey, label: 'Unit Selling Price', right: true, valueRestricted: true },
+      { key: 'currentStock' as ColumnKey, label: 'Current Stock', right: true },
+      { key: 'stockValuePurchase' as ColumnKey, label: 'Stock Value (Purchase)', right: true, valueRestricted: true },
+      { key: 'stockValueSale' as ColumnKey, label: 'Stock Value (Sale)', right: true, valueRestricted: true },
+      { key: 'potentialProfit' as ColumnKey, label: 'Potential Profit', right: true, valueRestricted: true },
+      { key: 'totalUnitSold' as ColumnKey, label: 'Total Unit Sold', right: true },
+      { key: 'totalUnitTransferred' as ColumnKey, label: 'Total Unit Transferred', right: true },
+      { key: 'totalUnitAdjusted' as ColumnKey, label: 'Total Unit Adjusted', right: true },
+    ]),
+    [],
   );
 
-  // Totals Calculation based on filtered data to mimic screenshot row aggregation logic
-  const totals = filteredData.reduce((acc, curr) => ({
-    currentStock: acc.currentStock + curr.currentStock,
-    stockValuePurchase: acc.stockValuePurchase + curr.stockValuePurchase,
-    stockValueSale: acc.stockValueSale + curr.stockValueSale,
-    potentialProfit: acc.potentialProfit + curr.potentialProfit,
-    totalUnitSold: acc.totalUnitSold + curr.totalUnitSold,
-    totalUnitTransferred: acc.totalUnitTransferred + curr.totalUnitTransferred,
-    totalUnitAdjusted: acc.totalUnitAdjusted + curr.totalUnitAdjusted
-  }), { 
-    currentStock: 0, stockValuePurchase: 0, stockValueSale: 0, 
-    potentialProfit: 0, totalUnitSold: 0, totalUnitTransferred: 0, totalUnitAdjusted: 0 
-  });
+  const menuColumns = useMemo(
+    () => columns.filter((col) => !col.valueRestricted || canViewValueMetrics),
+    [columns, canViewValueMetrics],
+  );
+
+  const displayedColumns = useMemo(
+    () => columns.filter((col) => visibleColumns[col.key] && (!col.valueRestricted || canViewValueMetrics)),
+    [columns, visibleColumns, canViewValueMetrics],
+  );
+
+  const soldByProductId = useMemo(() => {
+    const byProductId = new Map<string, number>();
+    const productByIdNorm = new Map<string, string>();
+    const productBySkuLoc = new Map<string, string>();
+    const productByNameLoc = new Map<string, string>();
+    const uniqueProductsBySku = new Map<string, string[]>();
+    const uniqueProductsByName = new Map<string, string[]>();
+
+    products.forEach((product) => {
+      const id = String(product.id || '').trim();
+      if (!id) return;
+      productByIdNorm.set(normalize(id), id);
+
+      const skuNorm = normalize(product.sku);
+      const nameNorm = normalize(product.name);
+      const locNorm = normalize(product.businessLocation);
+
+      if (skuNorm) {
+        productBySkuLoc.set(stockKey(skuNorm, locNorm), id);
+        const nextSkuIds = uniqueProductsBySku.get(skuNorm) || [];
+        if (!nextSkuIds.includes(id)) nextSkuIds.push(id);
+        uniqueProductsBySku.set(skuNorm, nextSkuIds);
+      }
+      if (nameNorm) {
+        productByNameLoc.set(stockKey(nameNorm, locNorm), id);
+        const nextNameIds = uniqueProductsByName.get(nameNorm) || [];
+        if (!nextNameIds.includes(id)) nextNameIds.push(id);
+        uniqueProductsByName.set(nameNorm, nextNameIds);
+      }
+    });
+
+    const pushSoldQty = (productId: string, qty: number) => {
+      byProductId.set(productId, Number(((byProductId.get(productId) || 0) + qty).toFixed(3)));
+    };
+
+    sales.forEach((sale) => {
+      if (!hasStatus(sale.status || sale.saleStatus, 'Final')) return;
+      const saleLocNorm = normalize(sale.location);
+
+      (sale.items || []).forEach((item) => {
+        const qty = Number(item.qty) || 0;
+        if (!Number.isFinite(qty) || qty <= 0) return;
+
+        const itemIdNorm = normalize(item.id);
+        const itemNameNorm = normalize(item.name);
+
+        let resolvedProductId = '';
+
+        if (itemIdNorm) {
+          resolvedProductId = productByIdNorm.get(itemIdNorm) || '';
+        }
+        if (!resolvedProductId && itemIdNorm) {
+          resolvedProductId = productBySkuLoc.get(stockKey(itemIdNorm, saleLocNorm)) || '';
+        }
+        if (!resolvedProductId && itemNameNorm) {
+          resolvedProductId = productByNameLoc.get(stockKey(itemNameNorm, saleLocNorm)) || '';
+        }
+        if (!resolvedProductId && itemIdNorm) {
+          const skuMatches = uniqueProductsBySku.get(itemIdNorm) || [];
+          if (skuMatches.length === 1) resolvedProductId = skuMatches[0];
+        }
+        if (!resolvedProductId && itemNameNorm) {
+          const nameMatches = uniqueProductsByName.get(itemNameNorm) || [];
+          if (nameMatches.length === 1) resolvedProductId = nameMatches[0];
+        }
+        if (!resolvedProductId) return;
+
+        pushSoldQty(resolvedProductId, qty);
+      });
+    });
+
+    return byProductId;
+  }, [sales, products]);
+
+  const movementByProductId = useMemo(() => {
+    const map = new Map<string, { transferred: number; adjusted: number }>();
+    readStockLedger().forEach((entry) => {
+      const productId = String(entry.productId || '').trim();
+      if (!productId) return;
+
+      const qty = Math.abs(Number(entry.change) || 0);
+      if (!qty) return;
+
+      const current = map.get(productId) || { transferred: 0, adjusted: 0 };
+      const type = normalize(entry.type);
+      const note = normalize(entry.note);
+
+      if (type === 'stock transfer out' || type === 'stock transfer in') {
+        current.transferred += qty;
+      } else if (type === 'stock transfer reversal in' || type === 'stock transfer reversal out') {
+        current.transferred = Math.max(0, current.transferred - qty);
+      } else if (
+        type === 'stock adjustment reversal'
+        || (type === 'stock adjustment' && (note.startsWith('edit rollback') || note.startsWith('delete rollback')))
+      ) {
+        current.adjusted = Math.max(0, current.adjusted - qty);
+      } else if (type === 'stock adjustment') {
+        current.adjusted += qty;
+      }
+
+      map.set(productId, {
+        transferred: Number(current.transferred.toFixed(3)),
+        adjusted: Number(current.adjusted.toFixed(3)),
+      });
+    });
+    return map;
+  }, [ledgerVersion, products]);
+
+  const stockData = useMemo<StockReportItem[]>(() => (
+    products.map((product) => {
+      const currentStock = Number(product.stock) || 0;
+      const unitPurchasePrice = Number(product.unitPurchasePrice) || 0;
+      const unitSellingPrice = Number(product.sellingPrice) || 0;
+      const stockValuePurchase = currentStock * unitPurchasePrice;
+      const stockValueSale = currentStock * unitSellingPrice;
+      const movement = movementByProductId.get(product.id) || { transferred: 0, adjusted: 0 };
+      const soldQty = soldByProductId.get(product.id) || 0;
+      const variation = Array.isArray(product.variationRows) && product.variationRows.length > 0
+        ? product.variationRows.map((row) => String(row.values || '').trim()).filter(Boolean).join(' / ') || 'Variable'
+        : (product.type === 'Variable' ? 'Variable' : '-');
+
+      return {
+        id: product.id,
+        sku: product.sku || '',
+        product: product.name || '',
+        variation,
+        category: product.category || '',
+        subCategory: product.subCategory || '',
+        location: product.businessLocation || '',
+        unitSellingPrice,
+        currentStock,
+        stockValuePurchase,
+        stockValueSale,
+        potentialProfit: stockValueSale - stockValuePurchase,
+        totalUnitSold: Number(soldQty.toFixed(3)),
+        totalUnitTransferred: movement.transferred,
+        totalUnitAdjusted: movement.adjusted,
+        brand: product.brand || '',
+        unit: product.unit || '',
+      };
+    })
+  ), [products, movementByProductId, soldByProductId]);
+
+  const locationOptions = useMemo(
+    () => Array.from(new Set([
+      ...locations.map((loc) => loc.name),
+      ...stockData.map((item) => item.location),
+    ].filter(Boolean))).sort((a, b) => a.localeCompare(b)),
+    [locations, stockData],
+  );
+  const categoryOptions = useMemo(
+    () => Array.from(new Set(stockData.map((item) => item.category).filter(Boolean))).sort(),
+    [stockData],
+  );
+  const subCategoryOptions = useMemo(
+    () => Array.from(new Set(stockData.map((item) => item.subCategory || '').filter(Boolean))).sort(),
+    [stockData],
+  );
+  const brandOptions = useMemo(
+    () => Array.from(new Set(stockData.map((item) => item.brand).filter(Boolean))).sort(),
+    [stockData],
+  );
+  const unitOptions = useMemo(
+    () => Array.from(new Set(stockData.map((item) => item.unit).filter(Boolean))).sort(),
+    [stockData],
+  );
+
+  const filteredData = useMemo(() => {
+    const q = normalize(searchTerm);
+    return stockData.filter((item) => {
+      if (q) {
+        const hay = [item.product, item.sku, item.category, item.subCategory, item.brand, item.location].map(normalize);
+        if (!hay.some((value) => value.includes(q))) return false;
+      }
+      if (filters.location.length > 0 && !filters.location.includes(item.location)) return false;
+      if (filters.category.length > 0 && !filters.category.includes(item.category)) return false;
+      if (filters.subCategory.length > 0 && !filters.subCategory.includes(item.subCategory)) return false;
+      if (filters.brand.length > 0 && !filters.brand.includes(item.brand)) return false;
+      if (filters.unit.length > 0 && !filters.unit.includes(item.unit)) return false;
+      return true;
+    });
+  }, [stockData, searchTerm, filters]);
+
+  const totals = useMemo(
+    () => filteredData.reduce((acc, curr) => ({
+      currentStock: acc.currentStock + curr.currentStock,
+      stockValuePurchase: acc.stockValuePurchase + curr.stockValuePurchase,
+      stockValueSale: acc.stockValueSale + curr.stockValueSale,
+      potentialProfit: acc.potentialProfit + curr.potentialProfit,
+      totalUnitSold: acc.totalUnitSold + curr.totalUnitSold,
+      totalUnitTransferred: acc.totalUnitTransferred + curr.totalUnitTransferred,
+      totalUnitAdjusted: acc.totalUnitAdjusted + curr.totalUnitAdjusted,
+    }), {
+      currentStock: 0,
+      stockValuePurchase: 0,
+      stockValueSale: 0,
+      potentialProfit: 0,
+      totalUnitSold: 0,
+      totalUnitTransferred: 0,
+      totalUnitAdjusted: 0,
+    }),
+    [filteredData],
+  );
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filters, entriesPerPage]);
+
+  const totalEntries = filteredData.length;
+  const totalPages = Math.max(1, Math.ceil(totalEntries / entriesPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * entriesPerPage;
+  const paginatedData = filteredData.slice(pageStartIndex, pageStartIndex + entriesPerPage);
+  const pageStartEntry = totalEntries === 0 ? 0 : pageStartIndex + 1;
+  const pageEndEntry = totalEntries === 0 ? 0 : pageStartIndex + paginatedData.length;
+  const pageItems = useMemo(
+    () => buildPageItems(safeCurrentPage, totalPages),
+    [safeCurrentPage, totalPages],
+  );
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const labelColumnKey = useMemo(
+    () => displayedColumns.find((column) => (
+      column.key === 'sku'
+      || column.key === 'product'
+      || column.key === 'variation'
+      || column.key === 'category'
+      || column.key === 'location'
+    ))?.key,
+    [displayedColumns],
+  );
+
+  const historyProduct = useMemo(
+    () => products.find((product) => product.id === historyProductId) || null,
+    [products, historyProductId],
+  );
+
+  const exportCsv = () => {
+    const exportColumns = displayedColumns;
+    const headers = ['Action', ...exportColumns.map((column) => column.label)];
+    const lines = filteredData.map((item) => [
+      toCsvCell('Product stock history'),
+      ...exportColumns.map((column) => {
+        switch (column.key) {
+          case 'sku': return toCsvCell(item.sku);
+          case 'product': return toCsvCell(item.product);
+          case 'variation': return toCsvCell(item.variation);
+          case 'category': return toCsvCell(item.category);
+          case 'location': return toCsvCell(item.location);
+          case 'unitSellingPrice': return toCsvCell(item.unitSellingPrice.toFixed(3));
+          case 'currentStock': return toCsvCell(item.currentStock.toFixed(3));
+          case 'stockValuePurchase': return toCsvCell(item.stockValuePurchase.toFixed(3));
+          case 'stockValueSale': return toCsvCell(item.stockValueSale.toFixed(3));
+          case 'potentialProfit': return toCsvCell(item.potentialProfit.toFixed(3));
+          case 'totalUnitSold': return toCsvCell(item.totalUnitSold.toFixed(3));
+          case 'totalUnitTransferred': return toCsvCell(item.totalUnitTransferred.toFixed(3));
+          case 'totalUnitAdjusted': return toCsvCell(item.totalUnitAdjusted.toFixed(3));
+          default: return toCsvCell('');
+        }
+      }),
+    ].join(','));
+    const csv = [headers.join(','), ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stock-report.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    const exportColumns = displayedColumns;
+    const headers = ['Action', ...exportColumns.map((column) => column.label)];
+    const lines = filteredData.map((item) => [
+      'Product stock history',
+      ...exportColumns.map((column) => {
+        switch (column.key) {
+          case 'sku': return item.sku;
+          case 'product': return item.product;
+          case 'variation': return item.variation;
+          case 'category': return item.category;
+          case 'location': return item.location;
+          case 'unitSellingPrice': return item.unitSellingPrice.toFixed(3);
+          case 'currentStock': return item.currentStock.toFixed(3);
+          case 'stockValuePurchase': return item.stockValuePurchase.toFixed(3);
+          case 'stockValueSale': return item.stockValueSale.toFixed(3);
+          case 'potentialProfit': return item.potentialProfit.toFixed(3);
+          case 'totalUnitSold': return item.totalUnitSold.toFixed(3);
+          case 'totalUnitTransferred': return item.totalUnitTransferred.toFixed(3);
+          case 'totalUnitAdjusted': return item.totalUnitAdjusted.toFixed(3);
+          default: return '';
+        }
+      }),
+    ].join('\t'));
+    const tsv = [headers.join('\t'), ...lines].join('\n');
+    const blob = new Blob([tsv], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'stock-report.xls';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
-      
-      {/* Header */}
       <div>
-          <h2 className="text-xl font-bold text-slate-900">Stock Report</h2>
+        <div className="flex items-center gap-4 mb-6">
+        <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
+          <Warehouse size={24} className="text-white" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">Stock Report</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Current stock levels across all locations</p>
+        </div>
+      </div>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-          <div 
-            className="flex items-center gap-2 mb-2 text-blue-600 font-bold text-sm cursor-pointer w-fit"
-            onClick={() => setShowFilters(!showFilters)}
-          >
-              <Filter size={16} /> Filters
+      <div className="bg-white p-4 rounded-[2rem] border border-slate-200 shadow-sm relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+<div className="flex items-center gap-2 mb-2 text-blue-600 font-bold text-sm cursor-pointer w-fit" onClick={() => setShowFilters(!showFilters)}>
+          <Filter size={16} /> Filters
+        </div>
+        {showFilters && (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-2">
+            <MultiSelect
+              label="Business Location"
+              options={locationOptions}
+              selected={filters.location}
+              onChange={(value) => setFilters({ ...filters, location: value })}
+            />
+            <MultiSelect
+              label="Category"
+              options={categoryOptions}
+              selected={filters.category}
+              onChange={(value) => setFilters({ ...filters, category: value })}
+            />
+            <MultiSelect
+              label="Sub Category"
+              options={subCategoryOptions}
+              selected={filters.subCategory}
+              onChange={(value) => setFilters({ ...filters, subCategory: value })}
+            />
+            <MultiSelect
+              label="Brand"
+              options={brandOptions}
+              selected={filters.brand}
+              onChange={(value) => setFilters({ ...filters, brand: value })}
+            />
+            <MultiSelect
+              label="Unit"
+              options={unitOptions}
+              selected={filters.unit}
+              onChange={(value) => setFilters({ ...filters, unit: value })}
+            />
           </div>
-          
-          {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-2 animate-in slide-in-from-top-2">
-                <div className="group">
-                    <MultiSelect 
-                        label="Business Location"
-                        options={locations.map(loc => loc.name)}
-                        selected={filters.location}
-                        onChange={(val) => setFilters({...filters, location: val})}
-                    />
+        )}
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-6">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-sm">
+          <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
+            <span className="font-medium text-slate-500 text-xs">Closing Stock (By purchase price)</span>
+            <span className="font-bold text-slate-800 text-lg">{canViewValueMetrics ? formatCurrency(totals.stockValuePurchase) : 'Restricted'}</span>
+          </div>
+          <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
+            <span className="font-medium text-slate-500 text-xs">Closing Stock (By sale price)</span>
+            <span className="font-bold text-slate-800 text-lg">{canViewValueMetrics ? formatCurrency(totals.stockValueSale) : 'Restricted'}</span>
+          </div>
+          <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
+            <span className="font-medium text-slate-500 text-xs">Potential Profit</span>
+            <span className="font-bold text-emerald-600 text-lg">{canViewValueMetrics ? formatCurrency(totals.potentialProfit) : 'Restricted'}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-slate-500 text-xs">Profit Margin %</span>
+            <span className="font-bold text-slate-800 text-lg">
+              {canViewValueMetrics
+                ? (totals.stockValueSale > 0 ? ((totals.potentialProfit / totals.stockValueSale) * 100).toFixed(3) : '0.000')
+                : 'Restricted'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
+        <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-white">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-600 font-bold">Show</span>
+            <select
+              className="border border-slate-300 rounded px-2 py-1 text-xs outline-none"
+              value={entriesPerPage}
+              onChange={(event) => setEntriesPerPage(Number(event.target.value) || 25)}
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span className="text-xs text-slate-600 font-bold">entries</span>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={exportCsv} className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileText size={10} /> Export CSV</button>
+            <button onClick={exportExcel} className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileSpreadsheet size={10} /> Export Excel</button>
+            <button onClick={() => printActiveReportTable()} className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><Printer size={10} /> Print</button>
+            <div className="relative">
+              <button
+                data-stock-col-button
+                onClick={() => setShowColumnMenu((prev) => !prev)}
+                className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"
+              >
+                <Columns size={10} /> Column visibility
+              </button>
+              {showColumnMenu && (
+                <div data-stock-col-menu className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-20 p-2 space-y-1">
+                  {menuColumns.map((column) => (
+                    <label key={column.key} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-slate-50 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={visibleColumns[column.key]}
+                        onChange={() => toggleColumn(column.key)}
+                      />
+                      <span className="text-slate-700 font-medium">{column.label}</span>
+                    </label>
+                  ))}
                 </div>
-                <div className="group">
-                    <MultiSelect 
-                        label="Category"
-                        options={['Engine oil', 'Dry Pet Food', 'Food product']}
-                        selected={filters.category}
-                        onChange={(val) => setFilters({...filters, category: val})}
-                    />
-                </div>
-                <div className="group">
-                    <MultiSelect 
-                        label="Sub Category"
-                        options={['Option 1', 'Option 2']}
-                        selected={filters.subCategory}
-                        onChange={(val) => setFilters({...filters, subCategory: val})}
-                    />
-                </div>
-                <div className="group">
-                    <MultiSelect 
-                        label="Brand"
-                        options={['Kennol', 'Cebican', 'Garpidog', 'Migos', 'Indomie', 'Merinda', 'Zomoroda', 'Redbull', 'Code Red', 'Fanta']}
-                        selected={filters.brand}
-                        onChange={(val) => setFilters({...filters, brand: val})}
-                    />
-                </div>
-                <div className="group">
-                    <MultiSelect 
-                        label="Unit"
-                        options={['Pc(s)', 'Cartoon']}
-                        selected={filters.unit}
-                        onChange={(val) => setFilters({...filters, unit: val})}
-                    />
-                </div>
+              )}
             </div>
-          )}
+          </div>
+          <div className="flex items-center gap-2 relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <input
+              type="text"
+              placeholder="Search..."
+              className="pl-8 pr-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto min-h-[420px]">
+          <table className="w-full text-[11px] text-left border-collapse">
+            <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+              <tr>
+                <th className="px-4 py-3 whitespace-nowrap">Action</th>
+                {displayedColumns.map((column) => (
+                  <th key={column.key} className={`px-4 py-3 whitespace-nowrap ${column.right ? 'text-right' : ''}`}>
+                    {column.label} <ArrowUpDown size={10} className="inline ml-1 text-slate-400" />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginatedData.map((item) => (
+                <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setHistoryProductId(item.id)}
+                      className="flex items-center gap-1 px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-50 whitespace-nowrap"
+                    >
+                      <History size={10} /> Product stock history
+                    </button>
+                  </td>
+                  {displayedColumns.map((column) => {
+                    if (column.key === 'sku') {
+                      return <td key={column.key} className="px-4 py-3 text-slate-600 whitespace-nowrap font-mono">{item.sku}</td>;
+                    }
+                    if (column.key === 'product') {
+                      return <td key={column.key} className="px-4 py-3 text-slate-700 font-bold whitespace-nowrap">{item.product}</td>;
+                    }
+                    if (column.key === 'variation') {
+                      return <td key={column.key} className="px-4 py-3 text-slate-500 whitespace-nowrap">{item.variation}</td>;
+                    }
+                    if (column.key === 'category') {
+                      return <td key={column.key} className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.category}</td>;
+                    }
+                    if (column.key === 'location') {
+                      return <td key={column.key} className="px-4 py-3 text-slate-500 whitespace-nowrap text-[10px]">{item.location}</td>;
+                    }
+                    if (column.key === 'unitSellingPrice') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>;
+                    }
+                    if (column.key === 'currentStock') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-700 font-bold whitespace-nowrap">{formatQty(item.currentStock, item.unit)}</td>;
+                    }
+                    if (column.key === 'stockValuePurchase') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(item.stockValuePurchase)}</td>;
+                    }
+                    if (column.key === 'stockValueSale') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(item.stockValueSale)}</td>;
+                    }
+                    if (column.key === 'potentialProfit') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(item.potentialProfit)}</td>;
+                    }
+                    if (column.key === 'totalUnitSold') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatQty(item.totalUnitSold, item.unit)}</td>;
+                    }
+                    if (column.key === 'totalUnitTransferred') {
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatQty(item.totalUnitTransferred, item.unit)}</td>;
+                    }
+                    return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatQty(item.totalUnitAdjusted, item.unit)}</td>;
+                  })}
+                </tr>
+              ))}
+              {paginatedData.length === 0 && (
+                <tr>
+                  <td colSpan={Math.max(1, displayedColumns.length + 1)} className="px-4 py-10 text-center text-slate-400 italic">
+                    No data available in table
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot className="bg-slate-100 font-bold text-slate-800 text-[10px] border-t border-slate-300">
+              <tr>
+                <td className="px-4 py-3">&nbsp;</td>
+                {displayedColumns.map((column) => {
+                  if (column.key === labelColumnKey) {
+                    return <td key={column.key} className="px-4 py-3 text-right uppercase">Total:</td>;
+                  }
+                  if (column.key === 'currentStock') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{totals.currentStock.toFixed(3)}</td>;
+                  }
+                  if (column.key === 'stockValuePurchase') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{formatCurrency(totals.stockValuePurchase)}</td>;
+                  }
+                  if (column.key === 'stockValueSale') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{formatCurrency(totals.stockValueSale)}</td>;
+                  }
+                  if (column.key === 'potentialProfit') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{formatCurrency(totals.potentialProfit)}</td>;
+                  }
+                  if (column.key === 'totalUnitSold') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{totals.totalUnitSold.toFixed(3)}</td>;
+                  }
+                  if (column.key === 'totalUnitTransferred') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{totals.totalUnitTransferred.toFixed(3)}</td>;
+                  }
+                  if (column.key === 'totalUnitAdjusted') {
+                    return <td key={column.key} className="px-4 py-3 text-right">{totals.totalUnitAdjusted.toFixed(3)}</td>;
+                  }
+                  return <td key={column.key} className="px-4 py-3 text-right">&nbsp;</td>;
+                })}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+          <div>Showing {pageStartEntry} to {pageEndEntry} of {totalEntries} entries</div>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+              disabled={safeCurrentPage <= 1}
+              className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            {pageItems.map((item, index) => (
+              item === '...'
+                ? <span key={`ellipsis-${index}`} className="px-2 py-1 text-slate-400">...</span>
+                : (
+                  <button
+                    key={`page-${item}`}
+                    type="button"
+                    onClick={() => setCurrentPage(item)}
+                    className={`px-2 py-1 border rounded ${safeCurrentPage === item ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white border-slate-300 hover:bg-slate-50'}`}
+                  >
+                    {item}
+                  </button>
+                )
+            ))}
+            <button
+              type="button"
+              onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+              disabled={safeCurrentPage >= totalPages}
+              className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Summary Metrics */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-sm">
-              <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
-                  <span className="font-medium text-slate-500 text-xs">Closing Stock <span className="font-normal">(By purchase price)</span></span>
-                  <span className="font-bold text-slate-800 text-lg">{formatRiyal(2642.107)}</span>
-              </div>
-              <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
-                  <span className="font-medium text-slate-500 text-xs">Closing Stock <span className="font-normal">(By sale price)</span></span>
-                  <span className="font-bold text-slate-800 text-lg">{formatRiyal(60640.574)}</span>
-              </div>
-              <div className="flex flex-col gap-1 border-r border-slate-100 last:border-0 pr-4">
-                  <span className="font-medium text-slate-500 text-xs">Potential profit</span>
-                  <span className="font-bold text-emerald-600 text-lg">{formatRiyal(57998.467)}</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                  <span className="font-medium text-slate-500 text-xs">Profit Margin %</span>
-                  <span className="font-bold text-slate-800 text-lg">95.643</span>
-              </div>
-          </div>
-      </div>
-
-      {/* Data Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-          
-          {/* Controls */}
-          <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-white">
-              <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-600 font-bold">Show</span>
-                  <select className="border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none">
-                      <option>25</option>
-                      <option>50</option>
-                  </select>
-                  <span className="text-xs text-slate-600 font-bold">entries</span>
-              </div>
-              
-              <div className="flex gap-1">
-                  <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileText size={10}/> Export CSV</button>
-                  <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileSpreadsheet size={10}/> Export Excel</button>
-                  <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><Printer size={10}/> Print</button>
-                  <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><Columns size={10}/> Column visibility</button>
-                  <button className="px-2 py-1 bg-white border border-slate-300 rounded text-[10px] font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileText size={10}/> Export PDF</button>
-              </div>
-
-              <div className="flex items-center gap-2 relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                  <input 
-                      type="text" 
-                      placeholder="Search..." 
-                      className="pl-8 pr-3 py-1.5 rounded border border-slate-300 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-              </div>
-          </div>
-
-          <div className="overflow-x-auto min-h-[500px]">
-              <table className="w-full text-[11px] text-left border-collapse">
-                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                      <tr>
-                          <th className="px-4 py-3 whitespace-nowrap">Action</th>
-                          <th className="px-4 py-3 whitespace-nowrap">SKU <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap">Product <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap">Variation <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap">Category <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap">Location <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Unit Selling Price <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Current stock <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Current Stock Value <br/><span className="text-[9px] text-slate-500 font-normal">(By purchase price)</span> <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Current Stock Value <br/><span className="text-[9px] text-slate-500 font-normal">(By sale price)</span> <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Potential profit <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Total unit sold <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Total Unit Transferred <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-right">Total Unit Adjusted <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                          <th className="px-4 py-3 whitespace-nowrap text-center">Custom Field1</th>
-                          <th className="px-4 py-3 whitespace-nowrap text-center">Custom Field2</th>
-                          <th className="px-4 py-3 whitespace-nowrap text-center">Custom Field3</th>
-                          <th className="px-4 py-3 whitespace-nowrap text-center">Custom Field4</th>
-                      </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                      {filteredData.map((item, idx) => (
-                          <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'}`}>
-                              <td className="px-4 py-3 text-center">
-                                  <button className="flex items-center gap-1 px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-50 transition-colors whitespace-nowrap">
-                                      <History size={10} /> Product stock history
-                                  </button>
-                              </td>
-                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap font-mono">{item.sku}</td>
-                              <td className="px-4 py-3 text-slate-700 font-bold whitespace-nowrap">{item.product}</td>
-                              <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{item.variation}</td>
-                              <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{item.category}</td>
-                              <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-[10px]">{item.location}</td>
-                              <td className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatRiyal(item.unitSellingPrice)}</td>
-                              <td className="px-4 py-3 text-right text-slate-700 font-bold whitespace-nowrap">{item.currentStock.toFixed(3)} Pc(s)</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatRiyal(item.stockValuePurchase)}</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatRiyal(item.stockValueSale)}</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatRiyal(item.potentialProfit)}</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{item.totalUnitSold.toFixed(3)} Pc(s)</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{item.totalUnitTransferred.toFixed(3)} Pc(s)</td>
-                              <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{item.totalUnitAdjusted.toFixed(3)} Pc(s)</td>
-                              <td className="px-4 py-3 text-center text-slate-300">--</td>
-                              <td className="px-4 py-3 text-center text-slate-300">--</td>
-                              <td className="px-4 py-3 text-center text-slate-300">--</td>
-                              <td className="px-4 py-3 text-center text-slate-300">--</td>
-                          </tr>
-                      ))}
-                  </tbody>
-                  <tfoot className="bg-slate-200 font-bold text-slate-800 text-[10px] border-t border-slate-300 sticky bottom-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-                      <tr>
-                          <td colSpan={6} className="px-4 py-3 text-right uppercase">Total:</td>
-                          <td className="px-4 py-3 text-right"></td>
-                          <td className="px-4 py-3 text-right text-slate-800">{totals.currentStock.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{formatRiyal(totals.stockValuePurchase)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{formatRiyal(totals.stockValueSale)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{formatRiyal(totals.potentialProfit)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{totals.totalUnitSold.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{totals.totalUnitTransferred.toFixed(3)}</td>
-                          <td className="px-4 py-3 text-right text-slate-800">{totals.totalUnitAdjusted.toFixed(3)}</td>
-                          <td colSpan={4}></td>
-                      </tr>
-                  </tfoot>
-              </table>
-          </div>
-
-          <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-              <div>Showing 1 to {filteredData.length} of {filteredData.length} entries</div>
-              <div className="flex gap-1">
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled>Previous</button>
-                  <button className="px-3 py-1 bg-blue-600 text-white border border-blue-600 rounded shadow-sm">1</button>
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">2</button>
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">3</button>
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">4</button>
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">5</button>
-                  <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50">Next</button>
-              </div>
-          </div>
-      </div>
+      <ProductStockHistory
+        isOpen={!!historyProduct}
+        onClose={() => setHistoryProductId(null)}
+        product={historyProduct}
+      />
     </div>
   );
 };
 
 export default ReportStock;
+

@@ -1,0 +1,1874 @@
+{
+  "generatedAt": "2026-03-14T14:51:40.547Z",
+  "overall": {
+    "routesTotal": 91,
+    "routesDone": 91,
+    "checksTotal": 728,
+    "checksDone": 728,
+    "routePercent": 100,
+    "checkPercent": 100
+  },
+  "modules": [
+    {
+      "module": "Contacts",
+      "routesTotal": 4,
+      "routesDone": 4,
+      "checksTotal": 32,
+      "checksDone": 32,
+      "routes": [
+        {
+          "route": "customer-groups",
+          "moduleName": "Contacts",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "customers",
+          "moduleName": "Contacts",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "import-contacts",
+          "moduleName": "Contacts",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "suppliers",
+          "moduleName": "Contacts",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Dashboard",
+      "routesTotal": 1,
+      "routesDone": 1,
+      "checksTotal": 8,
+      "checksDone": 8,
+      "routes": [
+        {
+          "route": "dashboard",
+          "moduleName": "Dashboard",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "General",
+      "routesTotal": 33,
+      "routesDone": 33,
+      "checksTotal": 264,
+      "checksDone": 264,
+      "routes": [
+        {
+          "route": "activity-log",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-draft",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-expense",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-order",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-product",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-sell-return",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "balance-sheet",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "brands",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "cash-flow",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "categories",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "convert-order-to-invoice",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "discounts",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "drafts",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "edit-expense",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "edit-order",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "expense-categories",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "expenses",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "import-products",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-orders",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "open-register",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "orders",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "print-labels",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "products",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "public-view-invoice",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "returns",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "selling-price-groups",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "trial-balance",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "units",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "update-price",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "variations",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "vat-bills",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "view-order",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "warranties",
+          "moduleName": "General",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Payments",
+      "routesTotal": 5,
+      "routesDone": 5,
+      "checksTotal": 40,
+      "checksDone": 40,
+      "routes": [
+        {
+          "route": "field-payments",
+          "moduleName": "Payments",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-accounts",
+          "moduleName": "Payments",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-payments",
+          "moduleName": "Payments",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "new-payment",
+          "moduleName": "Payments",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "payment-account-report",
+          "moduleName": "Payments",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Purchases",
+      "routesTotal": 5,
+      "routesDone": 5,
+      "checksTotal": 40,
+      "checksDone": 40,
+      "routes": [
+        {
+          "route": "add-purchase",
+          "moduleName": "Purchases",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "purchase-order",
+          "moduleName": "Purchases",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "purchase-requisition",
+          "moduleName": "Purchases",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "purchase-return",
+          "moduleName": "Purchases",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "purchases",
+          "moduleName": "Purchases",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Reports",
+      "routesTotal": 18,
+      "routesDone": 18,
+      "checksTotal": 144,
+      "checksDone": 144,
+      "routes": [
+        {
+          "route": "report-customer-groups",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-expense",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-items",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-lot",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-product-purchase",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-product-sell",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-profit-loss",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-purchase-payment",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-purchase-sale",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-register",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-sales-rep",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-sell-payment",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-stock",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-stock-adjustment",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-stock-expiry",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-supplier-customer",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-tax",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "report-trending-products",
+          "moduleName": "Reports",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Sell",
+      "routesTotal": 10,
+      "routesDone": 10,
+      "checksTotal": 80,
+      "checksDone": 80,
+      "routes": [
+        {
+          "route": "add-quotation",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-sale",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "edit-sale",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "import-sales",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-pos",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "pos",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "quotations",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "sales",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "sales-commission-agents",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "shipments",
+          "moduleName": "Sell",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Settings",
+      "routesTotal": 6,
+      "routesDone": 6,
+      "checksTotal": 48,
+      "checksDone": 48,
+      "routes": [
+        {
+          "route": "barcode-settings",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "invoice-settings",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "locations",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "printers",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "settings",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "tax-rates",
+          "moduleName": "Settings",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Stock",
+      "routesTotal": 5,
+      "routesDone": 5,
+      "checksTotal": 40,
+      "checksDone": 40,
+      "routes": [
+        {
+          "route": "add-stock-adjustment",
+          "moduleName": "Stock",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "add-stock-transfer",
+          "moduleName": "Stock",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "import-opening-stock",
+          "moduleName": "Stock",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-stock-adjustments",
+          "moduleName": "Stock",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "list-stock-transfers",
+          "moduleName": "Stock",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Support",
+      "routesTotal": 1,
+      "routesDone": 1,
+      "checksTotal": 8,
+      "checksDone": 8,
+      "routes": [
+        {
+          "route": "help-center",
+          "moduleName": "Support",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    },
+    {
+      "module": "Users",
+      "routesTotal": 3,
+      "routesDone": 3,
+      "checksTotal": 24,
+      "checksDone": 24,
+      "routes": [
+        {
+          "route": "add-user",
+          "moduleName": "Users",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "roles",
+          "moduleName": "Users",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        },
+        {
+          "route": "users",
+          "moduleName": "Users",
+          "checks": [
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true
+          ],
+          "checksDone": 8,
+          "checksTotal": 8,
+          "routeDone": true,
+          "missingChecks": [],
+          "notes": "Certified route QA on 2026-03-12"
+        }
+      ],
+      "routePercent": 100,
+      "checkPercent": 100,
+      "openRoutes": 0
+    }
+  ]
+}

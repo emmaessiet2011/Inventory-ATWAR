@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Calendar, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { useGlobalContext } from '../src/context/GlobalContext';
 
 interface DateRange {
   startDate: Date | null;
@@ -10,12 +11,57 @@ interface DateRange {
 interface DateRangeFilterProps {
   onRangeSelect?: (range: DateRange) => void;
   className?: string;
+  initialRange?: DateRange;
+  allowAllTime?: boolean;
 }
 
-const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, className = '' }) => {
+const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
+  onRangeSelect,
+  className = '',
+  initialRange,
+  allowAllTime = false,
+}) => {
+  const { settings } = useGlobalContext();
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState('This Year');
-  const [dateRange, setDateRange] = useState<string>('01/01/2026 - 31/12/2026');
+  const [selectedLabel, setSelectedLabel] = useState(() => String(initialRange?.label || 'This Year'));
+  const getFiscalStartMonthIndex = () => {
+    const monthNames = [
+      'january', 'february', 'march', 'april', 'may', 'june',
+      'july', 'august', 'september', 'october', 'november', 'december',
+    ];
+    const idx = monthNames.indexOf(String(settings.fyStartMonth || '').trim().toLowerCase());
+    return idx >= 0 ? idx : 0;
+  };
+  const getFinancialYearRange = (referenceDate: Date, yearOffset = 0) => {
+    const fiscalStartMonth = getFiscalStartMonthIndex();
+    const year = referenceDate.getFullYear();
+    const startYear = referenceDate.getMonth() >= fiscalStartMonth ? year : year - 1;
+    const targetStartYear = startYear + yearOffset;
+    const start = new Date(targetStartYear, fiscalStartMonth, 1);
+    const end = new Date(targetStartYear + 1, fiscalStartMonth, 0);
+    return { start, end };
+  };
+  // Helper to format date according to app settings
+  const formatDate = (date: Date) => {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return settings.dateFormat === 'mm/dd/yyyy'
+      ? `${month}/${day}/${year}`
+      : `${day}/${month}/${year}`;
+  };
+  const [dateRange, setDateRange] = useState<string>(() => {
+    if (initialRange) {
+      if (initialRange.startDate && initialRange.endDate) {
+        return `${formatDate(initialRange.startDate)} - ${formatDate(initialRange.endDate)}`;
+      }
+      return initialRange.label || 'All Time';
+    }
+    const today = new Date();
+    const start = new Date(today.getFullYear(), 0, 1);
+    const end = new Date(today.getFullYear(), 11, 31);
+    return `${formatDate(start)} - ${formatDate(end)}`;
+  });
   const [showCustomRange, setShowCustomRange] = useState(false);
   
   // Custom range temporary state
@@ -24,24 +70,10 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, classN
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Helper to format date as DD/MM/YYYY
-  const formatDate = (date: Date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year}`;
-  };
-
-  // Helper to format date as YYYY-MM-DD for input[type="date"]
-  const formatInputDate = (date: Date) => {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${year}-${month}-${day}`;
-  };
-
-  const applyRange = (label: string, start: Date, end: Date) => {
-    const formattedRange = `${formatDate(start)} - ${formatDate(end)}`;
+  const applyRange = (label: string, start: Date | null, end: Date | null) => {
+    const formattedRange = start && end
+      ? `${formatDate(start)} - ${formatDate(end)}`
+      : label || 'All Time';
     setDateRange(formattedRange);
     setSelectedLabel(label);
     if (onRangeSelect) {
@@ -52,9 +84,7 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, classN
   };
 
   const handlePresetClick = (preset: string) => {
-    const today = new Date(); // Assuming today is within 2026 for demo consistency based on previous screens, but sticking to real Date is safer. 
-    // For demo purposes, let's use real dates.
-    
+    const today = new Date();
     let start = new Date();
     let end = new Date();
 
@@ -99,14 +129,14 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, classN
             end = new Date(today.getFullYear() - 1, 11, 31);
             break;
         case 'Current financial year':
-            // Assuming Jan-Dec for demo, or could be Apr-Mar
-            start = new Date(today.getFullYear(), 0, 1);
-            end = new Date(today.getFullYear(), 11, 31);
+            ({ start, end } = getFinancialYearRange(today, 0));
             break;
         case 'Last financial year':
-            start = new Date(today.getFullYear() - 1, 0, 1);
-            end = new Date(today.getFullYear() - 1, 11, 31);
+            ({ start, end } = getFinancialYearRange(today, -1));
             break;
+        case 'All Time':
+            applyRange('All Time', null, null);
+            return;
         case 'Custom Range':
             setShowCustomRange(true);
             return; // Don't close yet
@@ -134,6 +164,29 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, classN
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    const today = new Date();
+    if (selectedLabel === 'All Time') {
+      setDateRange('All Time');
+      return;
+    }
+    if (selectedLabel === 'This Year') {
+      const start = new Date(today.getFullYear(), 0, 1);
+      const end = new Date(today.getFullYear(), 11, 31);
+      setDateRange(`${formatDate(start)} - ${formatDate(end)}`);
+      return;
+    }
+    if (selectedLabel === 'Current financial year') {
+      const { start, end } = getFinancialYearRange(today, 0);
+      setDateRange(`${formatDate(start)} - ${formatDate(end)}`);
+      return;
+    }
+    if (selectedLabel === 'Last financial year') {
+      const { start, end } = getFinancialYearRange(today, -1);
+      setDateRange(`${formatDate(start)} - ${formatDate(end)}`);
+    }
+  }, [settings.dateFormat, settings.fyStartMonth, selectedLabel]);
+
   return (
     <div className={`relative group ${className}`} ref={containerRef}>
       <label className="block text-xs font-bold text-slate-700 mb-1">Date Range:</label>
@@ -152,6 +205,7 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({ onRangeSelect, classN
             {!showCustomRange ? (
                 <div className="py-1">
                     {[
+                        ...(allowAllTime ? ['All Time'] : []),
                         'Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days', 
                         'This Month', 'Last Month', 'This month last year', 
                         'This Year', 'Last Year', 'Current financial year', 

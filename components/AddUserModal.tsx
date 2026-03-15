@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, User, Mail, Shield, Key, Check, Info, Lock, ChevronDown, UserPlus, Eye, EyeOff, Percent, DollarSign } from 'lucide-react';
+import { useGlobalContext } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
 
 interface AddUserModalProps {
   isOpen: boolean;
@@ -8,58 +10,47 @@ interface AddUserModalProps {
   initialData?: any;
 }
 
+const DEFAULT_FORM_DATA = {
+  name: '',
+  username: '',
+  email: '',
+  role: 'Cashier',
+  password: '',
+  confirmPassword: '',
+  allowLogin: true,
+  language: 'English',
+  commissionPercent: 0,
+  maxDiscountPercent: 0,
+  baseSalary: 0
+};
+
 const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSave, initialData }) => {
   const [showPassword, setShowPassword] = useState(false);
-  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
-  const [formData, setFormData] = useState({
-    name: '',
-    username: '',
-    email: '',
-    role: 'Cashier',
-    password: '',
-    confirmPassword: '',
-    allowLogin: true,
-    language: 'English',
-    commissionPercent: 0,
-    baseSalary: 0
-  });
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const { roles, users } = useGlobalContext();
+  const { addNotification } = useNotifications();
+  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
+  const availableRoles = (() => {
+    const roleNames = roles.map((r: any) => String(r?.name || '').trim()).filter(Boolean);
+    const uniqueRoleNames = Array.from(new Set(roleNames));
+    return uniqueRoleNames.length > 0
+      ? uniqueRoleNames
+      : ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
+  })();
 
   useEffect(() => {
-      // Load roles from localStorage
-      const savedRoles = localStorage.getItem('app_roles');
-      if (savedRoles) {
-          try {
-              const parsed = JSON.parse(savedRoles);
-              setAvailableRoles(parsed.map((r: any) => r.name));
-          } catch (e) {
-              console.error("Failed to load roles", e);
-              setAvailableRoles(['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier']);
-          }
-      } else {
-          setAvailableRoles(['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier']);
-      }
-
       if (initialData) {
           setFormData({
-              ...formData,
+              ...DEFAULT_FORM_DATA,
               ...initialData,
-              password: '', // Don't pre-fill password
+              password: '', // Never pre-fill password
               confirmPassword: ''
           });
       } else {
-          setFormData({
-            name: '',
-            username: '',
-            email: '',
-            role: 'Cashier',
-            password: '',
-            confirmPassword: '',
-            allowLogin: true,
-            language: 'English',
-            commissionPercent: 0,
-            baseSalary: 0
-          });
+          setFormData(DEFAULT_FORM_DATA);
       }
+      setShowPassword(false);
+      setShowConfirmPassword(false);
   }, [initialData, isOpen]);
 
   if (!isOpen) return null;
@@ -69,11 +60,84 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSave, in
   };
 
   const handleSave = () => {
-    if (!formData.name || !formData.username || !formData.email) {
-        alert("Please fill in required fields.");
-        return;
+    const name = formData.name.trim();
+    const username = formData.username.trim();
+    const email = formData.email.trim();
+    const password = formData.password.trim();
+    const confirmPassword = formData.confirmPassword;
+    const isEdit = !!initialData;
+
+    if (!name || !username || !email || !formData.role) {
+      addNotification({
+        title: 'Missing required fields',
+        message: 'Please fill in name, username, email, and role.',
+        type: 'error',
+      });
+      return;
     }
-    onSave(formData);
+
+    const duplicateUsername = users.some(
+      u => u.username.toLowerCase() === username.toLowerCase() && (!isEdit || u.id !== initialData?.id)
+    );
+    if (duplicateUsername) {
+      addNotification({
+        title: 'Duplicate username',
+        message: 'Username already exists. Please choose another username.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const duplicateEmail = users.some(
+      u => u.email.toLowerCase() === email.toLowerCase() && (!isEdit || u.id !== initialData?.id)
+    );
+    if (duplicateEmail) {
+      addNotification({
+        title: 'Duplicate email',
+        message: 'Email already exists. Please use another email address.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (!isEdit && !password) {
+      addNotification({
+        title: 'Password required',
+        message: 'Password is required for new users.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (password || !isEdit) {
+      if (password.length < 6) {
+        addNotification({
+          title: 'Weak password',
+          message: 'Password must be at least 6 characters.',
+          type: 'error',
+        });
+        return;
+      }
+      if (password !== confirmPassword) {
+        addNotification({
+          title: 'Password mismatch',
+          message: 'Password and confirm password do not match.',
+          type: 'error',
+        });
+        return;
+      }
+    }
+
+    onSave({
+      ...formData,
+      name,
+      username,
+      email,
+      password,
+      commissionPercent: Number.isFinite(Number(formData.commissionPercent)) ? Number(formData.commissionPercent) : 0,
+      maxDiscountPercent: Number.isFinite(Number(formData.maxDiscountPercent)) ? Number(formData.maxDiscountPercent) : undefined,
+      baseSalary: Number.isFinite(Number(formData.baseSalary)) ? Number(formData.baseSalary) : 0
+    });
   };
 
   return (
@@ -183,7 +247,22 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSave, in
                                     className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 transition-all text-sm font-bold text-slate-800" 
                                     placeholder="0"
                                     value={formData.commissionPercent}
-                                    onChange={(e) => handleChange('commissionPercent', parseFloat(e.target.value))}
+                                    onChange={(e) => handleChange('commissionPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))}
+                                />
+                            </div>
+                        </div>
+                        <div className="group">
+                            <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-wider ml-1">Max Discount (%)</label>
+                            <div className="relative">
+                                <Percent className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 transition-all text-sm font-bold text-slate-800"
+                                    placeholder="0"
+                                    value={formData.maxDiscountPercent}
+                                    onChange={(e) => handleChange('maxDiscountPercent', e.target.value === '' ? 0 : parseFloat(e.target.value))}
                                 />
                             </div>
                         </div>
@@ -196,7 +275,7 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSave, in
                                     className="w-full pl-11 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 transition-all text-sm font-bold text-slate-800" 
                                     placeholder="0.000"
                                     value={formData.baseSalary}
-                                    onChange={(e) => handleChange('baseSalary', parseFloat(e.target.value))}
+                                    onChange={(e) => handleChange('baseSalary', e.target.value === '' ? 0 : parseFloat(e.target.value))}
                                 />
                             </div>
                         </div>
@@ -218,10 +297,32 @@ const AddUserModal: React.FC<AddUserModalProps> = ({ isOpen, onClose, onSave, in
                                 onChange={(e) => handleChange('password', e.target.value)}
                             />
                             <button 
+                                type="button"
                                 onClick={() => setShowPassword(!showPassword)}
                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
                             >
                                 {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="group">
+                        <label className="block text-[10px] font-black text-slate-500 mb-2 uppercase tracking-wider ml-1">Confirm Password</label>
+                        <div className="relative">
+                            <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input
+                                type={showConfirmPassword ? "text" : "password"}
+                                className="w-full pl-12 pr-12 py-3.5 rounded-2xl bg-slate-50 border-2 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-mono text-slate-800"
+                                placeholder="••••••••"
+                                value={formData.confirmPassword}
+                                onChange={(e) => handleChange('confirmPassword', e.target.value)}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600 transition-colors"
+                            >
+                                {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                             </button>
                         </div>
                     </div>

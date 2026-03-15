@@ -1,19 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  Plus, Search, Printer, Download, ChevronDown, 
+import {
+  Plus, Search, Printer, Download, ChevronDown,
   ArrowUpDown, Edit, Ban, ShoppingBag, X,
-  CreditCard, Eye, SlidersHorizontal, FileText, Sparkles,
-  Filter, MoreVertical, Phone, Mail, MapPin, Settings,
-  BarChart3, StickyNote, Activity, Banknote, CheckCircle2
+  CreditCard, Eye, SlidersHorizontal, FileText,
+  Filter, Phone, MapPin,
+  BarChart3, StickyNote, Activity, Banknote, CheckCircle2,
+  DollarSign, Calendar, Trash2, Truck
 } from 'lucide-react';
 import MultiSelect from './MultiSelect';
 import { useGlobalContext, Supplier as GlobalSupplier } from '../src/context/GlobalContext';
-
-// Utility for currency
-const formatOMR = (amount: number) => {
-  return `OMR ${amount.toLocaleString('en-OM', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
-};
+import { useNotifications } from '../src/context/NotificationContext';
+import { printActiveReportTable } from '../src/utils/printUtils';
+import { clampPrecision, normalizePrefix, toFixedPrecision } from '../src/utils/paymentUtils';
+import { buildPaginationItems } from '../src/utils/pagination';
+import {
+  buildPaymentAccountOptions,
+  PAYMENT_ACCOUNTS_UPDATED_EVENT,
+  resolveDefaultAccountFromMethod,
+} from '../src/utils/paymentAccounts';
 
 interface Supplier {
   id: string; // Contact ID
@@ -32,6 +37,7 @@ interface Supplier {
   status: 'Active' | 'Inactive';
   assignedTo?: string;
   purchaseStatus?: string;
+  contactCategory?: 'Supplier' | 'Individual';
   customValues?: Record<string, string>;
 }
 
@@ -42,80 +48,8 @@ interface DropdownPosition {
   transformOrigin: string;
 }
 
-const initialSuppliers: Supplier[] = [
-  {
-    id: 'SUP-1001',
-    businessName: 'Oman Oil Marketing Co.',
-    name: 'Ahmed Al-Balushi',
-    email: 'sales@oomco.com',
-    taxNumber: 'OM12345678',
-    payTerm: 'Net 30',
-    openingBalance: 0,
-    advanceBalance: 500.000,
-    addedOn: '2023-01-15',
-    address: 'PO Box 123, Muscat',
-    mobile: '+968 9988 7766',
-    totalPurchaseDue: 4500.000,
-    totalReturnDue: 0,
-    status: 'Active',
-    assignedTo: 'Admin',
-    purchaseStatus: 'Received'
-  },
-  {
-    id: 'SUP-1002',
-    businessName: 'Global Pet Supplies LLC',
-    name: 'Sarah Jenkins',
-    email: 'sarah@globalpet.com',
-    taxNumber: 'OM87654321',
-    payTerm: 'Net 15',
-    openingBalance: 150.000,
-    advanceBalance: 0,
-    addedOn: '2023-03-22',
-    address: 'Rusayl Industrial Estate',
-    mobile: '+968 9123 4567',
-    totalPurchaseDue: 1250.500,
-    totalReturnDue: 50.000,
-    status: 'Active',
-    assignedTo: 'Sales Rep 1',
-    purchaseStatus: 'Pending'
-  },
-  {
-    id: 'SUP-1003',
-    businessName: 'Al Maha Ceramics',
-    name: 'Mohammed Al-Lawati',
-    email: 'procurement@almaha.com',
-    taxNumber: 'OM11223344',
-    payTerm: 'Cash',
-    openingBalance: 0,
-    advanceBalance: 0,
-    addedOn: '2023-06-10',
-    address: 'Sohar Port Freezone',
-    mobile: '+968 9876 5432',
-    totalPurchaseDue: 0,
-    totalReturnDue: 0,
-    status: 'Inactive',
-    assignedTo: 'Admin',
-    purchaseStatus: 'Ordered'
-  },
-  {
-    id: 'SUP-1004',
-    businessName: 'Kennol Performance Oil',
-    name: 'Jean Pierre',
-    email: 'export@kennol.com',
-    taxNumber: 'OM55667788',
-    payTerm: 'Net 60',
-    openingBalance: 2000.000,
-    advanceBalance: 1000.000,
-    addedOn: '2023-08-05',
-    address: 'Ghala Industrial Area',
-    mobile: '+968 9555 4433',
-    totalPurchaseDue: 12000.000,
-    totalReturnDue: 0,
-    status: 'Active',
-    assignedTo: 'Sales Rep 2',
-    purchaseStatus: 'Received'
-  },
-];
+type ConfirmationActionType = 'deactivate' | 'activate' | 'deleteSupplier' | 'removeCustomField';
+
 
 interface SuppliersProps {
     onNavigate: (page: string) => void;
@@ -125,20 +59,31 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   // Pull ALL suppliers from GlobalContext — single source of truth
   const {
     suppliers: globalSuppliers,
+    setSuppliers: globalSetSuppliers,
     addSupplier: globalAddSupplier,
     updateSupplier: globalUpdateSupplier,
     deleteSupplier: globalDeleteSupplier,
+    addPayment: globalAddPayment,
+    purchases,
     users,
     currentUser,
+    locations,
+    settings,
+    formatCurrency,
+    generateId,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const suppliers = globalSuppliers;
-  const setSuppliers = (_fn: any) => {}; // no-op stub — all mutations go through context
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [customColumns, setCustomColumns] = useState<string[]>([]);
+  const [customColumns, setCustomColumns] = useState<string[]>(() => {
+    try { const s = localStorage.getItem('app_supplier_custom_columns'); return s ? JSON.parse(s) : []; } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem('app_supplier_custom_columns', JSON.stringify(customColumns)); }, [customColumns]);
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-right' });
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -161,45 +106,134 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   // Confirmation Modal State
   const [confirmationModal, setConfirmationModal] = useState<{
       isOpen: boolean;
-      type: 'deactivate' | 'activate';
+      type: ConfirmationActionType;
       supplierId: string | null;
       supplierName: string;
+      customFieldName: string;
   }>({
       isOpen: false,
       type: 'deactivate',
       supplierId: null,
-      supplierName: ''
+      supplierName: '',
+      customFieldName: '',
   });
+
+  // Payment Modal State
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentSupplier, setPaymentSupplier] = useState<Supplier | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [paymentDate, setPaymentDate] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
+  const [paymentAccount, setPaymentAccount] = useState('Cash Account');
+  const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
+  const [payFileName, setPayFileName] = useState('');
+
+  // Pay Term modal fields
+  const [payTermDays, setPayTermDays] = useState<string>('');
+  const [payTermUnit, setPayTermUnit] = useState<string>('Days');
+
+  // Pagination
+  const [pageSize, setPageSize] = useState(Number(settings.defaultTableEntries) || 25);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Form State
   const [formData, setFormData] = useState<Partial<Supplier>>({
-    customValues: {}
+    customValues: {},
+    contactCategory: 'Supplier',
+    status: 'Active',
+    addedOn: new Date().toISOString().split('T')[0],
+    assignedTo: currentUser?.name || 'Admin',
   });
 
   // GlobalContext handles localStorage persistence — no need to duplicate here
 
+  const paymentMethodOptions = useMemo(() => {
+    const methods = locations
+      .flatMap(location => location.paymentMethods || [])
+      .filter(method => method.enabled)
+      .map(method => method.name)
+      .filter(Boolean);
+    return Array.from(new Set(methods)).length > 0
+      ? Array.from(new Set(methods))
+      : ['Cash', 'Card', 'Cheque', 'Bank Transfer'];
+  }, [locations]);
+
+  const paymentAccountOptions = useMemo(() => {
+    return buildPaymentAccountOptions({
+      locations,
+      methodName: paymentMethod,
+      includeAllLocationAccounts: true,
+      includeStoredAccounts: true,
+      includeNone: false,
+    });
+  }, [locations, paymentMethod, accountOptionsVersion]);
+
+  useEffect(() => {
+    const handleAccountsUpdated = () => setAccountOptionsVersion(prev => prev + 1);
+    window.addEventListener(PAYMENT_ACCOUNTS_UPDATED_EVENT, handleAccountsUpdated as EventListener);
+    return () => window.removeEventListener(PAYMENT_ACCOUNTS_UPDATED_EVENT, handleAccountsUpdated as EventListener);
+  }, []);
+
+  useEffect(() => {
+    const resolvedAccount = resolveDefaultAccountFromMethod(paymentMethod || 'Cash');
+    if (paymentAccount !== resolvedAccount) {
+      setPaymentAccount(resolvedAccount);
+    }
+  }, [paymentMethod, paymentAccount]);
+  const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
+
+  const assignableUsers = useMemo(() => {
+    const names = users.length > 0 ? users.map(u => u.name).filter(Boolean) : [];
+    if (names.length > 0) return Array.from(new Set(names));
+    return [currentUser?.name || 'Admin'];
+  }, [users, currentUser]);
+
+  const resetSupplierForm = () => {
+    setEditingSupplierId(null);
+    setFormData({
+      id: '',
+      businessName: '',
+      name: '',
+      email: '',
+      taxNumber: '',
+      payTerm: '',
+      openingBalance: 0,
+      advanceBalance: 0,
+      addedOn: new Date().toISOString().split('T')[0],
+      address: '',
+      mobile: '',
+      status: 'Active',
+      assignedTo: currentUser?.name || 'Admin',
+      contactCategory: 'Supplier',
+      customValues: {},
+    });
+    setPayTermDays('');
+    setPayTermUnit('Days');
+  };
+
   const confirmAddCustomField = () => {
     const trimmedName = newCustomFieldName.trim();
-    if (trimmedName && !customColumns.includes(trimmedName)) {
+    const alreadyExists = customColumns.some(col => col.toLowerCase() === trimmedName.toLowerCase());
+    if (trimmedName && !alreadyExists) {
         setCustomColumns([...customColumns, trimmedName]);
         setNewCustomFieldName('');
         setIsAddingCustomField(false);
     } else if (!trimmedName) {
         setIsAddingCustomField(false);
     } else {
-        alert('Field already exists!');
+        addNotification({ title: 'Duplicate Field', message: `Custom field "${trimmedName}" already exists.`, type: 'warning' });
     }
   };
 
   const removeCustomField = (fieldToRemove: string) => {
-    if (confirm(`Remove custom field "${fieldToRemove}"?`)) {
-        setCustomColumns(customColumns.filter(col => col !== fieldToRemove));
-        if (formData.customValues) {
-            const newValues = { ...formData.customValues };
-            delete newValues[fieldToRemove];
-            setFormData({ ...formData, customValues: newValues });
-        }
-    }
+    setConfirmationModal({
+      isOpen: true,
+      type: 'removeCustomField',
+      supplierId: null,
+      supplierName: '',
+      customFieldName: fieldToRemove,
+    });
   };
 
   const handleInputChange = (field: keyof Supplier, value: any) => {
@@ -217,52 +251,179 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   };
 
   const handleSaveSupplier = () => {
-    if (!formData.businessName || !formData.mobile) {
-        alert("Please fill in required fields: Business Name and Mobile");
-        return;
+    const businessName = String(formData.businessName || '').trim();
+    const contactPerson = String(formData.name || '').trim();
+    const mobile = String(formData.mobile || '').trim();
+    const email = String(formData.email || '').trim();
+    const taxNumber = String(formData.taxNumber || '').trim();
+    const idInput = String(formData.id || '').trim();
+    const isEdit = !!editingSupplierId;
+    const existing = isEdit ? suppliers.find(s => s.id === editingSupplierId) : null;
+
+    if (!businessName || !mobile || !contactPerson) {
+      addNotification({
+        title: 'Missing Required Fields',
+        message: 'Business Name, Contact Person, and Mobile are required.',
+        type: 'error',
+      });
+      return;
     }
 
-    const isEdit = !!(formData as any).id && suppliers.some(s => s.id === (formData as any).id);
-    const existing = isEdit ? suppliers.find(s => s.id === (formData as any).id) : null;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      addNotification({
+        title: 'Invalid Email',
+        message: 'Please enter a valid email address.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (payTermDays && Number(payTermDays) < 0) {
+      addNotification({
+        title: 'Invalid Pay Term',
+        message: 'Pay term days cannot be negative.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (isEdit && !existing) {
+      addNotification({
+        title: 'Supplier Not Found',
+        message: 'This supplier no longer exists. Refresh and try again.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const resolvedId = isEdit ? existing!.id : (idInput || generateId('SUP-'));
+    const duplicateId = suppliers.some(s => s.id === resolvedId && s.id !== editingSupplierId);
+    if (duplicateId) {
+      addNotification({
+        title: 'Duplicate Contact ID',
+        message: `Supplier ID "${resolvedId}" already exists.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    const normalize = (value: string) => value.trim().toLowerCase();
+    const normalizeMobile = (value: string) => value.replace(/\D+/g, '');
+    const duplicateBusiness = suppliers.some(s => s.id !== editingSupplierId && normalize(s.businessName) === normalize(businessName));
+    if (duplicateBusiness) {
+      addNotification({
+        title: 'Duplicate Business Name',
+        message: `A supplier with business name "${businessName}" already exists.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    const normalizedMobile = normalizeMobile(mobile);
+    const duplicateMobile = suppliers.some(s => {
+      if (s.id === editingSupplierId) return false;
+      const supplierMobile = normalizeMobile(String(s.mobile || ''));
+      return supplierMobile.length > 0 && supplierMobile === normalizedMobile;
+    });
+    if (duplicateMobile) {
+      addNotification({
+        title: 'Duplicate Mobile',
+        message: `A supplier with mobile "${mobile}" already exists.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (email) {
+      const duplicateEmail = suppliers.some(s => s.id !== editingSupplierId && normalize(s.email || '') === normalize(email));
+      if (duplicateEmail) {
+        addNotification({
+          title: 'Duplicate Email',
+          message: `A supplier with email "${email}" already exists.`,
+          type: 'error',
+        });
+        return;
+      }
+    }
+
+    const builtPayTerm = payTermDays ? `${Math.max(0, Number(payTermDays))} ${payTermUnit}` : (formData.payTerm || 'Net 30');
+    const openingBalance = Number(formData.openingBalance) || 0;
+    const advanceBalance = Number(formData.advanceBalance) || 0;
+    const today = new Date().toISOString().split('T')[0];
+    const addedOnInput = String(formData.addedOn || '').trim();
+    const addedOn = /^\d{4}-\d{2}-\d{2}$/.test(addedOnInput)
+      ? addedOnInput
+      : (existing?.addedOn || today);
 
     const supplierData: GlobalSupplier = {
-        id: (formData as any).id || `SUP-${Math.floor(2000 + Math.random() * 8000)}`,
-        type: 'Supplier',
-        businessName: formData.businessName!,
-        name: formData.name || '',
-        email: formData.email || '',
-        mobile: formData.mobile!,
-        taxNumber: formData.taxNumber || '',
-        payTerm: formData.payTerm || 'Net 30',
-        openingBalance: Number(formData.openingBalance) || 0,
-        advanceBalance: isEdit ? (existing?.advanceBalance ?? 0) : 0,
-        addedOn: isEdit ? (existing?.addedOn || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
-        address: formData.address || '',
-        totalPurchaseDue: isEdit ? (existing?.totalPurchaseDue ?? 0) : 0,
-        totalReturnDue: isEdit ? (existing?.totalReturnDue ?? 0) : 0,
-        status: formData.status || 'Active',
-        customValues: formData.customValues || {},
-        assignedTo: formData.assignedTo || currentUser?.name || 'Admin',
-        purchaseStatus: formData.purchaseStatus || 'Ordered',
+      id: resolvedId,
+      type: 'Supplier',
+      businessName,
+      name: contactPerson,
+      email,
+      mobile,
+      taxNumber,
+      payTerm: builtPayTerm,
+      openingBalance,
+      advanceBalance,
+      addedOn,
+      address: formData.address || '',
+      totalPurchaseDue: isEdit ? (existing?.totalPurchaseDue ?? 0) : 0,
+      totalReturnDue: isEdit ? (existing?.totalReturnDue ?? 0) : 0,
+      status: formData.status || 'Active',
+      customValues: formData.customValues || {},
+      assignedTo: formData.assignedTo || currentUser?.name || 'Admin',
+      purchaseStatus: formData.purchaseStatus || 'Ordered',
+      contactCategory: formData.contactCategory || 'Supplier',
     };
 
     if (isEdit) {
-        globalUpdateSupplier(supplierData);
+      globalUpdateSupplier(supplierData);
+      addNotification({ title: 'Supplier Updated', message: `"${businessName}" was updated successfully.`, type: 'success' });
     } else {
-        globalAddSupplier(supplierData);
+      globalAddSupplier(supplierData);
+      addNotification({ title: 'Supplier Added', message: `"${businessName}" was added successfully.`, type: 'success' });
     }
 
-    setFormData({ customValues: {} });
     setIsAddModalOpen(false);
+    resetSupplierForm();
   };
 
   const handleEdit = (id: string) => {
       const supplierToEdit = suppliers.find(s => s.id === id);
       if (supplierToEdit) {
-          setFormData({ ...supplierToEdit });
+          setEditingSupplierId(supplierToEdit.id);
+          setFormData({
+            ...supplierToEdit,
+            contactCategory: supplierToEdit.contactCategory || 'Supplier',
+            customValues: supplierToEdit.customValues || {},
+            addedOn: supplierToEdit.addedOn || new Date().toISOString().split('T')[0],
+          });
+          const payTermMatch = (supplierToEdit.payTerm || '').match(/^\s*(\d+)\s*(Days|Months)\s*$/i);
+          const days = payTermMatch ? payTermMatch[1] : '';
+          const unit = payTermMatch
+            ? (payTermMatch[2].toLowerCase() === 'months' ? 'Months' : 'Days')
+            : 'Days';
+          setPayTermDays(days);
+          setPayTermUnit(unit);
+          setIsAddingCustomField(false);
+          setNewCustomFieldName('');
           setIsAddModalOpen(true);
           setActiveActionId(null);
       }
+  };
+
+  const handleDeleteSupplier = (id: string) => {
+    const supplier = suppliers.find(s => s.id === id);
+    if (!supplier) return;
+    setConfirmationModal({
+      isOpen: true,
+      type: 'deleteSupplier',
+      supplierId: id,
+      supplierName: supplier.businessName,
+      customFieldName: '',
+    });
+    setActiveActionId(null);
   };
 
   const handleToggleStatus = (id: string) => {
@@ -275,22 +436,126 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         isOpen: true,
         type: action,
         supplierId: supplier.id,
-        supplierName: supplier.businessName
+        supplierName: supplier.businessName,
+        customFieldName: '',
     });
     setActiveActionId(null);
   };
 
-  const executeConfirmation = () => {
-      if (!confirmationModal.supplierId) return;
+  const handlePay = (supplier: Supplier) => {
+    setPaymentSupplier(supplier);
+    setPaymentAmount(supplier.totalPurchaseDue.toFixed(currencyPrecision));
+    setPaymentDate(new Date().toISOString().slice(0, 16));
+    const defaultMethod = paymentMethodOptions[0] || 'Cash';
+    setPaymentMethod(defaultMethod);
+    setPaymentAccount(resolveDefaultAccountFromMethod(defaultMethod));
+    setPaymentNote('');
+    setIsPaymentModalOpen(true);
+    setActiveActionId(null);
+  };
 
-      const supplier = suppliers.find(s => s.id === confirmationModal.supplierId);
-      if (supplier) {
-          globalUpdateSupplier({
-              ...supplier,
-              status: confirmationModal.type === 'deactivate' ? 'Inactive' : 'Active'
+  const closePaymentModal = () => {
+    setIsPaymentModalOpen(false);
+    setPaymentSupplier(null);
+    setPaymentAmount('');
+    setPaymentDate('');
+    const defaultMethod = paymentMethodOptions[0] || 'Cash';
+    setPaymentMethod(defaultMethod);
+    setPaymentNote('');
+    setPaymentAccount(resolveDefaultAccountFromMethod(defaultMethod));
+    setPayFileName('');
+  };
+
+  const processSupplierPayment = () => {
+    if (!paymentSupplier) return;
+    if (!paymentDate) {
+      addNotification({ title: 'Missing Date', message: 'Please select a payment date.', type: 'error' });
+      return;
+    }
+    if (!paymentMethod) {
+      addNotification({ title: 'Missing Method', message: 'Please select a payment method.', type: 'error' });
+      return;
+    }
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      addNotification({ title: 'Invalid Amount', message: 'Please enter an amount greater than 0.', type: 'error' });
+      return;
+    }
+    const paymentPrefix = normalizePrefix(settings.purchasePaymentPrefix || settings.paymentPrefix, 'PP');
+    const roundedAmount = Number(toFixedPrecision(amount, currencyPrecision));
+    const latestPurchase = purchases
+      .filter(purchase =>
+        purchase.supplierId === paymentSupplier.id ||
+        purchase.supplier === paymentSupplier.businessName
+      )
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    globalAddPayment({
+      id: `PAY-SUP-${Date.now()}`,
+      date: paymentDate || new Date().toISOString().slice(0, 16),
+      contactId: paymentSupplier.id,
+      contactName: paymentSupplier.businessName,
+      contactType: 'Supplier',
+      amount: roundedAmount,
+      method: paymentMethod,
+      account: resolveDefaultAccountFromMethod(paymentMethod || 'Cash'),
+      location: latestPurchase?.location || '',
+      referenceNo: `${paymentPrefix}-${Date.now().toString().slice(-6)}`,
+      note: paymentNote || `Payment to ${paymentSupplier.businessName}`,
+      type: 'sent',
+      addedBy: currentUser?.name || 'Admin',
+      attachmentName: payFileName || undefined,
+    });
+    closePaymentModal();
+    addNotification({
+      title: 'Payment Recorded',
+      message: `Payment of ${formatCurrency(roundedAmount)} recorded for ${paymentSupplier.businessName}.`,
+      type: 'success',
+    });
+  };
+
+  const executeConfirmation = () => {
+      if (confirmationModal.type === 'removeCustomField') {
+        if (confirmationModal.customFieldName) {
+          const fieldName = confirmationModal.customFieldName;
+          setCustomColumns(prev => prev.filter(col => col !== fieldName));
+          setFormData(prev => {
+            const newValues = { ...(prev.customValues || {}) };
+            delete newValues[fieldName];
+            return { ...prev, customValues: newValues };
           });
+          globalSetSuppliers(prev => prev.map(s => {
+            const newValues = { ...(s.customValues || {}) };
+            delete newValues[fieldName];
+            return { ...s, customValues: newValues };
+          }));
+          addNotification({
+            title: 'Custom Field Removed',
+            message: `Custom field "${fieldName}" was removed.`,
+            type: 'info',
+          });
+        }
+      } else if (confirmationModal.type === 'deleteSupplier') {
+        if (confirmationModal.supplierId) {
+          globalDeleteSupplier(confirmationModal.supplierId);
+          addNotification({
+            title: 'Supplier Deleted',
+            message: `"${confirmationModal.supplierName}" was removed.`,
+            type: 'success',
+          });
+        }
+      } else if (confirmationModal.supplierId) {
+        const supplier = suppliers.find(s => s.id === confirmationModal.supplierId);
+        if (supplier) {
+          const nextStatus = confirmationModal.type === 'deactivate' ? 'Inactive' : 'Active';
+          globalUpdateSupplier({ ...supplier, status: nextStatus });
+          addNotification({
+            title: `Supplier ${nextStatus === 'Active' ? 'Activated' : 'Deactivated'}`,
+            message: `"${supplier.businessName}" is now ${nextStatus}.`,
+            type: 'success',
+          });
+        }
       }
-      setConfirmationModal({ isOpen: false, type: 'deactivate', supplierId: null, supplierName: '' });
+      setConfirmationModal({ isOpen: false, type: 'deactivate', supplierId: null, supplierName: '', customFieldName: '' });
   };
 
   const toggleActions = (e: React.MouseEvent<HTMLButtonElement>, id: string) => {
@@ -341,6 +606,38 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     };
   }, [activeActionId]);
 
+  // --- Export Functions ---
+  const exportToCSV = () => {
+    const csvEscape = (value: unknown) => {
+      const safe = String(value ?? '');
+      return `"${safe.replace(/"/g, '""')}"`;
+    };
+    const baseHeaders = ['Supplier ID', 'Business Name', 'Contact Person', 'Email', 'Tax Number', 'Pay Term', 'Opening Balance', 'Advance Balance', 'Added On', 'Mobile', 'Total Purchase Due', 'Total Return Due', 'Status'];
+    const headers = [...baseHeaders, ...customColumns];
+    const rows = filteredSuppliers.map(s => [
+        csvEscape(s.id),
+        csvEscape(s.businessName),
+        csvEscape(s.name),
+        csvEscape(s.email),
+        csvEscape(s.taxNumber),
+        csvEscape(s.payTerm),
+        csvEscape((Number(s.openingBalance) || 0).toFixed(3)),
+        csvEscape((Number(s.advanceBalance) || 0).toFixed(3)),
+        csvEscape(s.addedOn),
+        csvEscape(s.mobile),
+        csvEscape((Number(s.totalPurchaseDue) || 0).toFixed(3)),
+        csvEscape((Number(s.totalReturnDue) || 0).toFixed(3)),
+        csvEscape(s.status),
+        ...customColumns.map(col => csvEscape(s.customValues?.[col] || '')),
+    ].join(','));
+    const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+    const link = document.createElement('a');
+    link.setAttribute('href', encodeURI(csv));
+    link.setAttribute('download', 'suppliers_list.csv');
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    addNotification({ title: 'Export Complete', message: `${filteredSuppliers.length} supplier record(s) exported.`, type: 'success' });
+  };
+
   // --- Filtering Logic ---
   const filteredSuppliers = suppliers.filter(supplier => {
     // 1. Search Filter
@@ -365,30 +662,79 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     return matchesSearch && matchesStatus && matchesAssignedTo && matchesPurchaseDue && matchesPurchaseReturn && matchesAdvanceBalance && matchesOpeningBalance;
   });
 
+  // Reset to page 1 when filter/search changes
+  useEffect(() => { setCurrentPage(1); }, [searchTerm, JSON.stringify(filters), pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedSuppliers = filteredSuppliers.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const pageItems = buildPaginationItems(safePage, totalPages);
+  const confirmationVisual = (() => {
+    if (confirmationModal.type === 'deactivate') {
+      return {
+        title: 'Deactivate Supplier',
+        message: `Are you sure you want to deactivate "${confirmationModal.supplierName}"?`,
+        icon: <Ban size={32} />,
+        iconClass: 'bg-amber-50 text-amber-500',
+        confirmClass: 'bg-amber-500 hover:bg-amber-600 shadow-amber-900/20',
+      };
+    }
+    if (confirmationModal.type === 'activate') {
+      return {
+        title: 'Activate Supplier',
+        message: `Are you sure you want to activate "${confirmationModal.supplierName}"?`,
+        icon: <CheckCircle2 size={32} />,
+        iconClass: 'bg-emerald-50 text-emerald-500',
+        confirmClass: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/20',
+      };
+    }
+    if (confirmationModal.type === 'deleteSupplier') {
+      return {
+        title: 'Delete Supplier',
+        message: `Delete "${confirmationModal.supplierName}"? This action cannot be undone.`,
+        icon: <Trash2 size={32} />,
+        iconClass: 'bg-red-50 text-red-500',
+        confirmClass: 'bg-red-600 hover:bg-red-700 shadow-red-900/20',
+      };
+    }
+    return {
+      title: 'Remove Custom Field',
+      message: `Remove custom field "${confirmationModal.customFieldName}" from all suppliers?`,
+      icon: <SlidersHorizontal size={32} />,
+      iconClass: 'bg-blue-50 text-blue-500',
+      confirmClass: 'bg-blue-600 hover:bg-blue-700 shadow-blue-900/20',
+    };
+  })();
+
   return (
     <div className="space-y-6 animate-fade-in relative pb-10">
       
       {/* 1. Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Suppliers</h2>
-          <p className="text-slate-500 mt-2 text-lg font-light">
-            Manage vendor relationships, track balances, and purchasing history.
-          </p>
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
+            <Truck size={24} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Suppliers</h2>
+            <p className="text-slate-500 text-sm mt-0.5">Manage vendor relationships and purchasing history</p>
+          </div>
         </div>
         <div className="flex gap-3">
-            <button className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2 shadow-sm hover:shadow-md">
-                <Printer size={16} /> 
+            <button onClick={() => printActiveReportTable()} title="Print supplier list" className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2 shadow-sm hover:shadow-md">
+                <Printer size={16} /> Print
             </button>
-            <button className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2 shadow-sm hover:shadow-md">
-                <Download size={16} /> 
+            <button onClick={exportToCSV} title="Download CSV" className="bg-white border border-slate-200 text-slate-700 px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-50 transition flex items-center gap-2 shadow-sm hover:shadow-md">
+                <Download size={16} /> Export
             </button>
-            <button 
+            <button
                 onClick={() => {
-                    setFormData({ customValues: {} });
+                    resetSupplierForm();
+                    setIsAddingCustomField(false);
+                    setNewCustomFieldName('');
                     setIsAddModalOpen(true);
                 }}
-                className="bg-slate-900 text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-slate-800 transition shadow-lg shadow-slate-900/20 flex items-center gap-2 transform active:scale-95 duration-150"
+                className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95"
             >
                 <Plus size={18} /> Add Supplier
             </button>
@@ -396,7 +742,8 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       </div>
 
       {/* 2. Main Content Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col relative z-0">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative z-0">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         
         {/* Toolbar & Filters */}
         <div className="p-5 border-b border-slate-100 space-y-4 bg-slate-50/50">
@@ -489,7 +836,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                         <div className="col-span-1">
                             <MultiSelect
                                 label="Assigned To"
-                                options={users.length > 0 ? users.map(u => u.name) : ['Admin', 'Sales Rep 1', 'Sales Rep 2']}
+                                options={assignableUsers}
                                 selected={filters.assignedTo}
                                 onChange={(val) => setFilters({...filters, assignedTo: val})}
                             />
@@ -538,8 +885,8 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredSuppliers.length > 0 ? (
-                  filteredSuppliers.map((supplier) => (
+              {paginatedSuppliers.length > 0 ? (
+                  paginatedSuppliers.map((supplier) => (
                     <tr key={supplier.id} className="hover:bg-slate-50/80 transition-all duration-200 group">
                        {/* Action Column */}
                        <td className="px-4 py-3 text-center">
@@ -579,14 +926,14 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                       <td className="px-6 py-4 text-slate-600">{supplier.email}</td>
                       <td className="px-6 py-4 font-mono text-slate-600 text-xs">{supplier.taxNumber}</td>
                       <td className="px-6 py-4 text-slate-600">{supplier.payTerm}</td>
-                      <td className="px-6 py-4 text-right text-slate-700 font-medium">{formatOMR(supplier.openingBalance)}</td>
-                      <td className="px-6 py-4 text-right text-emerald-600 font-medium">{formatOMR(supplier.advanceBalance)}</td>
+                      <td className="px-6 py-4 text-right text-slate-700 font-medium">{formatCurrency(supplier.openingBalance)}</td>
+                      <td className="px-6 py-4 text-right text-emerald-600 font-medium">{formatCurrency(supplier.advanceBalance)}</td>
                       <td className="px-6 py-4 text-right">
                           <span className={`font-bold ${supplier.totalPurchaseDue > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                              {formatOMR(supplier.totalPurchaseDue)}
+                              {formatCurrency(supplier.totalPurchaseDue)}
                           </span>
                       </td>
-                      <td className="px-6 py-4 text-right text-amber-600 font-medium">{formatOMR(supplier.totalReturnDue)}</td>
+                      <td className="px-6 py-4 text-right text-amber-600 font-medium">{formatCurrency(supplier.totalReturnDue)}</td>
                       <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
                               supplier.status === 'Active' 
@@ -621,10 +968,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
              <tfoot className="bg-slate-50/80 backdrop-blur-sm font-bold text-slate-700 text-xs uppercase border-t border-slate-200 sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                 <tr>
                     <td colSpan={7} className="px-4 py-4 text-right">Grand Total:</td>
-                    <td className="px-6 py-4 text-right">{formatOMR(filteredSuppliers.reduce((a, c) => a + c.openingBalance, 0))}</td>
-                    <td className="px-6 py-4 text-right text-emerald-700">{formatOMR(filteredSuppliers.reduce((a, c) => a + c.advanceBalance, 0))}</td>
-                    <td className="px-6 py-4 text-right text-red-700">{formatOMR(filteredSuppliers.reduce((a, c) => a + c.totalPurchaseDue, 0))}</td>
-                    <td className="px-6 py-4 text-right text-amber-700">{formatOMR(filteredSuppliers.reduce((a, c) => a + c.totalReturnDue, 0))}</td>
+                    <td className="px-6 py-4 text-right">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.openingBalance, 0))}</td>
+                    <td className="px-6 py-4 text-right text-emerald-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.advanceBalance, 0))}</td>
+                    <td className="px-6 py-4 text-right text-red-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalPurchaseDue, 0))}</td>
+                    <td className="px-6 py-4 text-right text-amber-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalReturnDue, 0))}</td>
                     <td colSpan={1 + customColumns.length}></td>
                 </tr>
             </tfoot>
@@ -633,11 +980,43 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         
         {/* Pagination */}
         <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500 bg-slate-50/50">
-          <span>Showing 1 to {filteredSuppliers.length} of {filteredSuppliers.length} entries</span>
+          <div className="flex items-center gap-3">
+            <span>Showing {filteredSuppliers.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filteredSuppliers.length)} of {filteredSuppliers.length} entries</span>
+            <label className="flex items-center gap-2">
+              <span className="text-slate-500">Rows:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-1 border border-slate-200 rounded bg-white text-slate-700"
+              >
+                {[10, 25, 50, 100].map(size => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div className="flex gap-2">
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Previous</button>
-            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-md shadow-slate-900/10">1</button>
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Next</button>
+            <button
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            >Previous</button>
+            {pageItems.map((item, index) => item === '...'
+              ? <span key={`page-ellipsis-${index}`} className="px-2 py-2 text-slate-400">...</span>
+              : (
+                <button
+                  key={item}
+                  onClick={() => setCurrentPage(item)}
+                  className={`px-4 py-2 rounded-lg shadow-sm ${item === safePage ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10' : 'bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition'}`}
+                >
+                  {item}
+                </button>
+              ))}
+            <button
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            >Next</button>
           </div>
         </div>
       </div>
@@ -649,11 +1028,16 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                 {/* Modal Header */}
                 <div className="flex justify-between items-center px-8 py-6 border-b border-slate-100 bg-white sticky top-0 z-10">
                     <div>
-                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">{formData.id ? 'Edit Supplier' : 'Add New Supplier'}</h3>
+                        <h3 className="text-2xl font-black text-slate-900 tracking-tight">{editingSupplierId ? 'Edit Supplier' : 'Add New Supplier'}</h3>
                         <p className="text-slate-500 text-sm mt-1">Fill in the details below to register a new vendor.</p>
                     </div>
                     <button 
-                        onClick={() => setIsAddModalOpen(false)} 
+                        onClick={() => {
+                          setIsAddModalOpen(false);
+                          setIsAddingCustomField(false);
+                          setNewCustomFieldName('');
+                          resetSupplierForm();
+                        }} 
                         className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors"
                     >
                         <X size={24} />
@@ -669,11 +1053,25 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                                 <label className="block text-xs font-bold text-slate-900 uppercase tracking-wider">Contact Type</label>
                                 <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
                                     <label className="flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" name="type" defaultChecked className="w-4 h-4 text-red-600 focus:ring-red-500 border-slate-300" />
+                                        <input
+                                            type="radio"
+                                            name="supplierContactType"
+                                            value="Supplier"
+                                            checked={formData.contactCategory !== 'Individual'}
+                                            onChange={() => handleInputChange('contactCategory', 'Supplier')}
+                                            className="w-4 h-4 text-red-600 focus:ring-red-500 border-slate-300"
+                                        />
                                         <span className="text-sm font-medium text-slate-700">Supplier</span>
                                     </label>
                                     <label className="flex items-center gap-2 cursor-pointer">
-                                        <input type="radio" name="type" className="w-4 h-4 text-red-600 focus:ring-red-500 border-slate-300" />
+                                        <input
+                                            type="radio"
+                                            name="supplierContactType"
+                                            value="Individual"
+                                            checked={formData.contactCategory === 'Individual'}
+                                            onChange={() => handleInputChange('contactCategory', 'Individual')}
+                                            className="w-4 h-4 text-red-600 focus:ring-red-500 border-slate-300"
+                                        />
                                         <span className="text-sm font-medium text-slate-700">Individual</span>
                                     </label>
                                 </div>
@@ -687,7 +1085,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium placeholder:text-slate-400"
                                     value={formData.id || ''}
                                     onChange={(e) => handleInputChange('id', e.target.value)}
-                                    disabled={!!formData.id && suppliers.some(s => s.id === formData.id)} // Disable edit of ID if existing
+                                    disabled={!!editingSupplierId}
                                 />
                             </div>
 
@@ -741,10 +1139,20 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                             <div className="group">
                                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Pay Term</label>
                                 <div className="flex gap-2">
-                                    <input type="number" placeholder="Days" className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium" />
-                                    <select className="px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium cursor-pointer">
-                                        <option>Days</option>
-                                        <option>Months</option>
+                                    <input
+                                        type="number"
+                                        placeholder="e.g. 30"
+                                        className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium"
+                                        value={payTermDays}
+                                        onChange={(e) => setPayTermDays(e.target.value)}
+                                    />
+                                    <select
+                                        className="px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium cursor-pointer"
+                                        value={payTermUnit}
+                                        onChange={(e) => setPayTermUnit(e.target.value)}
+                                    >
+                                        <option value="Days">Days</option>
+                                        <option value="Months">Months</option>
                                     </select>
                                 </div>
                             </div>
@@ -758,9 +1166,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                                         onChange={(e) => handleInputChange('assignedTo', e.target.value)}
                                     >
                                         <option value="">Select User</option>
-                                        <option value="Admin">Admin</option>
-                                        <option value="Sales Rep 1">Sales Rep 1</option>
-                                        <option value="Sales Rep 2">Sales Rep 2</option>
+                                        {assignableUsers.map(name => <option key={name} value={name}>{name}</option>)}
                                     </select>
                                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                                 </div>
@@ -769,12 +1175,12 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                              <div className="group">
                                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Opening Balance</label>
                                 <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">OMR</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">{settings.currencySymbol}</span>
                                     <input 
                                         type="number" 
                                         placeholder="0.000" 
                                         className="w-full pl-12 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium"
-                                        value={formData.openingBalance || ''}
+                                        value={formData.openingBalance ?? ''}
                                         onChange={(e) => handleInputChange('openingBalance', e.target.value)}
                                     />
                                 </div>
@@ -786,12 +1192,12 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                             <div className="group">
                                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Advance Balance</label>
                                 <div className="relative">
-                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">OMR</span>
+                                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">{settings.currencySymbol}</span>
                                     <input 
                                         type="number" 
                                         placeholder="0.000" 
                                         className="w-full pl-12 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium"
-                                        value={formData.advanceBalance || ''}
+                                        value={formData.advanceBalance ?? ''}
                                         onChange={(e) => handleInputChange('advanceBalance', e.target.value)}
                                     />
                                 </div>
@@ -802,7 +1208,8 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                                 <input 
                                     type="date" 
                                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all text-sm font-medium text-slate-600"
-                                    defaultValue={new Date().toISOString().split('T')[0]}
+                                    value={formData.addedOn || new Date().toISOString().split('T')[0]}
+                                    onChange={(e) => handleInputChange('addedOn', e.target.value)}
                                 />
                             </div>
 
@@ -920,11 +1327,16 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
 
                 {/* Modal Footer */}
                 <div className="px-8 py-6 border-t border-slate-100 flex justify-end gap-3 bg-slate-50">
-                    <button onClick={() => setIsAddModalOpen(false)} className="px-6 py-3 border border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-white hover:shadow-sm transition-all">
+                    <button onClick={() => {
+                      setIsAddModalOpen(false);
+                      setIsAddingCustomField(false);
+                      setNewCustomFieldName('');
+                      resetSupplierForm();
+                    }} className="px-6 py-3 border border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-white hover:shadow-sm transition-all">
                         Cancel
                     </button>
                     <button onClick={handleSaveSupplier} className="px-8 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-xl shadow-red-900/20 hover:scale-[1.02] active:scale-95">
-                        {formData.id && suppliers.some(s => s.id === formData.id) ? 'Update Supplier' : 'Save Supplier'}
+                        {editingSupplierId ? 'Update Supplier' : 'Save Supplier'}
                     </button>
                 </div>
             </div>
@@ -936,31 +1348,25 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 p-6">
                 <div className="flex flex-col items-center text-center">
-                    <div className={`p-4 rounded-full mb-4 ${
-                        confirmationModal.type === 'deactivate' ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'
-                    }`}>
-                        {confirmationModal.type === 'deactivate' && <Ban size={32} />}
-                        {confirmationModal.type === 'activate' && <CheckCircle2 size={32} />}
+                    <div className={`p-4 rounded-full mb-4 ${confirmationVisual.iconClass}`}>
+                        {confirmationVisual.icon}
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 mb-2 capitalize">
-                        {confirmationModal.type} Supplier
+                    <h3 className="text-xl font-bold text-slate-900 mb-2">
+                        {confirmationVisual.title}
                     </h3>
                     <p className="text-slate-500 text-sm mb-6">
-                        Are you sure you want to {confirmationModal.type} <span className="font-bold text-slate-800">"{confirmationModal.supplierName}"</span>?
+                        {confirmationVisual.message}
                     </p>
                     <div className="flex gap-3 w-full">
                         <button 
-                            onClick={() => setConfirmationModal({ isOpen: false, type: 'deactivate', supplierId: null, supplierName: '' })}
+                            onClick={() => setConfirmationModal({ isOpen: false, type: 'deactivate', supplierId: null, supplierName: '', customFieldName: '' })}
                             className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors"
                         >
                             Cancel
                         </button>
                         <button 
                             onClick={executeConfirmation}
-                            className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg transition-colors ${
-                                 confirmationModal.type === 'deactivate' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-900/20' : 
-                                 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/20'
-                            }`}
+                            className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold shadow-lg transition-colors ${confirmationVisual.confirmClass}`}
                         >
                             Confirm
                         </button>
@@ -987,7 +1393,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
             </div>
             
             <button 
-                onClick={() => onNavigate(`view-supplier/${activeActionId}:add-payment`)}
+                onClick={() => { const sup = suppliers.find(s => s.id === activeActionId); if (sup) handlePay(sup); }}
                 className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-3 transition-colors"
             >
                 <CreditCard size={16} className="text-emerald-500" /> Pay
@@ -1058,8 +1464,166 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                     </button>
                 )
             })()}
+            <button
+                onClick={() => { if (activeActionId) handleDeleteSupplier(activeActionId); }}
+                className="w-full text-left px-4 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-3 transition-colors"
+            >
+                <Trash2 size={16} /> Delete
+            </button>
         </div>,
         document.body
+      )}
+
+      {/* Supplier Payment Modal */}
+      {isPaymentModalOpen && paymentSupplier && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 className="text-xl font-bold text-slate-800">Add payment</h3>
+              <button onClick={closePaymentModal} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                {/* Supplier Info */}
+                <div className="bg-slate-50 p-4 rounded border border-slate-200">
+                  <p className="text-sm font-bold text-slate-700">
+                    Supplier: <span className="font-normal text-slate-600">{paymentSupplier.businessName} ({paymentSupplier.name})</span>
+                  </p>
+                </div>
+
+                {/* Financial Summary */}
+                <div className="bg-slate-50 p-4 rounded border border-slate-200 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-700">Total Purchase Due:</span>
+                    <span className="font-medium text-slate-600">{formatCurrency(paymentSupplier.totalPurchaseDue)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-700">Total Return Due:</span>
+                    <span className="font-medium text-slate-600">{formatCurrency(paymentSupplier.totalReturnDue)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-bold text-slate-700">Advance Balance:</span>
+                    <span className="font-medium text-slate-600">{formatCurrency(paymentSupplier.advanceBalance)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="group">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Payment Method:*</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Banknote size={16} /></div>
+                    <select
+                      className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                    >
+                      {paymentMethodOptions.map(method => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                  </div>
+                </div>
+
+                <div className="group">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Paid on:*</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Calendar size={16} /></div>
+                    <input
+                      type="datetime-local"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="group">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Amount:*</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><DollarSign size={16} /></div>
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      onBlur={() => {
+                        const parsed = Number(paymentAmount);
+                        if (!Number.isNaN(parsed) && paymentAmount !== '') {
+                          setPaymentAmount(parsed.toFixed(currencyPrecision));
+                        }
+                      }}
+                      className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div className="group">
+                    <label className="block text-sm font-bold text-slate-800 mb-1">Payment Account:</label>
+                    <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Banknote size={16} /></div>
+                        <select
+                            className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded text-sm appearance-none bg-slate-100 cursor-not-allowed"
+                            value={paymentAccount}
+                            onChange={(e) => setPaymentAccount(e.target.value)}
+                            disabled
+                        >
+                            {paymentAccountOptions.map(account => (
+                              <option key={account} value={account}>{account}</option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                    </div>
+                </div>
+                <div className="group">
+                    <label className="block text-sm font-bold text-slate-800 mb-1">Attach Document:</label>
+                    <div>
+                        <div className="flex items-center">
+                            <label className="cursor-pointer bg-slate-100 border border-slate-300 text-slate-700 px-3 py-2 rounded-l text-sm hover:bg-slate-200 whitespace-nowrap">
+                                Choose File<input type="file" accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png" className="hidden" onChange={(e) => setPayFileName(e.target.files?.[0]?.name || '')} />
+                            </label>
+                            <span className="px-3 py-2 border border-l-0 border-slate-300 rounded-r w-full text-sm text-slate-500 bg-white truncate">{payFileName || 'No file chosen'}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1">Allowed: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</p>
+                    </div>
+                </div>
+              </div>
+
+              <div className="group mb-6">
+                <label className="block text-sm font-bold text-slate-800 mb-1">Payment Note:</label>
+                <textarea
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 h-24 resize-none"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                ></textarea>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+              <button
+                onClick={processSupplierPayment}
+                className="px-6 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-blue-700 transition-colors"
+              >
+                Save
+              </button>
+              <button
+                onClick={closePaymentModal}
+                className="px-6 py-2 bg-slate-800 text-white rounded font-bold text-sm hover:bg-slate-900 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

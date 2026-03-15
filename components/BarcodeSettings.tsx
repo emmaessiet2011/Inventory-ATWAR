@@ -1,218 +1,413 @@
-import React, { useState } from 'react';
-import { Plus, Search, Edit, Trash2, ArrowUpDown } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Edit, Plus, Search, Trash2, X } from 'lucide-react';
+import { useGlobalContext, BarcodeStickerSetting } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
 
-interface BarcodeSetting {
-    id: number;
-    name: string;
-    description: string;
-}
+type BarcodeSettingForm = {
+  name: string;
+  description: string;
+  isContinuousFeed: boolean;
+  additionalTopMargin: string;
+  additionalLeftMargin: string;
+  stickerWidth: string;
+  stickerHeight: string;
+  paperWidth: string;
+  paperHeight: string;
+  stickersInOneRow: string;
+  distanceBetweenRows: string;
+  distanceBetweenColumns: string;
+  stickersInOneSheet: string;
+  isDefault: boolean;
+};
+
+const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
+const createEmptyForm = (isDefault = false): BarcodeSettingForm => ({
+  name: '',
+  description: '',
+  isContinuousFeed: false,
+  additionalTopMargin: '0',
+  additionalLeftMargin: '0',
+  stickerWidth: '',
+  stickerHeight: '',
+  paperWidth: '',
+  paperHeight: '',
+  stickersInOneRow: '1',
+  distanceBetweenRows: '0',
+  distanceBetweenColumns: '0',
+  stickersInOneSheet: '1',
+  isDefault,
+});
+
+const toForm = (setting: BarcodeStickerSetting): BarcodeSettingForm => ({
+  name: setting.name,
+  description: setting.description,
+  isContinuousFeed: !!setting.isContinuousFeed,
+  additionalTopMargin: String(setting.additionalTopMargin ?? 0),
+  additionalLeftMargin: String(setting.additionalLeftMargin ?? 0),
+  stickerWidth: String(setting.stickerWidth ?? ''),
+  stickerHeight: String(setting.stickerHeight ?? ''),
+  paperWidth: String(setting.paperWidth ?? ''),
+  paperHeight: String(setting.paperHeight ?? ''),
+  stickersInOneRow: String(setting.stickersInOneRow ?? 1),
+  distanceBetweenRows: String(setting.distanceBetweenRows ?? 0),
+  distanceBetweenColumns: String(setting.distanceBetweenColumns ?? 0),
+  stickersInOneSheet: String(setting.stickersInOneSheet ?? 1),
+  isDefault: !!setting.isDefault,
+});
+
+const toNumber = (value: string, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
 
 const BarcodeSettings: React.FC = () => {
-    const [view, setView] = useState<'list' | 'add'>('list');
-    const [settingsList, setSettingsList] = useState<BarcodeSetting[]>([]);
+  const { addNotification } = useNotifications();
+  const {
+    barcodeSettings,
+    addBarcodeSetting,
+    updateBarcodeSetting,
+    deleteBarcodeSetting,
+    generateId,
+  } = useGlobalContext();
 
-    const handleSave = () => {
-        setView('list');
-    };
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<BarcodeSettingForm>(createEmptyForm(barcodeSettings.length === 0));
 
-    if (view === 'add') {
-        return (
-            <div className="space-y-4 animate-fade-in pb-10">
-                <div className="flex items-center gap-2">
-                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Add barcode sticker setting</h2>
-                </div>
+  const filteredSettings = useMemo(() => {
+    const q = normalizeText(searchTerm);
+    if (!q) return barcodeSettings;
+    return barcodeSettings.filter((setting) =>
+      normalizeText(setting.name).includes(q) || normalizeText(setting.description).includes(q),
+    );
+  }, [barcodeSettings, searchTerm]);
 
-                <div className="bg-white rounded border border-slate-200 shadow-sm p-6">
-                    <div className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-bold text-slate-800 mb-1">Sticker Sheet setting Name:*</label>
-                            <input type="text" placeholder="Sticker Sheet setting Name" className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-bold text-slate-800 mb-1">Sticker Sheet setting Description</label>
-                            <textarea placeholder="Sticker Sheet setting Description" className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm h-24"></textarea>
-                        </div>
-                        
-                        <div>
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                                <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                                Continous feed or rolls
-                            </label>
-                        </div>
+  const openAddModal = () => {
+    setEditingId(null);
+    setForm(createEmptyForm(barcodeSettings.length === 0));
+    setIsModalOpen(true);
+  };
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Additional top margin (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⬆</span>
-                                    <input type="number" defaultValue={0} className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Additional left margin (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⬅</span>
-                                    <input type="number" defaultValue={0} className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
+  const openEditModal = (setting: BarcodeStickerSetting) => {
+    setEditingId(setting.id);
+    setForm(toForm(setting));
+    setIsModalOpen(true);
+  };
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Width of sticker (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↔</span>
-                                    <input type="text" placeholder="Width of sticker" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Height of sticker (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↕</span>
-                                    <input type="text" placeholder="Height of sticker" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
+  const handleDelete = (setting: BarcodeStickerSetting) => {
+    if (!window.confirm(`Delete barcode setting "${setting.name}"?`)) return;
+    const result = deleteBarcodeSetting(setting.id);
+    if (!result.success) {
+      addNotification({
+        title: 'Blocked',
+        message: result.message || 'Unable to delete barcode setting.',
+        type: 'error',
+      });
+    }
+  };
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Paper width (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↔</span>
-                                    <input type="text" placeholder="Paper width" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Paper height (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↕</span>
-                                    <input type="text" placeholder="Paper height" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
+  const setDefault = (setting: BarcodeStickerSetting) => {
+    barcodeSettings
+      .filter((s) => s.id !== setting.id && s.isDefault)
+      .forEach((s) => updateBarcodeSetting({ ...s, isDefault: false }));
+    updateBarcodeSetting({ ...setting, isDefault: true });
+  };
 
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Stickers in one row:*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⋯</span>
-                                    <input type="text" placeholder="Stickers in one row" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                            <div className="hidden md:block"></div>
-
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Distance between two rows (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↕</span>
-                                    <input type="number" defaultValue={0} className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Distance between two columns (In Inches):*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">↔</span>
-                                    <input type="number" defaultValue={0} className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-bold text-slate-800 mb-1">No. of Stickers per sheet:*</label>
-                                <div className="relative">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">⊞</span>
-                                    <input type="text" placeholder="No. of Stickers per sheet" className="w-full pl-8 pr-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="flex items-center gap-2 text-sm text-slate-700">
-                                <input type="checkbox" className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                                Set as default
-                            </label>
-                        </div>
-
-                        <div className="flex justify-center pt-4">
-                            <button 
-                                onClick={handleSave}
-                                className="bg-[#5000ff] text-white px-8 py-2 rounded font-bold hover:bg-[#4000cc] transition"
-                            >
-                                Save
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
+  const handleSave = () => {
+    const name = form.name.trim();
+    if (!name) {
+      addNotification({ title: 'Validation', message: 'Setting name is required.', type: 'error' });
+      return;
+    }
+    const duplicate = barcodeSettings.find((setting) =>
+      setting.id !== editingId && normalizeText(setting.name) === normalizeText(name),
+    );
+    if (duplicate) {
+      addNotification({ title: 'Validation', message: 'Setting name already exists.', type: 'error' });
+      return;
     }
 
-    return (
-        <div className="space-y-4 animate-fade-in pb-10">
-            {/* Header */}
-            <div className="flex items-center gap-2">
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Barcodes</h2>
-                <span className="text-sm text-slate-500 mt-1">Manage your barcode settings</span>
-            </div>
+    const stickerWidth = toNumber(form.stickerWidth, -1);
+    const stickerHeight = toNumber(form.stickerHeight, -1);
+    const paperWidth = toNumber(form.paperWidth, -1);
+    const paperHeight = toNumber(form.paperHeight, -1);
+    const stickersInOneRow = Math.floor(toNumber(form.stickersInOneRow, 0));
+    const stickersInOneSheet = Math.floor(toNumber(form.stickersInOneSheet, 0));
+    const additionalTopMargin = toNumber(form.additionalTopMargin, 0);
+    const additionalLeftMargin = toNumber(form.additionalLeftMargin, 0);
+    const distanceBetweenRows = toNumber(form.distanceBetweenRows, 0);
+    const distanceBetweenColumns = toNumber(form.distanceBetweenColumns, 0);
 
-            <div className="bg-white rounded border border-slate-200 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="text-base text-slate-700">All your barcode settings</h3>
-                    <button 
-                        onClick={() => setView('add')}
-                        className="bg-[#4F46E5] text-white px-4 py-1.5 rounded text-sm hover:bg-indigo-700 transition flex items-center gap-1"
-                    >
-                        <Plus size={16} /> Add new setting
-                    </button>
-                </div>
+    if (stickerWidth <= 0 || stickerHeight <= 0 || paperWidth <= 0 || paperHeight <= 0) {
+      addNotification({
+        title: 'Validation',
+        message: 'Sticker and paper dimensions must be greater than zero.',
+        type: 'error',
+      });
+      return;
+    }
 
-                <div className="p-4 flex justify-end">
-                    <div className="relative w-64">
-                        <input 
-                            type="text" 
-                            placeholder="Search ..." 
-                            className="w-full px-3 py-1.5 text-sm rounded border border-slate-300 focus:outline-none focus:border-blue-500"
-                        />
-                    </div>
-                </div>
+    if (
+      additionalTopMargin < 0 ||
+      additionalLeftMargin < 0 ||
+      distanceBetweenRows < 0 ||
+      distanceBetweenColumns < 0
+    ) {
+      addNotification({
+        title: 'Validation',
+        message: 'Margins and distances cannot be negative.',
+        type: 'error',
+      });
+      return;
+    }
 
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
-                        <thead className="bg-slate-50 text-slate-700 font-bold border-y border-slate-200">
-                            <tr>
-                                <th className="px-4 py-3 border-r border-slate-200">Sticker Sheet setting Name <span className="text-slate-300 ml-1 float-right">⇅</span></th>
-                                <th className="px-4 py-3 border-r border-slate-200">Sticker Sheet setting Description <span className="text-slate-300 ml-1 float-right">⇅</span></th>
-                                <th className="px-4 py-3">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {settingsList.length === 0 ? (
-                                <tr>
-                                    <td colSpan={3} className="px-4 py-3 text-center text-slate-500">
-                                        No data available in table
-                                    </td>
-                                </tr>
-                            ) : (
-                                settingsList.map((setting) => (
-                                    <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-4 py-3 text-slate-700">{setting.name}</td>
-                                        <td className="px-4 py-3 text-slate-700">{setting.description}</td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-1">
-                                                <button className="px-2 py-1 text-xs text-blue-600 border border-blue-600 rounded flex items-center gap-1 hover:bg-blue-50">
-                                                    <Edit size={12} /> Edit
-                                                </button>
-                                                <button className="px-2 py-1 text-xs text-red-500 border border-red-500 rounded flex items-center gap-1 hover:bg-red-50">
-                                                    <Trash2 size={12} /> Delete
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div className="p-4 border-t border-slate-100 text-sm text-slate-600">
-                    Showing 0 to 0 of 0 entries
-                </div>
-            </div>
+    if (stickersInOneRow <= 0 || stickersInOneSheet <= 0) {
+      addNotification({
+        title: 'Validation',
+        message: 'Stickers in row/sheet must be greater than zero.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const usablePaperWidth = paperWidth - additionalLeftMargin;
+    const usablePaperHeight = paperHeight - additionalTopMargin;
+    if (usablePaperWidth <= 0 || usablePaperHeight <= 0) {
+      addNotification({
+        title: 'Validation',
+        message: 'Paper dimensions must be larger than additional margins.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (stickerWidth > usablePaperWidth || stickerHeight > usablePaperHeight) {
+      addNotification({
+        title: 'Validation',
+        message: 'Sticker dimensions must fit inside paper dimensions after margins.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const requiredRowWidth =
+      (stickersInOneRow * stickerWidth) +
+      (Math.max(0, stickersInOneRow - 1) * distanceBetweenColumns);
+    if (requiredRowWidth > usablePaperWidth) {
+      addNotification({
+        title: 'Validation',
+        message: 'Sticker width + columns spacing exceeds paper width.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const rowPitch = stickerHeight + distanceBetweenRows;
+    const maxRowsByHeight = Math.floor((usablePaperHeight + distanceBetweenRows) / rowPitch);
+    const maxStickersPerSheet = Math.max(0, maxRowsByHeight * stickersInOneRow);
+    if (!form.isContinuousFeed && stickersInOneSheet > maxStickersPerSheet) {
+      addNotification({
+        title: 'Validation',
+        message: `No. of stickers per sheet exceeds capacity (${maxStickersPerSheet}) for the selected dimensions.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    const record: BarcodeStickerSetting = {
+      id: editingId || generateId('BRC-'),
+      name,
+      description: form.description.trim(),
+      isContinuousFeed: form.isContinuousFeed,
+      additionalTopMargin,
+      additionalLeftMargin,
+      stickerWidth,
+      stickerHeight,
+      paperWidth,
+      paperHeight,
+      stickersInOneRow,
+      distanceBetweenRows,
+      distanceBetweenColumns,
+      stickersInOneSheet,
+      isDefault: form.isDefault,
+    };
+
+    if (editingId) updateBarcodeSetting(record);
+    else addBarcodeSetting(record);
+    setIsModalOpen(false);
+  };
+
+  return (
+    <div className="space-y-4 animate-fade-in pb-10">
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Barcode Settings</h2>
+        <span className="text-sm text-slate-500 mt-1">Manage barcode sticker templates</span>
+      </div>
+
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
+        <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+          <h3 className="text-base text-slate-700">All barcode settings</h3>
+          <button
+            onClick={openAddModal}
+            className="bg-[#4F46E5] text-white px-4 py-1.5 rounded text-sm hover:bg-indigo-700 transition flex items-center gap-1"
+          >
+            <Plus size={16} /> Add new setting
+          </button>
         </div>
-    );
+
+        <div className="p-4 border-b border-slate-100 flex justify-end">
+          <div className="relative w-72">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search setting..."
+              className="w-full pl-9 pr-3 py-2 text-sm rounded border border-slate-300 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
+            <thead className="bg-slate-50 text-slate-700 font-bold border-y border-slate-200">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Description</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Label Size</th>
+                <th className="px-4 py-3">Per Sheet</th>
+                <th className="px-4 py-3">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredSettings.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">No barcode settings found.</td>
+                </tr>
+              )}
+              {filteredSettings.map((setting) => (
+                <tr key={setting.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 text-slate-700">
+                    {setting.name}
+                    {setting.isDefault && (
+                      <span className="ml-2 bg-emerald-500 text-white text-[10px] font-bold px-2 py-0.5 rounded">Default</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">{setting.description || '--'}</td>
+                  <td className="px-4 py-3 text-slate-700">{setting.isContinuousFeed ? 'Continuous' : 'Sheet'}</td>
+                  <td className="px-4 py-3 text-slate-700">{setting.stickerWidth}" x {setting.stickerHeight}"</td>
+                  <td className="px-4 py-3 text-slate-700">{setting.stickersInOneSheet}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => openEditModal(setting)} className="px-2 py-1 text-xs text-blue-600 border border-blue-600 rounded flex items-center gap-1 hover:bg-blue-50">
+                        <Edit size={12} /> Edit
+                      </button>
+                      <button onClick={() => handleDelete(setting)} className="px-2 py-1 text-xs text-red-500 border border-red-500 rounded flex items-center gap-1 hover:bg-red-50">
+                        <Trash2 size={12} /> Delete
+                      </button>
+                      {!setting.isDefault && (
+                        <button onClick={() => setDefault(setting)} className="px-2 py-1 text-xs text-cyan-500 border border-cyan-500 rounded hover:bg-cyan-50">
+                          Set as default
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 text-sm text-slate-600">
+          Showing {filteredSettings.length > 0 ? 1 : 0} to {filteredSettings.length} of {filteredSettings.length} entries
+        </div>
+      </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded shadow-xl w-full max-w-3xl overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b border-slate-200">
+              <h3 className="text-xl text-slate-800">{editingId ? 'Edit barcode setting' : 'Add barcode setting'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={22} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Setting Name *</label>
+                  <input value={form.name} onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Description</label>
+                  <textarea value={form.description} onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm h-20" />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-slate-700 md:col-span-2">
+                  <input type="checkbox" checked={form.isContinuousFeed} onChange={(e) => setForm(prev => ({ ...prev, isContinuousFeed: e.target.checked }))} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  Continuous feed or rolls
+                </label>
+
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Additional top margin (Inches)</label>
+                  <input type="number" step="0.01" value={form.additionalTopMargin} onChange={(e) => setForm(prev => ({ ...prev, additionalTopMargin: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Additional left margin (Inches)</label>
+                  <input type="number" step="0.01" value={form.additionalLeftMargin} onChange={(e) => setForm(prev => ({ ...prev, additionalLeftMargin: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Width of sticker (Inches) *</label>
+                  <input type="number" step="0.01" value={form.stickerWidth} onChange={(e) => setForm(prev => ({ ...prev, stickerWidth: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Height of sticker (Inches) *</label>
+                  <input type="number" step="0.01" value={form.stickerHeight} onChange={(e) => setForm(prev => ({ ...prev, stickerHeight: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Paper width (Inches) *</label>
+                  <input type="number" step="0.01" value={form.paperWidth} onChange={(e) => setForm(prev => ({ ...prev, paperWidth: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Paper height (Inches) *</label>
+                  <input type="number" step="0.01" value={form.paperHeight} onChange={(e) => setForm(prev => ({ ...prev, paperHeight: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Stickers in one row *</label>
+                  <input type="number" min={1} value={form.stickersInOneRow} onChange={(e) => setForm(prev => ({ ...prev, stickersInOneRow: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">No. of stickers per sheet *</label>
+                  <input type="number" min={1} value={form.stickersInOneSheet} onChange={(e) => setForm(prev => ({ ...prev, stickersInOneSheet: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Distance between rows (Inches)</label>
+                  <input type="number" step="0.01" value={form.distanceBetweenRows} onChange={(e) => setForm(prev => ({ ...prev, distanceBetweenRows: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-800 mb-1">Distance between columns (Inches)</label>
+                  <input type="number" step="0.01" value={form.distanceBetweenColumns} onChange={(e) => setForm(prev => ({ ...prev, distanceBetweenColumns: e.target.value }))} className="w-full px-3 py-2 rounded border border-slate-300 focus:outline-none focus:border-blue-500 text-sm" />
+                </div>
+
+                <label className="flex items-center gap-2 text-sm text-slate-700 md:col-span-2">
+                  <input type="checkbox" checked={form.isDefault} onChange={(e) => setForm(prev => ({ ...prev, isDefault: e.target.checked }))} className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  Set as default
+                </label>
+              </div>
+            </div>
+            <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
+              <button onClick={handleSave} className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition">Save</button>
+              <button onClick={() => setIsModalOpen(false)} className="bg-slate-700 text-white px-6 py-2 rounded font-bold hover:bg-slate-800 transition">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default BarcodeSettings;

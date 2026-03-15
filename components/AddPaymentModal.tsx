@@ -1,176 +1,321 @@
-import React, { useState, useEffect } from 'react';
-import { X, Calendar, DollarSign, Banknote, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Calendar, DollarSign, Banknote, ChevronDown, CreditCard, Paperclip } from 'lucide-react';
 import { useGlobalContext } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
+import { addRegisterTransaction, getActiveRegisterSession } from '../src/utils/registerLedger';
+import {
+  clampPrecision,
+  normalizePrefix,
+  sanitizeDecimalInput,
+  toFixedPrecision,
+} from '../src/utils/paymentUtils';
+import {
+  buildPaymentAccountOptions,
+  PAYMENT_ACCOUNTS_UPDATED_EVENT,
+  resolveDefaultAccountFromMethod,
+} from '../src/utils/paymentAccounts';
 
 interface AddPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   sale: any;
   onSave?: (payment: any) => void;
+  paymentType?: 'received' | 'sent';
+  documentLabel?: string;
 }
 
-const AddPaymentModal: React.FC<AddPaymentModalProps> = ({ isOpen, onClose, sale, onSave = (_payment: any) => {} }) => {
-  const { currentUser, settings, formatCurrency } = useGlobalContext();
-  const [amount, setAmount] = useState('0.000');
+const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
+const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
+  isOpen,
+  onClose,
+  sale,
+  onSave = (_payment: any) => {},
+  paymentType = 'received',
+  documentLabel = 'Invoice No.',
+}) => {
+  const { currentUser, settings, formatCurrency, customers, locations } = useGlobalContext();
+  const { addNotification } = useNotifications();
+  const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
+  const customerRecord = customers.find(c => c.id === sale?.customerId?.toString() || c.id === sale?.customerId);
+  const activeLocation = useMemo(
+    () => locations.find(location => location.name === sale?.location),
+    [locations, sale?.location]
+  );
+  const paymentMethodOptions = useMemo(() => {
+    const enabledLocationMethods = (activeLocation?.paymentMethods || []).filter(pm => pm.enabled);
+    return enabledLocationMethods.length > 0
+      ? enabledLocationMethods.map(pm => pm.name)
+      : ['Cash', 'Card', 'Cheque', 'Bank Transfer', 'Emad'];
+  }, [activeLocation?.paymentMethods]);
+  const [amount, setAmount] = useState('0');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 16));
   const [method, setMethod] = useState('Cash');
-  const [account, setAccount] = useState('None');
+  const [account, setAccount] = useState('Cash Account');
+  const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
   const [note, setNote] = useState('');
+  const [attachmentName, setAttachmentName] = useState('');
+  const defaultAccountFromMethod = (methodName: string) =>
+    resolveDefaultAccountFromMethod(methodName, activeLocation);
+  const paymentAccountOptions = useMemo(() => (
+    buildPaymentAccountOptions({
+      locations,
+      activeLocationName: sale?.location || '',
+      methodName: method,
+      additionalAccountNames: [account],
+      includeNone: false,
+      includeStoredAccounts: true,
+    })
+  ), [locations, sale?.location, method, account, accountOptionsVersion]);
+  const resolvePaymentAccount = () => {
+    const selectedAccount = String(account || '').trim();
+    if (selectedAccount && paymentAccountOptions.includes(selectedAccount)) {
+      return selectedAccount;
+    }
+    const suggestedAccount = String(defaultAccountFromMethod(method) || '').trim();
+    if (suggestedAccount) return suggestedAccount;
+    return String(paymentAccountOptions.find(Boolean) || '').trim();
+  };
 
   useEffect(() => {
     if (!isOpen) return;
-    setAmount(sale?.sellDue?.toString() || '0.000');
+    setAmount(toFixedPrecision(sale?.sellDue || 0, currencyPrecision));
     setDate(new Date().toISOString().slice(0, 16));
-    setMethod(settings.defaultSalePaymentMethod || 'Cash');
-    setAccount('None');
+    setMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash');
     setNote('');
-  }, [isOpen, sale, settings.defaultSalePaymentMethod]);
+    setAttachmentName('');
+  }, [isOpen, sale, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handleAccountsUpdated = () => setAccountOptionsVersion(prev => prev + 1);
+    window.addEventListener(PAYMENT_ACCOUNTS_UPDATED_EVENT, handleAccountsUpdated as EventListener);
+    return () => window.removeEventListener(PAYMENT_ACCOUNTS_UPDATED_EVENT, handleAccountsUpdated as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (paymentMethodOptions.includes(method)) return;
+    setMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash');
+  }, [paymentMethodOptions, method, settings.defaultSalePaymentMethod]);
+
+  useEffect(() => {
+    const suggested = defaultAccountFromMethod(method) || 'Cash Account';
+    if (!account || !paymentAccountOptions.includes(account)) {
+      setAccount(suggested);
+    }
+  }, [method, paymentAccountOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
   const handleSave = () => {
-    const paymentAmount = parseFloat(amount);
-    if (!sale || isNaN(paymentAmount) || paymentAmount <= 0) return;
+    const paymentAmount = parseFloat(toFixedPrecision(amount, currencyPrecision));
+    if (!sale) return;
+    if (isNaN(paymentAmount) || paymentAmount <= 0) {
+      addNotification({
+        title: 'Invalid payment amount',
+        message: 'Enter a payment amount greater than 0.',
+        type: 'error',
+      });
+      return;
+    }
+    const normalizedSaleStatus = String(sale.status || sale.saleStatus || '').trim();
+    if (paymentType === 'received' && normalizedSaleStatus && normalizedSaleStatus !== 'Final') {
+      addNotification({
+        title: 'Payment blocked',
+        message: 'Payment can only be added to Final sales.',
+        type: 'warning',
+      });
+      return;
+    }
+    const paymentPrefix = normalizePrefix(settings.sellPaymentPrefix || settings.paymentPrefix, 'PAY');
+    const referenceNo = `${paymentPrefix}-${Date.now().toString().slice(-6)}`;
+    const linkedDocumentNo = String(sale.invoiceNo || '').trim();
+    const resolvedAccount = resolvePaymentAccount();
+    if (!resolvedAccount) {
+      addNotification({
+        title: 'Payment account required',
+        message: 'No payment account is configured for this method/location. Configure payment accounts and try again.',
+        type: 'error',
+      });
+      return;
+    }
     onSave({
       id: `PAY-${Date.now()}`,
-      date: date.split('T')[0],
+      date,
       contactId: sale.customerId?.toString() || '',
       contactName: sale.customerName || '',
       contactType: 'Customer',
       amount: paymentAmount,
       method,
-      account,
-      referenceNo: `PAY-${Date.now().toString().slice(-6)}`,
+      account: resolvedAccount,
+      location: sale.location || '',
+      referenceNo,
       note,
-      type: 'received',
+      type: paymentType,
       addedBy: currentUser?.name || 'Admin',
-      linkedInvoices: sale.invoiceNo ? [sale.invoiceNo] : [],
+      linkedInvoices: linkedDocumentNo ? [linkedDocumentNo] : [],
+      attachmentName: attachmentName || undefined,
     });
+    const activeRegister = getActiveRegisterSession();
+    const paymentLocation = normalizeText(sale.location);
+    const registerLocation = normalizeText(activeRegister?.locationName);
+    if (activeRegister && (!paymentLocation || paymentLocation === registerLocation)) {
+      addRegisterTransaction({
+        id: `RTX-PAY-${Date.now()}`,
+        sessionId: activeRegister.id,
+        date: new Date().toISOString(),
+        type: paymentType === 'sent' ? 'expense' : 'payment',
+        amount: paymentAmount,
+        method,
+        invoiceNo: sale.invoiceNo,
+        note: paymentType === 'sent'
+          ? `Refund sent for ${sale.invoiceNo || 'credit note'}`
+          : `Payment received for ${sale.invoiceNo || 'invoice'}`,
+        addedBy: currentUser?.name || 'Admin',
+      });
+    }
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-4xl rounded-sm shadow-xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 relative">
-        <div className="px-6 py-4 border-b border-slate-100 bg-white">
-          <h3 className="text-xl font-normal text-slate-700 text-opacity-90">Add payment</h3>
-          <button onClick={onClose} className="absolute top-4 right-4 text-slate-300 hover:text-slate-500 transition-colors">
-            <X size={20} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 relative">
+        {/* Gradient accent bar */}
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 pt-6 pb-4">
+          <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+            <CreditCard size={20} className="text-emerald-600" />
+            {paymentType === 'sent' ? 'Send Payment / Refund' : 'Add Payment'}
+          </h3>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+            <X size={18} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+        <div className="px-6 pb-6 space-y-5 max-h-[75vh] overflow-y-auto">
+          {/* Invoice info cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer</p>
+              <p className="text-sm font-bold text-slate-800 truncate">{sale?.customerName || '--'}</p>
+              <p className="text-xs text-slate-500 truncate">{sale?.businessName || ''}</p>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{documentLabel}</p>
+              <p className="text-sm font-bold text-slate-800">{sale?.invoiceNo || '--'}</p>
+              <p className="text-xs text-slate-500">{sale?.location || '--'}</p>
+            </div>
+            <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Amount Due</p>
+              <p className="text-sm font-black text-rose-600">{formatCurrency(sale?.sellDue ?? sale?.grandTotal ?? 0)}</p>
+              {(customerRecord?.advanceBalance ?? 0) > 0 && (
+                <p className="text-xs text-emerald-600 font-bold">Advance: {formatCurrency(customerRecord?.advanceBalance || 0)}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Payment fields */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 border border-slate-100 rounded-sm">
-              <p className="text-sm font-bold text-slate-800 mb-1">Customer : <span className="font-normal">{sale?.customerName}</span></p>
-              <p className="text-sm font-bold text-slate-800">Business: <span className="font-normal">{sale?.businessName || ''}</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 border border-slate-100 rounded-sm">
-              <p className="text-sm font-bold text-slate-800 mb-1">Invoice No.: <span className="font-normal">{sale?.invoiceNo}</span></p>
-              <p className="text-sm font-bold text-slate-800 mb-1">Location: <span className="font-normal">{sale?.location ? `${sale.location.substring(0, 20)}...` : '--'}</span></p>
-            </div>
-            <div className="bg-slate-50 p-4 border border-slate-100 rounded-sm">
-              <p className="text-sm font-bold text-slate-800 mb-1">Total amount: <span className="font-normal">{formatCurrency(sale?.grandTotal || sale?.totalAmount || 0)}</span></p>
-              <p className="text-sm font-bold text-slate-800 mb-1">Payment Note:</p>
-              <p className="text-sm text-slate-600">{sale?.sellNote || '--'}</p>
-            </div>
-          </div>
-
-          <div className="text-sm font-bold text-slate-800">
-            Advance Balance: <span className="font-normal">{formatCurrency(0)}</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="group">
-              <label className="block text-sm font-bold text-slate-800 mb-2">Payment Method:*</label>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Method *</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Banknote size={16} /></div>
+                <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <select
-                  className="w-full pl-10 pr-8 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-slate-600 appearance-none bg-white"
+                  className="w-full pl-9 pr-8 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
                   value={method}
                   onChange={(e) => setMethod(e.target.value)}
                 >
-                  <option value="Cash">Cash</option>
-                  <option value="Card">Card</option>
-                  <option value="Cheque">Cheque</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="Emad">Emad</option>
+                  {paymentMethodOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
 
-            <div className="group">
-              <label className="block text-sm font-bold text-slate-800 mb-2">Paid on:*</label>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Paid On *</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Calendar size={16} /></div>
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="datetime-local"
-                  className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-slate-600 bg-slate-100"
+                  className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
                 />
               </div>
             </div>
 
-            <div className="group">
-              <label className="block text-sm font-bold text-slate-800 mb-2">Amount:*</label>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Amount *</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><DollarSign size={16} /></div>
+                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
-                  className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-slate-600"
+                  inputMode="decimal"
+                  className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-bold text-slate-800"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => setAmount(sanitizeDecimalInput(e.target.value, currencyPrecision))}
+                  onBlur={() => setAmount(toFixedPrecision(amount || 0, currencyPrecision))}
                 />
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="group">
-              <label className="block text-sm font-bold text-slate-800 mb-2">Payment Account:</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Account</label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500"><Banknote size={16} /></div>
+                <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <select
-                  className="w-full pl-10 pr-8 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm text-slate-600 appearance-none bg-white"
+                  className="w-full pl-9 pr-8 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
                   value={account}
                   onChange={(e) => setAccount(e.target.value)}
                 >
-                  <option value="None">None</option>
-                  <option value="Cash Account">Cash Account</option>
-                  <option value="Bank Account">Bank Account</option>
+                  {paymentAccountOptions.map(option => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
               </div>
             </div>
-            <div className="group">
-              <label className="block text-sm font-bold text-slate-800 mb-2">Attach Document:</label>
-              <div className="flex items-center">
-                <label className="cursor-pointer bg-slate-100 border border-slate-300 text-slate-700 px-3 py-2 rounded-l text-sm hover:bg-slate-200 transition-colors whitespace-nowrap border-r-0">
-                  Choose File
-                  <input type="file" className="hidden" />
-                </label>
-                <span className="px-3 py-2 border border-slate-300 rounded-r w-full text-sm text-slate-500 bg-white">No file chosen</span>
-              </div>
-              <p className="text-[11px] text-slate-500 mt-1">Allowed File: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</p>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Attach Document</label>
+              <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition-all">
+                <Paperclip size={16} className="text-slate-400 shrink-0" />
+                <span className="text-sm text-slate-500 truncate">{attachmentName || 'Choose file…'}</span>
+                <input
+                  type="file"
+                  accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png"
+                  className="hidden"
+                  onChange={(e) => setAttachmentName(e.target.files?.[0]?.name || '')}
+                />
+              </label>
+              <p className="text-[10px] text-slate-400 mt-1">pdf, csv, zip, doc, jpeg, jpg, png</p>
             </div>
           </div>
 
-          <div className="group">
-            <label className="block text-sm font-bold text-slate-800 mb-2">Payment Note:</label>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Note</label>
             <textarea
-              rows={4}
-              className="w-full px-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm resize-none text-slate-600"
+              rows={3}
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 resize-none"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-            ></textarea>
+              placeholder="Optional note…"
+            />
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-          <button onClick={handleSave} className="px-6 py-2 bg-[#6200ea] text-white font-bold text-sm rounded hover:bg-[#5000ca] transition-colors shadow-sm">Save</button>
-          <button onClick={onClose} className="px-6 py-2 bg-slate-800 text-white font-bold text-sm rounded hover:bg-slate-900 transition-colors shadow-sm">Close</button>
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
+          <button onClick={onClose} className="px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95">
+            <CreditCard size={16} /> Save Payment
+          </button>
         </div>
       </div>
     </div>

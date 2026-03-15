@@ -1,474 +1,714 @@
-import React, { useState } from 'react';
-import { 
-  Plus, Search, FileText, FileSpreadsheet, Printer, 
-  Columns, Download, Edit, Trash2, X, ChevronDown, 
-  ArrowUpDown, Info
+import React, { useMemo, useState } from 'react';
+import {
+  Download,
+  Edit,
+  FileSpreadsheet,
+  Info,
+  Plus,
+  Printer,
+  Search,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { TaxRate as GlobalTaxRate, useGlobalContext } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
+import { buildPaginationItems } from '../src/utils/pagination';
 
-interface TaxRate {
-  id: number;
+type TaxRateFormState = {
+  id: string | null;
   name: string;
-  rate: number;
-}
+  rate: string;
+  type: 'Inclusive' | 'Exclusive';
+  description: string;
+};
 
-interface TaxGroup {
-  id: number;
-  name: string;
-  rate: number;
-  subTaxes: TaxRate[];
-}
+const normalizeText = (value: unknown): string => String(value || '').trim().toLowerCase();
+
+const buildCsvCell = (value: unknown): string => {
+  const raw = String(value ?? '');
+  if (raw.includes(',') || raw.includes('"') || raw.includes('\n')) {
+    return `"${raw.replace(/"/g, '""')}"`;
+  }
+  return raw;
+};
+
+const emptyFormState: TaxRateFormState = {
+  id: null,
+  name: '',
+  rate: '',
+  type: 'Exclusive',
+  description: '',
+};
 
 const TaxRates: React.FC = () => {
-  const [rateSearch, setRateSearch] = useState('');
-  const [groupSearch, setGroupSearch] = useState('');
-  
-  // Initial Data
-  const [rates, setRates] = useState<TaxRate[]>([
-    { id: 1, name: 'VAT', rate: 5.000 }
-  ]);
-  
-  const [groups, setGroups] = useState<TaxGroup[]>([]);
+  const {
+    taxRates,
+    addTaxRate,
+    updateTaxRate,
+    deleteTaxRate,
+    generateId,
+    settings,
+    updateSettings,
+    products,
+    sales,
+    orders,
+    purchases,
+    sellReturns,
+    purchaseReturns,
+    expenses,
+    setProducts,
+    setSales,
+    setOrders,
+    setPurchases,
+    setSellReturns,
+    setPurchaseReturns,
+    setExpenses,
+    currentUser,
+    roles,
+  } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
-  // Modal States
-  const [isAddRateOpen, setIsAddRateOpen] = useState(false);
-  const [isAddGroupOpen, setIsAddGroupOpen] = useState(false);
+  const currentRoleRecord = roles.find(role => role.name === currentUser?.role);
+  const rolePermissions = currentRoleRecord?.permissions || [];
+  const roleHasExplicitPermissions = rolePermissions.length > 0;
+  const hasRolePermission = (moduleName: string, permission: string) => {
+    if (!currentUser) return false;
+    if (String(currentUser.role || '').toLowerCase() === 'admin' || currentRoleRecord?.isSystem) return true;
+    if (!roleHasExplicitPermissions) return true;
+    return rolePermissions.includes(permission) || rolePermissions.includes(`${moduleName}::${permission}`);
+  };
 
-  // Form States
-  const [newRateName, setNewRateName] = useState('');
-  const [newRateValue, setNewRateValue] = useState('');
+  const canAddTaxRate = hasRolePermission('Tax rate', 'Add tax rate');
+  const canEditTaxRate = hasRolePermission('Tax rate', 'Edit tax rate');
+  const canDeleteTaxRate = hasRolePermission('Tax rate', 'Delete tax rate');
 
-  const [newGroupName, setNewGroupName] = useState('');
-  const [selectedSubTaxes, setSelectedSubTaxes] = useState<number[]>([]);
+  const [search, setSearch] = useState('');
+  const [entriesPerPage, setEntriesPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formState, setFormState] = useState<TaxRateFormState>(emptyFormState);
 
-  // Handlers
-  const handleAddRate = () => {
-    if (newRateName && newRateValue) {
-      setRates([...rates, { 
-        id: Date.now(), 
-        name: newRateName, 
-        rate: parseFloat(newRateValue) 
-      }]);
-      setNewRateName('');
-      setNewRateValue('');
-      setIsAddRateOpen(false);
+  const sortedRates = useMemo(
+    () => [...taxRates].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))),
+    [taxRates],
+  );
+
+  const filteredRates = useMemo(() => {
+    const q = normalizeText(search);
+    if (!q) return sortedRates;
+    return sortedRates.filter((rate) => {
+      const haystack = [
+        rate.name,
+        Number(rate.rate || 0).toFixed(3),
+        rate.type,
+        rate.description || '',
+      ].map(normalizeText).join(' ');
+      return haystack.includes(q);
+    });
+  }, [sortedRates, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRates.length / entriesPerPage));
+  const currentPageSafe = Math.min(Math.max(currentPage, 1), totalPages);
+  const pageItems = buildPaginationItems(currentPageSafe, totalPages);
+  const startIndex = (currentPageSafe - 1) * entriesPerPage;
+  const paginatedRates = filteredRates.slice(startIndex, startIndex + entriesPerPage);
+  const fromEntry = filteredRates.length === 0 ? 0 : startIndex + 1;
+  const toEntry = filteredRates.length === 0 ? 0 : startIndex + paginatedRates.length;
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setFormState(emptyFormState);
+    setFormError('');
+  };
+
+  const openAddModal = () => {
+    if (!canAddTaxRate) {
+      addNotification({
+        title: 'Access Denied',
+        message: 'You do not have permission to add tax rates.',
+        type: 'error',
+      });
+      return;
+    }
+    setFormState(emptyFormState);
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (rate: GlobalTaxRate) => {
+    if (!canEditTaxRate) {
+      addNotification({
+        title: 'Access Denied',
+        message: 'You do not have permission to edit tax rates.',
+        type: 'error',
+      });
+      return;
+    }
+    setFormState({
+      id: rate.id,
+      name: rate.name || '',
+      rate: String(Number(rate.rate || 0).toFixed(3)),
+      type: rate.type === 'Inclusive' ? 'Inclusive' : 'Exclusive',
+      description: String(rate.description || ''),
+    });
+    setFormError('');
+    setIsModalOpen(true);
+  };
+
+  const validateForm = (): GlobalTaxRate | null => {
+    const name = String(formState.name || '').trim();
+    const rateValue = Number(formState.rate);
+    const description = String(formState.description || '').trim();
+
+    if (!name) {
+      setFormError('Tax name is required.');
+      return null;
+    }
+    if (!Number.isFinite(rateValue)) {
+      setFormError('Tax rate must be a valid number.');
+      return null;
+    }
+    if (rateValue < 0 || rateValue > 100) {
+      setFormError('Tax rate must be between 0 and 100.');
+      return null;
+    }
+
+    const duplicate = taxRates.some((rate) =>
+      normalizeText(rate.name) === normalizeText(name) &&
+      rate.id !== formState.id,
+    );
+    if (duplicate) {
+      setFormError('Tax name already exists.');
+      return null;
+    }
+
+    setFormError('');
+    return {
+      id: formState.id || generateId('TAX-'),
+      name,
+      rate: Number(rateValue.toFixed(3)),
+      type: formState.type,
+      description: description || undefined,
+    };
+  };
+
+  const cascadeTaxRename = (previousName: string, nextName: string, taxId: string) => {
+    if (normalizeText(previousName) === normalizeText(nextName)) return;
+
+    setProducts(prev => prev.map(product =>
+      normalizeText(product.tax) === normalizeText(previousName)
+        ? { ...product, tax: nextName }
+        : product,
+    ));
+    setSales(prev => prev.map(sale =>
+      normalizeText(sale.tax) === normalizeText(previousName)
+        ? { ...sale, tax: nextName }
+        : sale,
+    ));
+    setOrders(prev => prev.map(order =>
+      normalizeText(order.taxType) === normalizeText(previousName)
+        ? { ...order, taxType: nextName }
+        : order,
+    ));
+    setSellReturns(prev => prev.map(ret =>
+      normalizeText(ret.tax) === normalizeText(previousName)
+        ? { ...ret, tax: nextName }
+        : ret,
+    ));
+    setPurchases(prev => prev.map(purchase => {
+      const purchaseTaxId = String(purchase.purchaseTaxId || '').trim();
+      const shouldRename = purchaseTaxId
+        ? purchaseTaxId === String(taxId || '').trim()
+        : normalizeText(purchase.purchaseTaxName) === normalizeText(previousName);
+      if (!shouldRename) return purchase;
+      return { ...purchase, purchaseTaxName: nextName };
+    }));
+    setPurchaseReturns(prev => prev.map(ret => {
+      const returnTaxId = String(ret.purchaseTaxId || '').trim();
+      const shouldRename = returnTaxId
+        ? returnTaxId === String(taxId || '').trim()
+        : normalizeText(ret.purchaseTaxName) === normalizeText(previousName);
+      if (!shouldRename) return ret;
+      return { ...ret, purchaseTaxName: nextName };
+    }));
+    setExpenses(prev => prev.map(expense => {
+      const expenseTaxId = String(expense.taxRateId || '').trim();
+      const shouldRename = expenseTaxId
+        ? expenseTaxId === String(taxId || '').trim()
+        : normalizeText(expense.taxName) === normalizeText(previousName);
+      if (!shouldRename) return expense;
+      return { ...expense, taxName: nextName };
+    }));
+
+    if (normalizeText(settings.defaultSaleTax) === normalizeText(previousName)) {
+      updateSettings({ ...settings, defaultSaleTax: nextName });
     }
   };
 
-  const handleAddGroup = () => {
-    if (newGroupName && selectedSubTaxes.length > 0) {
-      const selectedRates = rates.filter(r => selectedSubTaxes.includes(r.id));
-      const totalRate = selectedRates.reduce((sum, r) => sum + r.rate, 0);
-      
-      setGroups([...groups, {
-        id: Date.now(),
-        name: newGroupName,
-        rate: totalRate,
-        subTaxes: selectedRates
-      }]);
-      
-      setNewGroupName('');
-      setSelectedSubTaxes([]);
-      setIsAddGroupOpen(false);
+  const handleSave = () => {
+    const payload = validateForm();
+    if (!payload) return;
+
+    if (formState.id) {
+      if (!canEditTaxRate) {
+        addNotification({
+          title: 'Access Denied',
+          message: 'You do not have permission to edit tax rates.',
+          type: 'error',
+        });
+        return;
+      }
+      const previous = taxRates.find(rate => rate.id === formState.id);
+      updateTaxRate(payload);
+      if (previous) {
+        cascadeTaxRename(previous.name, payload.name, payload.id);
+      }
+      addNotification({
+        title: 'Tax Rate Updated',
+        message: `${payload.name} has been updated.`,
+        type: 'success',
+      });
+    } else {
+      if (!canAddTaxRate) {
+        addNotification({
+          title: 'Access Denied',
+          message: 'You do not have permission to add tax rates.',
+          type: 'error',
+        });
+        return;
+      }
+      addTaxRate(payload);
+      addNotification({
+        title: 'Tax Rate Added',
+        message: `${payload.name} has been added.`,
+        type: 'success',
+      });
     }
+
+    closeModal();
   };
 
-  const handleDeleteRate = (id: number) => {
-      if(confirm('Are you sure you want to delete this tax rate?')) {
-          setRates(rates.filter(r => r.id !== id));
-      }
+  const handleDelete = (rate: GlobalTaxRate) => {
+    if (!canDeleteTaxRate) {
+      addNotification({
+        title: 'Access Denied',
+        message: 'You do not have permission to delete tax rates.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const normalizedName = normalizeText(rate.name);
+    const productCount = products.filter(product => normalizeText(product.tax) === normalizedName).length;
+    const saleCount = sales.filter(sale => normalizeText(sale.tax) === normalizedName).length;
+    const orderCount = orders.filter(order => normalizeText(order.taxType) === normalizedName).length;
+    const sellReturnCount = sellReturns.filter(ret => normalizeText(ret.tax) === normalizedName).length;
+    const purchaseCount = purchases.filter(purchase =>
+      String(purchase.purchaseTaxId || '') === rate.id ||
+      normalizeText(purchase.purchaseTaxName) === normalizedName,
+    ).length;
+    const purchaseReturnCount = purchaseReturns.filter(ret =>
+      String(ret.purchaseTaxId || '') === rate.id ||
+      normalizeText(ret.purchaseTaxName) === normalizedName,
+    ).length;
+    const expenseCount = expenses.filter(expense =>
+      String(expense.taxRateId || '') === rate.id ||
+      normalizeText(expense.taxName) === normalizedName,
+    ).length;
+
+    const usageParts: string[] = [];
+    if (productCount > 0) usageParts.push(`Products (${productCount})`);
+    if (saleCount > 0) usageParts.push(`Sales (${saleCount})`);
+    if (orderCount > 0) usageParts.push(`Orders (${orderCount})`);
+    if (sellReturnCount > 0) usageParts.push(`Sell Returns (${sellReturnCount})`);
+    if (purchaseCount > 0) usageParts.push(`Purchases (${purchaseCount})`);
+    if (purchaseReturnCount > 0) usageParts.push(`Purchase Returns (${purchaseReturnCount})`);
+    if (expenseCount > 0) usageParts.push(`Expenses (${expenseCount})`);
+
+    if (usageParts.length > 0) {
+      addNotification({
+        title: 'Delete Blocked',
+        message: `Cannot delete ${rate.name}. It is in use by: ${usageParts.join(', ')}.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    if (taxRates.length <= 1) {
+      addNotification({
+        title: 'Delete Blocked',
+        message: 'At least one tax rate must remain.',
+        type: 'error',
+      });
+      return;
+    }
+
+    if (!window.confirm(`Delete tax rate "${rate.name}"?`)) return;
+
+    if (normalizeText(settings.defaultSaleTax) === normalizedName) {
+      updateSettings({ ...settings, defaultSaleTax: 'None' });
+    }
+
+    deleteTaxRate(rate.id);
+    addNotification({
+      title: 'Tax Rate Deleted',
+      message: `${rate.name} has been deleted.`,
+      type: 'success',
+    });
   };
 
-  const handleDeleteGroup = (id: number) => {
-      if(confirm('Are you sure you want to delete this tax group?')) {
-          setGroups(groups.filter(g => g.id !== id));
-      }
+  const downloadFile = (filename: string, content: string, mimeType: string) => {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
-  const toggleSubTaxSelection = (id: number) => {
-      if (selectedSubTaxes.includes(id)) {
-          setSelectedSubTaxes(selectedSubTaxes.filter(tid => tid !== id));
-      } else {
-          setSelectedSubTaxes([...selectedSubTaxes, id]);
-      }
+  const handleExportCsv = () => {
+    const lines = [
+      ['Name', 'Tax Rate %', 'Type', 'Description'].join(','),
+      ...filteredRates.map(rate => [
+        buildCsvCell(rate.name),
+        buildCsvCell(Number(rate.rate || 0).toFixed(3)),
+        buildCsvCell(rate.type),
+        buildCsvCell(rate.description || ''),
+      ].join(',')),
+    ];
+    downloadFile('tax-rates.csv', lines.join('\n'), 'text/csv;charset=utf-8;');
   };
 
-  const filteredRates = rates.filter(r => r.name.toLowerCase().includes(rateSearch.toLowerCase()));
-  const filteredGroups = groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase()));
+  const handleExportExcel = () => {
+    const lines = [
+      ['Name', 'Tax Rate %', 'Type', 'Description'].join('\t'),
+      ...filteredRates.map(rate => [
+        rate.name,
+        Number(rate.rate || 0).toFixed(3),
+        rate.type,
+        rate.description || '',
+      ].join('\t')),
+    ];
+    downloadFile('tax-rates.xls', lines.join('\n'), 'application/vnd.ms-excel;charset=utf-8;');
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) return;
+    const rows = filteredRates.map(rate => `
+      <tr>
+        <td style="padding:8px;border:1px solid #e2e8f0;">${rate.name}</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;">${Number(rate.rate || 0).toFixed(3)}</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;">${rate.type}</td>
+        <td style="padding:8px;border:1px solid #e2e8f0;">${rate.description || ''}</td>
+      </tr>
+    `).join('');
+    printWindow.document.write(`
+      <html>
+        <head><title>Tax Rates</title></head>
+        <body style="font-family:Arial,sans-serif;padding:16px;">
+          <h2 style="margin-bottom:12px;">Tax Rates</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:8px;border:1px solid #cbd5e1;">Name</th>
+                <th style="text-align:left;padding:8px;border:1px solid #cbd5e1;">Tax Rate %</th>
+                <th style="text-align:left;padding:8px;border:1px solid #cbd5e1;">Type</th>
+                <th style="text-align:left;padding:8px;border:1px solid #cbd5e1;">Description</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
 
   return (
     <div className="space-y-8 animate-fade-in pb-20">
-      
-      {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Tax Rates</h2>
-          <p className="text-slate-500 mt-2 text-lg font-light">
-            Manage your tax rates
-          </p>
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
+            <Info size={24} className="text-white" />
+          </div>
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">Tax Rates</h2>
+            <p className="text-slate-500 text-sm mt-0.5">Manage tax rates and tax behavior across modules</p>
+          </div>
         </div>
       </div>
 
-      {/* SECTION 1: Single Tax Rates */}
       <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-cyan-500"></div>
-        
-        {/* Section Header */}
-        <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50">
-            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">All your tax rates</h3>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600" />
+
+        <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+          <div className="flex flex-col xl:flex-row justify-between gap-4 items-center">
+            <div className="flex items-center gap-3 w-full xl:w-auto">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Show</span>
+              <select
+                className="border-0 bg-white shadow-sm ring-1 ring-slate-200 rounded-lg px-3 py-2 text-sm font-medium focus:ring-2 focus:ring-red-500/20 focus:outline-none cursor-pointer"
+                value={entriesPerPage}
+                onChange={(event) => {
+                  setEntriesPerPage(Number(event.target.value) || 25);
+                  setCurrentPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">entries</span>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-2 w-full xl:w-auto">
+              <button
+                onClick={handleExportCsv}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap"
+              >
+                <Download size={14} /> Export CSV
+              </button>
+              <button
+                onClick={handleExportExcel}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap"
+              >
+                <FileSpreadsheet size={14} /> Export Excel
+              </button>
+              <button
+                onClick={handlePrint}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap"
+              >
+                <Printer size={14} /> Print
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 w-full xl:w-auto">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border-0 bg-white shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-red-500/20 focus:outline-none text-sm placeholder:text-slate-400"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setCurrentPage(1);
+                  }}
+                />
+              </div>
+              {canAddTaxRate && (
+                <button
+                  onClick={openAddModal}
+                  className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95"
+                >
+                  <Plus size={16} /> Add Tax Rate
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Toolbar */}
-        <div className="p-5 border-b border-slate-100 bg-white">
-           <div className="flex flex-col xl:flex-row justify-between gap-4 items-center">
-              <div className="flex items-center gap-3 w-full xl:w-auto">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Show</span>
-                  <div className="relative">
-                      <select className="border-0 bg-white shadow-sm ring-1 ring-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer appearance-none">
-                          <option>25</option>
-                          <option>50</option>
-                          <option>100</option>
-                      </select>
-                      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">entries</span>
-              </div>
-
-              <div className="flex flex-wrap justify-center gap-2 w-full xl:w-auto">
-                 {[
-                    { icon: FileText, label: 'Export CSV' },
-                    { icon: FileSpreadsheet, label: 'Export Excel' },
-                    { icon: Printer, label: 'Print' },
-                    { icon: Columns, label: 'Column visibility' },
-                    { icon: Download, label: 'Export PDF' },
-                 ].map((action, i) => (
-                      <button key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap">
-                          <action.icon size={14} /> {action.label}
-                      </button>
-                 ))}
-              </div>
-
-              <div className="flex items-center gap-2 w-full xl:w-auto">
-                  <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input 
-                          type="text" 
-                          placeholder="Search..." 
-                          className="w-full pl-9 pr-4 py-2 rounded-xl border-0 bg-white shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm placeholder:text-slate-400"
-                          value={rateSearch}
-                          onChange={(e) => setRateSearch(e.target.value)}
-                      />
-                  </div>
-                  <button 
-                    onClick={() => setIsAddRateOpen(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20 flex items-center gap-2 transform active:scale-95 duration-150"
-                    >
-                    <Plus size={16} /> Add
-                  </button>
-              </div>
-           </div>
-        </div>
-
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left border-collapse">
-            <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 text-slate-500 font-semibold border-b border-slate-200">
+            <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 z-10 text-slate-500 font-semibold border-b border-slate-200 whitespace-nowrap">
               <tr>
-                <th className="px-6 py-4 w-1/2">
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-700">
-                        Name <ArrowUpDown size={14} />
-                    </div>
-                </th>
-                <th className="px-6 py-4 w-1/4">
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-700">
-                        Tax Rate % <ArrowUpDown size={14} />
-                    </div>
-                </th>
+                <th className="px-6 py-4">Name</th>
+                <th className="px-6 py-4">Tax Rate %</th>
+                <th className="px-6 py-4">Type</th>
+                <th className="px-6 py-4">Description</th>
                 <th className="px-6 py-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRates.length > 0 ? (
-                  filteredRates.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/80 transition-colors group">
-                      <td className="px-6 py-4">
-                          <span className="font-bold text-slate-900 text-sm">{r.name}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                           <span className="font-medium text-slate-600">{r.rate.toFixed(3)}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right align-top">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-xs font-bold hover:bg-indigo-100 transition-colors">
-                                  <Edit size={12} /> Edit
-                              </button>
-                              <button onClick={() => handleDeleteRate(r.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
-                                  <Trash2 size={14} />
-                              </button>
-                          </div>
-                      </td>
-                    </tr>
-                  ))
-              ) : (
-                  <tr>
-                      <td colSpan={3} className="px-6 py-12 text-center text-slate-400 italic">
-                          No data available in table
-                      </td>
+              {paginatedRates.length > 0 ? (
+                paginatedRates.map((rate) => (
+                  <tr key={rate.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-4 font-bold text-slate-900">{rate.name}</td>
+                    <td className="px-6 py-4 text-slate-600 font-mono">{Number(rate.rate || 0).toFixed(3)}</td>
+                    <td className="px-6 py-4 text-slate-600">{rate.type}</td>
+                    <td className="px-6 py-4 text-slate-600">{rate.description || '--'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        {canEditTaxRate && (
+                          <button
+                            onClick={() => openEditModal(rate)}
+                            className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-xs font-bold hover:bg-indigo-100 transition-colors"
+                          >
+                            <Edit size={12} /> Edit
+                          </button>
+                        )}
+                        {canDeleteTaxRate && (
+                          <button
+                            onClick={() => handleDelete(rate)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                        {!canEditTaxRate && !canDeleteTaxRate && <span className="text-slate-400">--</span>}
+                      </div>
+                    </td>
                   </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-400 italic">
+                    No data available in table
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination */}
+
         <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500 bg-slate-50/50">
-            <div>Showing {filteredRates.length > 0 ? 1 : 0} to {filteredRates.length} of {filteredRates.length} entries</div>
-            <div className="flex gap-2">
-                 <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Previous</button>
-                 <button className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-md shadow-blue-900/10">1</button>
-                <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Next</button>
-            </div>
+          <div className="flex items-center gap-3">
+            <span>Showing {fromEntry} to {toEntry} of {filteredRates.length} entries</span>
+            <label className="flex items-center gap-2">
+              <span className="text-slate-500">Rows:</span>
+              <select
+                value={entriesPerPage}
+                onChange={(event) => setEntriesPerPage(Number(event.target.value) || 25)}
+                className="px-2 py-1 border border-slate-200 rounded bg-white text-slate-700"
+              >
+                {[10, 25, 50, 100].map((size) => (
+                  <option key={size} value={size}>{size}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex gap-2 items-center">
+            <button
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+              disabled={currentPageSafe <= 1}
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            >
+              Previous
+            </button>
+            {pageItems.map((item, index) => item === '...'
+              ? <span key={`page-ellipsis-${index}`} className="px-2 py-2 text-slate-400">...</span>
+              : (
+                <button
+                  key={item}
+                  onClick={() => setCurrentPage(item)}
+                  className={`px-4 py-2 rounded-lg shadow-sm ${item === currentPageSafe ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10' : 'bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-700 transition'}`}
+                >
+                  {item}
+                </button>
+              ))}
+            <button
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+              disabled={currentPageSafe >= totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* SECTION 2: Tax Groups */}
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-fuchsia-500"></div>
-        
-        {/* Section Header */}
-        <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
-            <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Tax groups ( Combination of multiple taxes )</h3>
-            <Info size={14} className="text-blue-500 cursor-help" />
-        </div>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-100 flex flex-col">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                {formState.id ? 'Edit Tax Rate' : 'Add Tax Rate'}
+              </h3>
+              <button
+                onClick={closeModal}
+                className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-full transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
 
-        {/* Toolbar */}
-        <div className="p-5 border-b border-slate-100 bg-white">
-           <div className="flex flex-col xl:flex-row justify-between gap-4 items-center">
-              <div className="flex items-center gap-3 w-full xl:w-auto">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Show</span>
-                  <div className="relative">
-                      <select className="border-0 bg-white shadow-sm ring-1 ring-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer appearance-none">
-                          <option>25</option>
-                          <option>50</option>
-                          <option>100</option>
-                      </select>
-                      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">entries</span>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm"
+                  value={formState.name}
+                  onChange={(event) => setFormState(prev => ({ ...prev, name: event.target.value }))}
+                  placeholder="e.g. VAT @ 5%"
+                />
               </div>
-
-              <div className="flex flex-wrap justify-center gap-2 w-full xl:w-auto">
-                 {[
-                    { icon: FileText, label: 'Export CSV' },
-                    { icon: FileSpreadsheet, label: 'Export Excel' },
-                    { icon: Printer, label: 'Print' },
-                    { icon: Columns, label: 'Column visibility' },
-                    { icon: Download, label: 'Export PDF' },
-                 ].map((action, i) => (
-                      <button key={i} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap">
-                          <action.icon size={14} /> {action.label}
-                      </button>
-                 ))}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
+                  Tax Rate % <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.001"
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm"
+                  value={formState.rate}
+                  onChange={(event) => setFormState(prev => ({ ...prev, rate: event.target.value }))}
+                  placeholder="5.000"
+                />
               </div>
-
-              <div className="flex items-center gap-2 w-full xl:w-auto">
-                  <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input 
-                          type="text" 
-                          placeholder="Search..." 
-                          className="w-full pl-9 pr-4 py-2 rounded-xl border-0 bg-white shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm placeholder:text-slate-400"
-                          value={groupSearch}
-                          onChange={(e) => setGroupSearch(e.target.value)}
-                      />
-                  </div>
-                  <button 
-                    onClick={() => setIsAddGroupOpen(true)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20 flex items-center gap-2 transform active:scale-95 duration-150"
-                    >
-                    <Plus size={16} /> Add
-                  </button>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
+                  Tax Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm"
+                  value={formState.type}
+                  onChange={(event) => setFormState(prev => ({
+                    ...prev,
+                    type: event.target.value === 'Inclusive' ? 'Inclusive' : 'Exclusive',
+                  }))}
+                >
+                  <option value="Exclusive">Exclusive</option>
+                  <option value="Inclusive">Inclusive</option>
+                </select>
               </div>
-           </div>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left border-collapse">
-            <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 text-slate-500 font-semibold border-b border-slate-200">
-              <tr>
-                <th className="px-6 py-4 w-1/3">
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-700">
-                        Name <ArrowUpDown size={14} />
-                    </div>
-                </th>
-                <th className="px-6 py-4 w-1/6">
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-700">
-                        Tax Rate % <ArrowUpDown size={14} />
-                    </div>
-                </th>
-                <th className="px-6 py-4 w-1/3">
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-700">
-                        Sub taxes <ArrowUpDown size={14} />
-                    </div>
-                </th>
-                <th className="px-6 py-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredGroups.length > 0 ? (
-                  filteredGroups.map((g) => (
-                    <tr key={g.id} className="hover:bg-slate-50/80 transition-colors group">
-                      <td className="px-6 py-4">
-                          <span className="font-bold text-slate-900 text-sm">{g.name}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                           <span className="font-medium text-slate-600">{g.rate.toFixed(3)}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                           <div className="flex flex-wrap gap-1">
-                               {g.subTaxes.map(sub => (
-                                   <span key={sub.id} className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded border border-slate-200">
-                                       {sub.name}
-                                   </span>
-                               ))}
-                           </div>
-                      </td>
-                      <td className="px-6 py-4 text-right align-top">
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button className="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded text-xs font-bold hover:bg-indigo-100 transition-colors">
-                                  <Edit size={12} /> Edit
-                              </button>
-                              <button onClick={() => handleDeleteGroup(g.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
-                                  <Trash2 size={14} />
-                              </button>
-                          </div>
-                      </td>
-                    </tr>
-                  ))
-              ) : (
-                  <tr>
-                      <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">
-                          No data available in table
-                      </td>
-                  </tr>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">
+                  Description <span className="text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm text-slate-700 shadow-sm resize-none"
+                  value={formState.description}
+                  onChange={(event) => setFormState(prev => ({ ...prev, description: event.target.value }))}
+                  placeholder="Tax description"
+                />
+              </div>
+              {formError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-start gap-2">
+                  <Info size={14} className="mt-0.5" />
+                  <span>{formError}</span>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-        
-        {/* Pagination */}
-        <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500 bg-slate-50/50">
-            <div>Showing {filteredGroups.length > 0 ? 1 : 0} to {filteredGroups.length} of {filteredGroups.length} entries</div>
-            <div className="flex gap-2">
-                 <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Previous</button>
-                <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm" disabled>Next</button>
             </div>
-        </div>
-      </div>
 
-      {/* Add Rate Modal */}
-      {isAddRateOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
-           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 flex flex-col">
-               <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
-                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Add Tax Rate</h3>
-                    <button onClick={() => setIsAddRateOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-full transition-colors">
-                        <X size={20} />
-                    </button>
-                </div>
-                
-                <div className="p-6 space-y-4">
-                     <div className="group">
-                        <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Name <span className="text-red-500">*</span></label>
-                        <input 
-                            type="text" 
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm" 
-                            placeholder="e.g. VAT"
-                            value={newRateName}
-                            onChange={(e) => setNewRateName(e.target.value)}
-                        />
-                    </div>
-                    <div className="group">
-                        <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Tax Rate % <span className="text-red-500">*</span></label>
-                        <input 
-                            type="number" 
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm" 
-                            placeholder="5.000"
-                            value={newRateValue}
-                            onChange={(e) => setNewRateValue(e.target.value)}
-                        />
-                    </div>
-                </div>
-
-                <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-                    <button onClick={() => setIsAddRateOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all text-sm shadow-sm">
-                        Close
-                    </button>
-                    <button onClick={handleAddRate} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 text-sm">
-                        Save
-                    </button>
-                </div>
-           </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
+              <button
+                onClick={closeModal}
+                className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all text-sm shadow-sm"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleSave}
+                className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 text-sm"
+              >
+                Save
+              </button>
+            </div>
+          </div>
         </div>
       )}
-
-      {/* Add Group Modal */}
-      {isAddGroupOpen && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
-           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-100 flex flex-col">
-               <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-white">
-                    <h3 className="text-lg font-black text-slate-900 tracking-tight">Add Tax Group</h3>
-                    <button onClick={() => setIsAddGroupOpen(false)} className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-full transition-colors">
-                        <X size={20} />
-                    </button>
-                </div>
-                
-                <div className="p-6 space-y-4">
-                     <div className="group">
-                        <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Name <span className="text-red-500">*</span></label>
-                        <input 
-                            type="text" 
-                            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-800 shadow-sm" 
-                            placeholder="e.g. VAT + Service"
-                            value={newGroupName}
-                            onChange={(e) => setNewGroupName(e.target.value)}
-                        />
-                    </div>
-                    
-                    <div className="group">
-                        <label className="block text-xs font-bold text-slate-500 mb-2 uppercase">Sub Taxes</label>
-                        <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50 custom-scrollbar">
-                            {rates.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic text-center py-2">No individual rates available.</p>
-                            ) : (
-                                rates.map(rate => (
-                                    <label key={rate.id} className="flex items-center gap-3 p-2 hover:bg-white rounded-lg cursor-pointer transition-colors">
-                                        <input 
-                                            type="checkbox" 
-                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                            checked={selectedSubTaxes.includes(rate.id)}
-                                            onChange={() => toggleSubTaxSelection(rate.id)}
-                                        />
-                                        <span className="text-sm font-medium text-slate-700">{rate.name} ({rate.rate}%)</span>
-                                    </label>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-white">
-                    <button onClick={() => setIsAddGroupOpen(false)} className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold hover:bg-slate-50 hover:border-slate-300 transition-all text-sm shadow-sm">
-                        Close
-                    </button>
-                    <button onClick={handleAddGroup} className="px-6 py-2 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-xl shadow-blue-900/20 text-sm">
-                        Save
-                    </button>
-                </div>
-           </div>
-        </div>
-      )}
-
     </div>
   );
 };

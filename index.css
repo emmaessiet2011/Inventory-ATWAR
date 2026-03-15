@@ -1,0 +1,83 @@
+/* Intentionally minimal. Kept so index.html stylesheet reference is valid. */
+
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+/* ── Dynamic Theme Overrides ─────────────────────────────────────
+   Set data-theme attribute on <html> to activate a colour theme.
+   Overrides Tailwind's blue-600/700/50/500 classes app-wide.
+   ─────────────────────────────────────────────────────────────── */
+
+/* EMERALD theme */
+[data-theme="emerald"] .bg-blue-600  { background-color: #059669 !important; }
+[data-theme="emerald"] .bg-blue-700  { background-color: #047857 !important; }
+[data-theme="emerald"] .bg-blue-50   { background-color: #ecfdf5 !important; }
+[data-theme="emerald"] .text-blue-600 { color: #059669 !important; }
+[data-theme="emerald"] .text-blue-500 { color: #10b981 !important; }
+[data-theme="emerald"] .border-blue-500 { border-color: #10b981 !important; }
+[data-theme="emerald"] .border-blue-600 { border-color: #059669 !important; }
+[data-theme="emerald"] .from-blue-500 { --tw-gradient-from: #10b981 var(--tw-gradient-from-position) !important; }
+[data-theme="emerald"] .from-blue-600 { --tw-gradient-from: #059669 var(--tw-gradient-from-position) !important; }
+[data-theme="emerald"] .to-indigo-500 { --tw-gradient-to: #10b981 var(--tw-gradient-to-position) !important; }
+[data-theme="emerald"] .hover\:bg-blue-600:hover { background-color: #059669 !important; }
+[data-theme="emerald"] .hover\:bg-blue-700:hover { background-color: #047857 !important; }
+[data-theme="emerald"] .focus\:border-blue-500:focus { border-color: #10b981 !important; }
+[data-theme="emerald"] .active\:ring-blue-600 { --tw-ring-color: #059669 !important; }
+[data-theme="emerald"] .bg-blue-600.hover\:bg-blue-700:hover { background-color: #047857 !important; }
+
+/* ROSE theme */
+[data-theme="rose"] .bg-blue-600  { background-color: #e11d48 !important; }
+[data-theme="rose"] .bg-blue-700  { background-color: #be123c !important; }
+[data-theme="rose"] .bg-blue-50   { background-color: #fff1f2 !important; }
+[data-theme="rose"] .text-blue-600 { color: #e11d48 !important; }
+[data-theme="rose"] .text-blue-500 { color: #f43f5e !important; }
+[data-theme="rose"] .border-blue-500 { border-color: #f43f5e !important; }
+[data-theme="rose"] .border-blue-600 { border-color: #e11d48 !important; }
+[data-theme="rose"] .from-blue-500 { --tw-gradient-from: #f43f5e var(--tw-gradient-from-position) !important; }
+[data-theme="rose"] .from-blue-600 { --tw-gradient-from: #e11d48 var(--tw-gradient-from-position) !important; }
+[data-theme="rose"] .to-indigo-500 { --tw-gradient-to: #e11d48 var(--tw-gradient-to-position) !important; }
+[data-theme="rose"] .hover\:bg-blue-600:hover { background-color: #e11d48 !important; }
+[data-theme="rose"] .hover\:bg-blue-700:hover { background-color: #be123c !important; }
+[data-theme="rose"] .focus\:border-blue-500:focus { border-color: #f43f5e !important; }
+
+/* AMBER theme */
+[data-theme="amber"] .bg-blue-600  { background-color: #d97706 !important; }
+[data-theme="amber"] .bg-blue-700  { background-color: #b45309 !important; }
+[data-theme="amber"] .bg-blue-50   { background-color: #fffbeb !important; }
+[data-theme="amber"] .text-blue-600 { color: #d97706 !important; }
+[data-theme="amber"] .text-blue-500 { color: #f59e0b !important; }
+[data-theme="amber"] .border-blue-500 { border-color: #f59e0b !important; }
+[data-theme="amber"] .border-blue-600 { border-color: #d97706 !important; }
+[data-theme="amber"] .from-blue-500 { --tw-gradient-from: #f59e0b var(--tw-gradient-from-position) !important; }
+[data-theme="amber"] .from-blue-600 { --tw-gradient-from: #d97706 var(--tw-gradient-from-position) !important; }
+[data-theme="amber"] .to-indigo-500 { --tw-gradient-to: #d97706 var(--tw-gradient-to-position) !important; }
+[data-theme="amber"] .hover\:bg-blue-600:hover { background-color: #d97706 !important; }
+[data-theme="amber"] .hover\:bg-blue-700:hover { background-color: #b45309 !important; }
+[data-theme="amber"] .focus\:border-blue-500:focus { border-color: #f59e0b !important; }
+
+/* VIOLET theme */
+[data-theme="violet"] .bg-blue-600  { background-color: #7c3aed !important; }
+[data-theme="violet"] .bg-blue-700  { background-color: #6d28d9 !important; }
+[data-theme="violet"] .bg-blue-50   { background-color: #f5f3ff !important; }
+[data-theme="violet"] .text-blue-600 { color: #7c3aed !important; }
+[data-theme="violet"] .text-blue-500 { color: #8b5cf6 !important; }
+[data-theme="violet"] .border-blue-500 { border-color: #8b5cf6 !important; }
+[data-theme="violet"] .border-blue-600 { border-color: #7c3aed !important; }
+[data-theme="violet"] .from-blue-500 { --tw-gradient-from: #8b5cf6 var(--tw-gradient-from-position) !important; }
+[data-theme="violet"] .from-blue-600 { --tw-gradient-from: #7c3aed var(--tw-gradient-from-position) !important; }
+[data-theme="violet"] .to-indigo-500 { --tw-gradient-to: #7c3aed var(--tw-gradient-to-position) !important; }
+[data-theme="violet"] .hover\:bg-blue-600:hover { background-color: #7c3aed !important; }
+[data-theme="violet"] .hover\:bg-blue-700:hover { background-color: #6d28d9 !important; }
+[data-theme="violet"] .focus\:border-blue-500:focus { border-color: #8b5cf6 !important; }

@@ -1,388 +1,359 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { 
-  Plus, Search, FileText, FileSpreadsheet, Printer, 
-  Columns, Download, ChevronDown, ArrowUpDown,
-  Edit, Trash2, Tag, MoreVertical, Ban, CheckCircle2, X
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Plus,
+  Search,
+  FileText,
+  FileSpreadsheet,
+  Printer,
+  Columns,
+  ArrowUpDown,
+  Edit,
+  Trash2,
+  MoreVertical,
+  Ban,
+  CheckCircle2,
 } from 'lucide-react';
-import AddDiscountModal from './AddDiscountModal';
+import AddDiscountModal, { DiscountFormData } from './AddDiscountModal';
 import MultiSelect from './MultiSelect';
-import { useGlobalContext } from '../src/context/GlobalContext';
-
-interface Discount {
-  id: string;
-  name: string;
-  startsAt: string;
-  endsAt: string;
-  discountAmount: string;
-  priority: number;
-  brand: string;
-  category: string;
-  products: string;
-  location: string;
-  isActive: boolean;
-}
-
-interface DropdownPosition {
-  top?: number;
-  bottom?: number;
-  left: number;
-  transformOrigin: string;
-}
-
-// Initial Mock Data
-const initialDiscounts: Discount[] = [
-    {
-        id: 'DISC-001',
-        name: 'Summer Sale',
-        startsAt: '2026-06-01 00:00',
-        endsAt: '2026-08-31 23:59',
-        discountAmount: '15%',
-        priority: 1,
-        brand: 'All',
-        category: 'Pet Accessories',
-        products: 'Selected Items',
-        location: 'CR:1450968',
-        isActive: true
-    },
-    {
-        id: 'DISC-002',
-        name: 'Clearance - Old Stock',
-        startsAt: '2026-01-01 00:00',
-        endsAt: '2026-12-31 23:59',
-        discountAmount: '50%',
-        priority: 5,
-        brand: 'Danna',
-        category: 'All',
-        products: 'All',
-        location: 'KNWZ ARD ALKHLYJ ALMTHDH CR:1282649',
-        isActive: false
-    },
-    {
-        id: 'DISC-003',
-        name: 'New Customer Welcome',
-        startsAt: '2026-02-01 00:00',
-        endsAt: '2026-02-28 23:59',
-        discountAmount: '10 OMR',
-        priority: 2,
-        brand: 'All',
-        category: 'All',
-        products: 'All',
-        location: 'All locations',
-        isActive: true
-    }
-];
+import { Discount, useGlobalContext } from '../src/context/GlobalContext';
+import { printActiveReportTable } from '../src/utils/printUtils';
+import { formatDiscountAmount, sortDiscountsByPriority } from '../src/utils/discountRules';
 
 interface DiscountsProps {
-    onNavigate: (page: string) => void;
+  onNavigate: (page: string) => void;
 }
 
-const Discounts: React.FC<DiscountsProps> = ({
-  onNavigate }) => {
-  const { locations } = useGlobalContext();
+const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
+  const {
+    discounts: globalDiscounts,
+    addDiscount,
+    updateDiscount,
+    deleteDiscount,
+    generateId,
+    locations,
+    products,
+    currentUser,
+    roles,
+    settings,
+  } = useGlobalContext();
+
+  const currentRoleRecord = roles.find(role => role.name === currentUser?.role);
+  const rolePermissions = currentRoleRecord?.permissions || [];
+  const roleHasExplicitPermissions = rolePermissions.length > 0;
+  const hasRolePermission = (moduleName: string, permission: string) => {
+    if (!currentUser) return false;
+    if (String(currentUser.role || '').toLowerCase() === 'admin' || currentRoleRecord?.isSystem) return true;
+    if (!roleHasExplicitPermissions) return true;
+    return rolePermissions.includes(permission) || rolePermissions.includes(`${moduleName}::${permission}`);
+  };
+  const canManageDiscounts = hasRolePermission('Sell', 'Add/Edit/Delete Discount');
+
+  const discounts = useMemo(
+    () => (globalDiscounts || [])
+      .map(discount => ({
+        ...discount,
+        id: String(discount.id || '').trim(),
+        name: String(discount.name || '').trim(),
+        isActive: discount.isActive !== false,
+      }))
+      .filter(discount => discount.id && discount.name),
+    [globalDiscounts]
+  );
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [discounts, setDiscounts] = useState<Discount[]>(initialDiscounts);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  
-  // Actions State
-  const [activeActionId, setActiveActionId] = useState<string | null>(null);
-  const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-right' });
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  
-  // Filters State
   const [filters, setFilters] = useState({
-      brand: [] as string[],
-      category: [] as string[],
-      location: [] as string[]
+    brand: [] as string[],
+    category: [] as string[],
+    location: [] as string[],
   });
+  const [entriesPerPage, setEntriesPerPage] = useState<number>(Number(settings.defaultTableEntries || 25));
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showAdvancedColumns, setShowAdvancedColumns] = useState(true);
+  const [activeActionId, setActiveActionId] = useState<string | null>(null);
+  const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
+  const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
 
-  const toggleActions = (e: React.MouseEvent<HTMLButtonElement>, id: string) => {
-    e.stopPropagation();
-    if (activeActionId === id) {
-      setActiveActionId(null);
-    } else {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const dropdownHeight = 160; 
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const isDropUp = spaceBelow < dropdownHeight;
-      
-      setDropdownPosition({
-        top: isDropUp ? undefined : rect.bottom + 4,
-        bottom: isDropUp ? window.innerHeight - rect.top + 4 : undefined,
-        left: rect.left - 120, 
-        transformOrigin: isDropUp ? 'origin-bottom-right' : 'origin-top-right'
-      });
-      setActiveActionId(id);
-    }
+  const parseDateValue = (value?: string): Date | null => {
+    if (!value) return null;
+    const normalized = value.includes(' ') && !value.includes('T') ? value.replace(' ', 'T') : value;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
+  const formatDateTimeDisplay = (value?: string): string => {
+    if (!value) return '--';
+    const parsed = parseDateValue(value);
+    if (!parsed) return value;
+    const day = String(parsed.getDate()).padStart(2, '0');
+    const month = String(parsed.getMonth() + 1).padStart(2, '0');
+    const year = parsed.getFullYear();
+    const hours24 = parsed.getHours();
+    const minutes = String(parsed.getMinutes()).padStart(2, '0');
+    const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+    const dateOnly = settings.dateFormat === 'mm/dd/yyyy' ? `${month}/${day}/${year}` : `${day}/${month}/${year}`;
+    return settings.timeFormat === '24'
+      ? `${dateOnly} ${String(hours24).padStart(2, '0')}:${minutes}`
+      : `${dateOnly} ${String(hours24 % 12 || 12).padStart(2, '0')}:${minutes} ${meridiem}`;
+  };
+
+  const brandOptions = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach(product => { if (product.brand) set.add(product.brand); });
+    discounts.forEach(discount => { if (discount.brand) set.add(discount.brand); });
+    return Array.from(set).sort();
+  }, [products, discounts]);
+  const categoryOptions = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach(product => { if (product.category) set.add(product.category); });
+    discounts.forEach(discount => { if (discount.category) set.add(discount.category); });
+    return Array.from(set).sort();
+  }, [products, discounts]);
+  const locationOptions = useMemo(() => {
+    const set = new Set<string>();
+    locations.forEach(location => { if (location.name) set.add(location.name); });
+    discounts.forEach(discount => { if (discount.location) set.add(discount.location); });
+    return Array.from(set).sort();
+  }, [locations, discounts]);
+
+  const filteredDiscounts = useMemo(
+    () => discounts.filter(discount => {
+      const search = searchTerm.trim().toLowerCase();
+      const textMatch = !search || [
+        discount.name,
+        discount.brand,
+        discount.category,
+        discount.products,
+        discount.location,
+      ].some(value => String(value || '').toLowerCase().includes(search));
+
+      const brand = String(discount.brand || 'All');
+      const category = String(discount.category || 'All');
+      const location = String(discount.location || 'All locations');
+      const filterMatch =
+        (filters.brand.length === 0 || filters.brand.includes(brand)) &&
+        (filters.category.length === 0 || filters.category.includes(category)) &&
+        (filters.location.length === 0 || filters.location.includes(location));
+      return textMatch && filterMatch;
+    }).sort(sortDiscountsByPriority),
+    [discounts, searchTerm, filters]
+  );
+
+  const totalPages = Math.max(1, Math.ceil(filteredDiscounts.length / entriesPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * entriesPerPage;
+  const pageEnd = pageStart + entriesPerPage;
+  const pagedDiscounts = filteredDiscounts.slice(pageStart, pageEnd);
+  const allPageSelected = pagedDiscounts.length > 0 && pagedDiscounts.every(discount => selectedIds.has(discount.id));
 
   useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-        if (dropdownRef.current && dropdownRef.current.contains(event.target as Node)) {
-            return;
-        }
-        setActiveActionId(null);
+    setCurrentPage(1);
+    setActiveActionId(null);
+  }, [searchTerm, filters, entriesPerPage]);
+
+  useEffect(() => {
+    const parsed = Number(settings.defaultTableEntries || 25);
+    if (Number.isFinite(parsed) && parsed > 0) setEntriesPerPage(parsed);
+  }, [settings.defaultTableEntries]);
+
+  const setRowSelection = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const setPageSelection = (checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      pagedDiscounts.forEach(discount => checked ? next.add(discount.id) : next.delete(discount.id));
+      return next;
+    });
+  };
+
+  const handleSaveDiscount = (formData: DiscountFormData) => {
+    const payload: Discount = {
+      id: editingDiscount?.id || generateId('DISC'),
+      name: formData.name,
+      products: formData.products,
+      brand: formData.brand,
+      category: formData.category,
+      location: formData.location,
+      priority: formData.priority,
+      discountType: formData.discountType,
+      discountAmount: formData.discountAmount,
+      startsAt: formData.startsAt,
+      endsAt: formData.endsAt,
+      sellingPriceGroup: formData.sellingPriceGroup,
+      isActive: formData.isActive,
+      applyInCustomerGroups: formData.applyInCustomerGroups,
+      selectedGroups: formData.selectedGroups,
     };
-    const handleScroll = () => setActiveActionId(null);
-    const handleResize = () => setActiveActionId(null);
-
-    if (activeActionId) {
-        window.addEventListener('mousedown', handleOutsideClick);
-        window.addEventListener('scroll', handleScroll, true);
-        window.addEventListener('resize', handleResize);
-    }
-    return () => {
-        window.removeEventListener('mousedown', handleOutsideClick);
-        window.removeEventListener('scroll', handleScroll, true);
-        window.removeEventListener('resize', handleResize);
-    };
-  }, [activeActionId]);
-
-  const handleToggleStatus = (id: string) => {
-      const discount = discounts.find(d => d.id === id);
-      if (!discount) return;
-
-      const newStatus = !discount.isActive;
-      const action = discount.isActive ? 'deactivate' : 'activate';
-
-      if (confirm(`Are you sure you want to ${action} discount "${discount.name}"?`)) {
-          setDiscounts(discounts.map(d => d.id === id ? { ...d, isActive: newStatus } : d));
-          setActiveActionId(null);
-      }
+    if (editingDiscount) updateDiscount(payload); else addDiscount(payload);
+    setEditingDiscount(null);
+    setIsDiscountModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-      if (confirm('Are you sure you want to delete this discount?')) {
-          setDiscounts(discounts.filter(d => d.id !== id));
-          setActiveActionId(null);
-      }
+  const handleToggleStatus = (discount: Discount) => {
+    const action = discount.isActive ? 'deactivate' : 'activate';
+    if (!confirm(`Are you sure you want to ${action} discount "${discount.name}"?`)) return;
+    updateDiscount({ ...discount, isActive: !discount.isActive });
+    setActiveActionId(null);
+  };
+  const handleDelete = (discount: Discount) => {
+    if (!confirm(`Are you sure you want to delete "${discount.name}"?`)) return;
+    deleteDiscount(discount.id);
+    setActiveActionId(null);
+  };
+  const handleBulkDeactivate = () => {
+    const targets = discounts.filter(discount => selectedIds.has(discount.id) && discount.isActive);
+    if (targets.length === 0) return;
+    if (!confirm(`Deactivate ${targets.length} selected discount(s)?`)) return;
+    targets.forEach(discount => updateDiscount({ ...discount, isActive: false }));
+    setSelectedIds(new Set());
   };
 
-  const handleSaveDiscount = (data: any) => {
-      const newDiscount: Discount = {
-          id: Date.now().toString(),
-          name: data.name,
-          startsAt: data.startsAt,
-          endsAt: data.endsAt,
-          discountAmount: data.discountAmount,
-          priority: Number(data.priority) || 0,
-          brand: data.brand,
-          category: data.category,
-          products: data.products,
-          location: data.location,
-          isActive: data.isActive
-      };
-      setDiscounts([...discounts, newDiscount]);
+  const downloadBlob = (filename: string, content: string, mime: string) => {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
-  
-  const filteredDiscounts = discounts.filter(d => 
-      (d.name.toLowerCase().includes(searchTerm.toLowerCase())) &&
-      (filters.brand.length === 0 || filters.brand.includes(d.brand)) &&
-      (filters.category.length === 0 || filters.category.includes(d.category)) &&
-      (filters.location.length === 0 || filters.location.includes(d.location))
-  );
+  const handleExport = (excel = false) => {
+    const separator = excel ? '\t' : ',';
+    const headers = ['Name', 'Starts At', 'Ends At', 'Discount Amount', 'Priority', 'Brand', 'Category', 'Products', 'Location', 'Status'];
+    const rows = filteredDiscounts.map(discount => [
+      discount.name,
+      formatDateTimeDisplay(discount.startsAt),
+      formatDateTimeDisplay(discount.endsAt),
+      formatDiscountAmount(discount),
+      Number(discount.priority || 0),
+      discount.brand || 'All',
+      discount.category || 'All',
+      discount.products || 'All',
+      discount.location || 'All locations',
+      discount.isActive ? 'Active' : 'Inactive',
+    ]);
+    const content = [headers.join(separator), ...rows.map(row => row.join(separator))].join('\n');
+    const date = new Date().toISOString().slice(0, 10);
+    if (excel) downloadBlob(`discounts-${date}.xls`, content, 'application/vnd.ms-excel;charset=utf-8;');
+    else downloadBlob(`discounts-${date}.csv`, content, 'text/csv;charset=utf-8;');
+  };
+
+  if (!canManageDiscounts) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-slate-400">
+        <h2 className="text-2xl font-bold text-slate-300 mb-2">Access Denied</h2>
+        <p>You do not have permission to access Discounts.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
-      
-      {/* Header */}
-      <h2 className="text-2xl font-bold text-slate-900">Discount</h2>
-
-      {/* Main Content */}
-      <div className="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
-        
-        {/* Controls Bar */}
+      <h2 className="text-2xl font-bold text-slate-900">Discounts</h2>
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-           <div className="flex items-center gap-2">
-               <span className="text-sm text-slate-600">Show</span>
-               <select className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none">
-                   <option>25</option>
-                   <option>50</option>
-                   <option>100</option>
-               </select>
-               <span className="text-sm text-slate-600">entries</span>
-           </div>
-
-           <div className="flex gap-1">
-                <button className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><FileText size={12}/> Export CSV</button>
-                <button className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><FileSpreadsheet size={12}/> Export Excel</button>
-                <button className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><Printer size={12}/> Print</button>
-                <button className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><Columns size={12}/> Column visibility</button>
-                <button className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><FileText size={12}/> Export PDF</button>
-           </div>
-
-           <div className="flex items-center gap-2">
-               <button 
-                onClick={() => setIsAddModalOpen(true)}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-1"
-               >
-                   <Plus size={16} /> Add
-               </button>
-               <input 
-                   type="text" 
-                   placeholder="Search..." 
-                   className="px-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                   value={searchTerm}
-                   onChange={(e) => setSearchTerm(e.target.value)}
-               />
-           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-slate-600">Show</span>
+            <select value={entriesPerPage} onChange={e => setEntriesPerPage(Number(e.target.value) || 25)} className="border border-slate-300 rounded px-2 py-1 text-sm">
+              <option value={25}>25</option><option value={50}>50</option><option value={100}>100</option>
+            </select>
+            <span className="text-sm text-slate-600">entries</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            <button onClick={() => handleExport(false)} className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><FileText size={12} /> Export CSV</button>
+            <button onClick={() => handleExport(true)} className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><FileSpreadsheet size={12} /> Export Excel</button>
+            <button onClick={() => printActiveReportTable()} className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><Printer size={12} /> Print</button>
+            <button onClick={() => setShowAdvancedColumns(prev => !prev)} className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-600 hover:bg-slate-200 flex items-center gap-1"><Columns size={12} /> {showAdvancedColumns ? 'Hide Columns' : 'Show Columns'}</button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => { setEditingDiscount(null); setIsDiscountModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-bold flex items-center gap-1"><Plus size={16} /> Add</button>
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <input type="text" placeholder="Search..." className="pl-8 pr-3 py-2 rounded border border-slate-300 text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+            </div>
+          </div>
         </div>
-        
-        {/* Filters Row */}
+
         <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-4">
-             <div className="group">
-                  <MultiSelect 
-                    label="Brand"
-                    options={['Danna', 'Kennol', 'Cebican']}
-                    selected={filters.brand}
-                    onChange={(val) => setFilters({...filters, brand: val})}
-                  />
-             </div>
-             <div className="group">
-                  <MultiSelect 
-                    label="Category"
-                    options={['Pet Accessories', 'Pet Food', 'Engine Oil']}
-                    selected={filters.category}
-                    onChange={(val) => setFilters({...filters, category: val})}
-                  />
-             </div>
-             <div className="group">
-                  <MultiSelect 
-                    label="Location"
-                    options={locations.map(loc => loc.name)}
-                    selected={filters.location}
-                    onChange={(val) => setFilters({...filters, location: val})}
-                  />
-             </div>
+          <MultiSelect label="Brand" options={brandOptions} selected={filters.brand} onChange={val => setFilters({ ...filters, brand: val })} />
+          <MultiSelect label="Category" options={categoryOptions} selected={filters.category} onChange={val => setFilters({ ...filters, category: val })} />
+          <MultiSelect label="Location" options={locationOptions} selected={filters.location} onChange={val => setFilters({ ...filters, location: val })} />
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto min-h-[300px]">
           <table className="w-full text-xs text-left border-collapse">
             <thead className="bg-white text-slate-700 font-bold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3 whitespace-nowrap w-8">
-                    <input type="checkbox" className="rounded border-slate-300" />
-                </th>
+                <th className="px-4 py-3 w-8"><input type="checkbox" className="rounded border-slate-300" checked={allPageSelected} onChange={e => setPageSelection(e.target.checked)} /></th>
                 <th className="px-4 py-3 whitespace-nowrap">Name <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
                 <th className="px-4 py-3 whitespace-nowrap">Starts At <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
                 <th className="px-4 py-3 whitespace-nowrap">Ends At <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
                 <th className="px-4 py-3 whitespace-nowrap">Discount Amount <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
                 <th className="px-4 py-3 whitespace-nowrap">Priority <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                <th className="px-4 py-3 whitespace-nowrap">Brand <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                <th className="px-4 py-3 whitespace-nowrap">Category <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                <th className="px-4 py-3 whitespace-nowrap">Products <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                <th className="px-4 py-3 whitespace-nowrap">Location <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>
-                <th className="px-4 py-3 whitespace-nowrap w-24 text-center">Action</th>
+                {showAdvancedColumns && <th className="px-4 py-3 whitespace-nowrap">Brand</th>}
+                {showAdvancedColumns && <th className="px-4 py-3 whitespace-nowrap">Category</th>}
+                {showAdvancedColumns && <th className="px-4 py-3 whitespace-nowrap">Products</th>}
+                {showAdvancedColumns && <th className="px-4 py-3 whitespace-nowrap">Location</th>}
+                <th className="px-4 py-3 w-24 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-                <tr className="bg-amber-50">
-                    <td colSpan={11} className="px-4 py-2">
-                        <button className="bg-amber-400 text-amber-900 text-[10px] font-bold px-3 py-1 rounded shadow-sm hover:bg-amber-500 transition-colors">
-                            Deactivate Selected
-                        </button>
-                    </td>
+              {selectedIds.size > 0 && <tr className="bg-amber-50"><td colSpan={showAdvancedColumns ? 11 : 7} className="px-4 py-2"><button onClick={handleBulkDeactivate} className="bg-amber-400 text-amber-900 text-[10px] font-bold px-3 py-1 rounded hover:bg-amber-500">Deactivate Selected ({selectedIds.size})</button></td></tr>}
+              {pagedDiscounts.length > 0 ? pagedDiscounts.map(discount => (
+                <tr key={discount.id} className={`hover:bg-slate-50 transition-colors ${discount.isActive ? '' : 'opacity-60 bg-slate-50'}`}>
+                  <td className="px-4 py-3"><input type="checkbox" className="rounded border-slate-300" checked={selectedIds.has(discount.id)} onChange={e => setRowSelection(discount.id, e.target.checked)} /></td>
+                  <td className="px-4 py-3 font-bold text-slate-700 whitespace-nowrap">{discount.name}{!discount.isActive && <span className="ml-2 text-[10px] text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-100">Inactive</span>}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{formatDateTimeDisplay(discount.startsAt)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{formatDateTimeDisplay(discount.endsAt)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{formatDiscountAmount(discount)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">{Number(discount.priority || 0)}</td>
+                  {showAdvancedColumns && <td className="px-4 py-3 whitespace-nowrap">{discount.brand || 'All'}</td>}
+                  {showAdvancedColumns && <td className="px-4 py-3 whitespace-nowrap">{discount.category || 'All'}</td>}
+                  {showAdvancedColumns && <td className="px-4 py-3 whitespace-nowrap">{discount.products || 'All'}</td>}
+                  {showAdvancedColumns && <td className="px-4 py-3 whitespace-nowrap">{discount.location || 'All locations'}</td>}
+                  <td className="px-4 py-3 text-center relative">
+                    <button onClick={() => setActiveActionId(prev => prev === discount.id ? null : discount.id)} className={`p-2 rounded-lg ${activeActionId === discount.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}><MoreVertical size={16} /></button>
+                    {activeActionId === discount.id && (
+                      <div className="absolute right-2 top-10 z-20 bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-44">
+                        <button onClick={() => { setEditingDiscount(discount); setIsDiscountModalOpen(true); setActiveActionId(null); }} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Edit size={14} className="text-amber-500" /> Edit</button>
+                        <button onClick={() => handleDelete(discount)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Trash2 size={14} className="text-rose-500" /> Delete</button>
+                        <div className="h-px bg-slate-100 my-1 mx-2"></div>
+                        <button onClick={() => handleToggleStatus(discount)} className={`w-full text-left px-4 py-2 text-xs font-bold flex items-center gap-2 ${discount.isActive ? 'text-red-500 hover:bg-red-50' : 'text-emerald-600 hover:bg-emerald-50'}`}>{discount.isActive ? <Ban size={14} /> : <CheckCircle2 size={14} />}{discount.isActive ? 'Deactivate' : 'Activate'}</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
-                {filteredDiscounts.length > 0 ? (
-                    filteredDiscounts.map(d => (
-                        <tr key={d.id} className={`hover:bg-slate-50 transition-colors ${!d.isActive ? 'opacity-50 bg-slate-50' : ''}`}>
-                            <td className="px-4 py-3"><input type="checkbox" className="rounded border-slate-300" /></td>
-                            <td className="px-4 py-3 font-bold text-slate-700">
-                                {d.name} 
-                                {!d.isActive && <span className="ml-2 text-[10px] text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded font-bold border border-rose-100">Inactive</span>}
-                            </td>
-                            <td className="px-4 py-3">{d.startsAt}</td>
-                            <td className="px-4 py-3">{d.endsAt}</td>
-                            <td className="px-4 py-3">{d.discountAmount}</td>
-                            <td className="px-4 py-3">{d.priority}</td>
-                            <td className="px-4 py-3">{d.brand}</td>
-                            <td className="px-4 py-3">{d.category}</td>
-                            <td className="px-4 py-3">{d.products}</td>
-                            <td className="px-4 py-3">{d.location}</td>
-                            <td className="px-4 py-3 text-center">
-                                <button 
-                                    onClick={(e) => toggleActions(e, d.id)}
-                                    className={`p-2 rounded-lg transition-all duration-200 ${activeActionId === d.id ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
-                                >
-                                    <MoreVertical size={16} />
-                                </button>
-                            </td>
-                        </tr>
-                    ))
-                ) : (
-                    <tr>
-                      <td colSpan={11} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">
-                          No data available in table
-                      </td>
-                  </tr>
-                )}
+              )) : <tr><td colSpan={showAdvancedColumns ? 11 : 7} className="px-6 py-12 text-center text-slate-500 bg-slate-50/50">No discounts found</td></tr>}
             </tbody>
           </table>
         </div>
-        
-        {/* Pagination */}
-        <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
-            <div>Showing {filteredDiscounts.length > 0 ? 1 : 0} to {filteredDiscounts.length} of {filteredDiscounts.length} entries</div>
-            <div className="flex gap-1">
-                 <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled>Previous</button>
-                <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled>Next</button>
-            </div>
-        </div>
 
+        <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
+          <div>{filteredDiscounts.length === 0 ? 'Showing 0 to 0 of 0 entries' : `Showing ${pageStart + 1} to ${Math.min(pageEnd, filteredDiscounts.length)} of ${filteredDiscounts.length} entries`}</div>
+          <div className="flex gap-1">
+            <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
+            <button className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm">{safeCurrentPage}</button>
+            <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
+          </div>
+        </div>
       </div>
 
-      <AddDiscountModal 
-        isOpen={isAddModalOpen} 
-        onClose={() => setIsAddModalOpen(false)}
+      <AddDiscountModal
+        isOpen={isDiscountModalOpen}
+        onClose={() => { setIsDiscountModalOpen(false); setEditingDiscount(null); }}
         onSave={handleSaveDiscount}
+        initialData={editingDiscount}
       />
-
-       {/* Action Menu Portal */}
-       {activeActionId && createPortal(
-        <div 
-            ref={dropdownRef}
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
-            style={{ top: dropdownPosition.top, left: dropdownPosition.left, bottom: dropdownPosition.bottom }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <div className="px-4 py-2 border-b border-slate-50 mb-1">
-                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Actions</span>
-            </div>
-            
-            <button className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors">
-                <Edit size={16} className="text-amber-500" /> Edit
-            </button>
-            <button 
-                onClick={() => handleDelete(activeActionId!)}
-                className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-            >
-                <Trash2 size={16} className="text-rose-500" /> Delete
-            </button>
-            
-            <div className="h-px bg-slate-100 my-1 mx-2"></div>
-            
-            {(() => {
-                const discount = discounts.find(d => d.id === activeActionId);
-                if (!discount) return null;
-                const isActive = discount.isActive;
-                
-                return (
-                    <button 
-                        onClick={() => handleToggleStatus(discount.id)}
-                        className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center gap-3 transition-colors ${isActive ? 'text-red-500 hover:bg-red-50 hover:text-red-700' : 'text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700'}`}
-                    >
-                        {isActive ? <Ban size={16} /> : <CheckCircle2 size={16} />}
-                        {isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                )
-            })()}
-        </div>,
-        document.body
-      )}
     </div>
   );
 };
 
 export default Discounts;
+

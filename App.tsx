@@ -1,14 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Search, User, Menu, X, Check, Clock } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Bell, Search, X, Check, Clock, Calculator, CalendarDays, ShoppingCart, BookOpen } from 'lucide-react';
 import { NotificationProvider, useNotifications } from './src/context/NotificationContext';
 import { GlobalProvider, useGlobalContext } from './src/context/GlobalContext';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Login from './components/Login';
 import Inventory from './components/Inventory';
+import AddOpeningStock from './components/AddOpeningStock';
+import ProductStockHistory from './components/ProductStockHistory';
 import AddProduct from './components/AddProduct';
+import ProductViewCatalog from './components/ProductViewCatalog';
 import POS from './components/POS';
-import Orders from './components/Orders';
 import VatBills from './components/VatBills';
 import Suppliers from './components/Suppliers';
 import Customers from './components/Customers';
@@ -31,6 +33,8 @@ import PurchaseOrder from './components/PurchaseOrder';
 import PurchaseReturn from './components/PurchaseReturn';
 import Sales from './components/Sales';
 import AddSale from './components/AddSale';
+import ListQuotations from './components/ListQuotations';
+import AddQuotation from './components/AddQuotation';
 import ListPOS from './components/ListPOS';
 import OpenRegister from './components/OpenRegister';
 import ListReturns from './components/ListReturns';
@@ -41,7 +45,9 @@ import ListStockTransfers from './components/ListStockTransfers';
 import AddStockTransfer from './components/AddStockTransfer';
 import ListStockAdjustments from './components/ListStockAdjustments';
 import AddStockAdjustment from './components/AddStockAdjustment';
-import ListOrders from './components/ListOrders';
+import { getEditStockAdjustmentIdKey } from './src/utils/stockAdjustments';
+import { getEditExpenseIdKey } from './src/utils/expenses';
+import Orders from './components/Orders';
 import AddOrder from './components/AddOrder';
 import ViewOrder from './components/ViewOrder';
 import ListExpenses from './components/ListExpenses';
@@ -70,6 +76,7 @@ import ReportSalesRep from './components/ReportSalesRep';
 import ActivityLog from './components/ActivityLog';
 import TaxRates from './components/TaxRates';
 import Settings from './components/Settings';
+import BackupRestore from './components/BackupRestore';
 import Locations from './components/Locations';
 import InvoiceSettings from './components/InvoiceSettings';
 import BarcodeSettings from './components/BarcodeSettings';
@@ -84,11 +91,12 @@ import BalanceSheet from './components/BalanceSheet';
 import TrialBalance from './components/TrialBalance';
 import CashFlow from './components/CashFlow';
 import PaymentAccountReport from './components/PaymentAccountReport';
-import UserManagement from './components/UserManagement';
+import Users from './components/Users';
 import Roles from './components/Roles';
 import SalesCommissionAgents from './components/SalesCommissionAgents';
 import AddUser from './components/AddUser';
 import ViewUser from './components/ViewUser';
+import ViewSaleDetails from './components/ViewSaleDetails';
 
 const App: React.FC = () => {
   return (
@@ -101,7 +109,7 @@ const App: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { settings, currentUser, setCurrentUser } = useGlobalContext();
+  const { settings, currentUser, setCurrentUser, roles, products } = useGlobalContext();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!currentUser);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -109,8 +117,74 @@ const AppContent: React.FC = () => {
   const [publicInvoiceId, setPublicInvoiceId] = useState<string | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [showNotifications, setShowNotifications] = useState(false);
-  const { notifications, unreadCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
+  const [showCalculator, setShowCalculator] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [calculatorExpression, setCalculatorExpression] = useState('');
+  const [calculatorResult, setCalculatorResult] = useState('');
+  const [calendarDate, setCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { notifications, unreadCount, actionCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
   const notificationRef = useRef<HTMLDivElement>(null);
+  const calculatorRef = useRef<HTMLDivElement>(null);
+  const calendarRef = useRef<HTMLDivElement>(null);
+
+  // Apply theme colour to <html> data-theme attribute so index.css overrides take effect
+  useEffect(() => {
+    const theme = settings.themeColor || 'default';
+    if (theme === 'default') {
+      delete document.documentElement.dataset.theme;
+    } else {
+      document.documentElement.dataset.theme = theme;
+    }
+  }, [settings.themeColor]);
+
+  const globalSearchOptions = useMemo(() => ([
+    { label: 'Dashboard', page: 'dashboard' },
+    { label: 'Inventory', page: 'inventory' },
+    { label: 'List Products', page: 'products' },
+    { label: 'Add New Product', page: 'add-product' },
+    { label: 'Product View', page: 'product-view' },
+    { label: 'List Purchases', page: 'purchases' },
+    { label: 'Add Purchase', page: 'add-purchase' },
+    { label: 'All Sales', page: 'sales' },
+    { label: 'Add Sale', page: 'add-sale' },
+    { label: 'List Orders', page: 'list-orders' },
+    { label: 'Add Order', page: 'add-order' },
+    { label: 'Shipments', page: 'shipments' },
+    { label: 'Discounts', page: 'discounts' },
+    { label: 'Expenses', page: 'list-expenses' },
+    { label: 'Add Expense', page: 'add-expense' },
+    { label: 'Payments', page: 'list-payments' },
+    { label: 'Customers', page: 'customers' },
+    { label: 'Suppliers', page: 'suppliers' },
+    { label: 'Settings', page: 'settings' },
+    { label: 'Backup & Restore', page: 'backup-restore' },
+    { label: 'Activity Log', page: 'activity-log' },
+    { label: 'Profit / Loss Report', page: 'report-profit-loss' },
+    { label: 'Tax Report', page: 'report-tax' },
+    { label: 'Stock Report', page: 'report-stock' },
+    { label: 'Product Purchase Report', page: 'report-product-purchase' },
+    { label: 'Product Sell Report', page: 'report-product-sell' },
+    { label: 'Help Center', page: 'help-center' },
+  ]), []);
+
+  const searchMatches = useMemo(() => {
+    const query = String(globalSearch || '').trim().toLowerCase();
+    if (!query) return [];
+    return globalSearchOptions
+      .filter((option) => option.label.toLowerCase().includes(query) || option.page.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [globalSearch, globalSearchOptions]);
+
+  const handleGlobalSearch = () => {
+    const query = String(globalSearch || '').trim().toLowerCase();
+    if (!query) return;
+    const exact = globalSearchOptions.find((option) => option.label.toLowerCase() === query || option.page.toLowerCase() === query);
+    const firstMatch = exact || searchMatches[0];
+    if (!firstMatch) return;
+    setCurrentPage(firstMatch.page);
+    setGlobalSearch('');
+  };
 
   useEffect(() => {
     setIsAuthenticated(!!currentUser);
@@ -120,6 +194,12 @@ const AppContent: React.FC = () => {
     const handleClickOutside = (event: MouseEvent) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
         setShowNotifications(false);
+      }
+      if (calculatorRef.current && !calculatorRef.current.contains(event.target as Node)) {
+        setShowCalculator(false);
+      }
+      if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+        setShowCalendar(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -145,6 +225,29 @@ const AppContent: React.FC = () => {
     setCurrentPage('dashboard');
   };
 
+  const evaluateCalculatorExpression = () => {
+    const expression = String(calculatorExpression || '').trim();
+    if (!expression) {
+      setCalculatorResult('');
+      return;
+    }
+    if (!/^[\d+\-*/().%\s]+$/.test(expression)) {
+      setCalculatorResult('Invalid expression');
+      return;
+    }
+    try {
+      const raw = Function(`"use strict"; return (${expression});`)();
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric)) {
+        setCalculatorResult('Invalid expression');
+        return;
+      }
+      setCalculatorResult(String(Number(numeric.toFixed(6))));
+    } catch {
+      setCalculatorResult('Invalid expression');
+    }
+  };
+
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
   };
@@ -163,6 +266,159 @@ const AppContent: React.FC = () => {
       </p>
     </div>
   );
+  const renderAccessDenied = (moduleName: string) => (
+    <div className="flex flex-col items-center justify-center h-96 text-slate-400">
+      <h2 className="text-2xl font-bold text-slate-300 mb-2">Access Denied</h2>
+      <p>
+        You do not have permission to access {moduleName}.
+      </p>
+    </div>
+  );
+
+  const currentRoleRecord = roles.find(r => r.name === currentUser?.role);
+  const rolePermissions = currentRoleRecord?.permissions || [];
+  const roleHasExplicitPermissions = rolePermissions.length > 0;
+  const hasRolePermission = (moduleName: string, permission: string) => {
+    if (!currentUser) return false;
+    if (String(currentUser.role || '').toLowerCase() === 'admin' || currentRoleRecord?.isSystem) return true;
+    if (!roleHasExplicitPermissions) return true;
+    return (
+      rolePermissions.includes(permission) ||
+      rolePermissions.includes(`${moduleName}::${permission}`)
+    );
+  };
+  const canViewQuotations =
+    hasRolePermission('Quotation', 'View all quotations') ||
+    hasRolePermission('Quotation', 'View own quotations');
+  const canCreateQuotations =
+    hasRolePermission('Quotation', 'Edit quotation') ||
+    hasRolePermission('Sell', 'Add Sell');
+  const canAccessAllSellReturns = hasRolePermission('Sell', 'Access all sell return');
+  const canAccessOwnSellReturns = hasRolePermission('Sell', 'Access own sell return');
+  const canAccessSellReturns = canAccessAllSellReturns || canAccessOwnSellReturns;
+  const canAccessShipments =
+    hasRolePermission('Shipments', 'Access all shipments') ||
+    hasRolePermission('Shipments', 'Access own shipments') ||
+    hasRolePermission('Shipments', 'Access pending shipments only') ||
+    hasRolePermission('Shipments', 'Commission agent can access their own shipments');
+  const canManageDiscounts = hasRolePermission('Sell', 'Add/Edit/Delete Discount');
+  const canImportSales =
+    hasRolePermission('Sell', 'Import Sales') ||
+    hasRolePermission('Sell', 'Add Sell');
+  const canViewLegacyStockOperations =
+    hasRolePermission('Purchase & Stock Adjustment', 'View all Purchase & Stock Adjustment') ||
+    hasRolePermission('Purchase & Stock Adjustment', 'View own Purchase & Stock Adjustment');
+  const canViewAllLegacyStockOperations = hasRolePermission(
+    'Purchase & Stock Adjustment',
+    'View all Purchase & Stock Adjustment',
+  );
+  const canViewOwnLegacyStockOperations = hasRolePermission(
+    'Purchase & Stock Adjustment',
+    'View own Purchase & Stock Adjustment',
+  );
+  const canManageLegacyStockOperations =
+    hasRolePermission('Purchase & Stock Adjustment', 'Add purchase & Stock Adjustment') ||
+    hasRolePermission('Purchase & Stock Adjustment', 'Edit purchase & Stock Adjustment');
+  const canViewStockTransfers =
+    hasRolePermission('Stock Transfer', 'View all stock transfers') ||
+    hasRolePermission('Stock Transfer', 'View own stock transfers') ||
+    canViewLegacyStockOperations;
+  const canManageStockTransfers =
+    hasRolePermission('Stock Transfer', 'Add stock transfer') ||
+    hasRolePermission('Stock Transfer', 'Edit stock transfer') ||
+    canManageLegacyStockOperations;
+  const canViewStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
+    hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
+    canViewLegacyStockOperations;
+  const canViewAllStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
+    canViewAllLegacyStockOperations;
+  const canViewOwnStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
+    canViewOwnLegacyStockOperations;
+  const canAddStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'Add stock adjustment') ||
+    canManageLegacyStockOperations;
+  const canEditStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'Edit stock adjustment') ||
+    canManageLegacyStockOperations;
+  const canManageStockAdjustments = canAddStockAdjustments || canEditStockAdjustments;
+  const canDeleteStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'Delete stock adjustment') ||
+    hasRolePermission('Purchase & Stock Adjustment', 'Delete purchase & Stock Adjustment');
+  const stockAdjustmentOwnerScopeId =
+    !canViewAllStockAdjustments && canViewOwnStockAdjustments
+      ? (currentUser?.id || '')
+      : '';
+  const stockAdjustmentOwnerScopeName =
+    !canViewAllStockAdjustments && canViewOwnStockAdjustments
+      ? (currentUser?.name || '')
+      : '';
+  const canViewAllExpenses = hasRolePermission('Expense', 'Access all expenses');
+  const canViewOwnExpenses = hasRolePermission('Expense', 'View own expense only');
+  const canAddExpenses = hasRolePermission('Expense', 'Add Expense');
+  const canEditExpenses = hasRolePermission('Expense', 'Edit Expense');
+  const canDeleteExpenses = hasRolePermission('Expense', 'Delete Expense');
+  const canViewExpenses =
+    canViewAllExpenses ||
+    canViewOwnExpenses ||
+    canAddExpenses ||
+    canEditExpenses ||
+    canDeleteExpenses;
+  const expenseOwnerScopeId =
+    !canViewAllExpenses && canViewOwnExpenses
+      ? (currentUser?.id || '')
+      : '';
+  const expenseOwnerScopeName =
+    !canViewAllExpenses && canViewOwnExpenses
+      ? (currentUser?.name || '')
+      : '';
+  const canViewStockReports = hasRolePermission(
+    'Report',
+    'View stock report, stock adjustment report & stock expiry report',
+  );
+  const canViewPurchaseSaleReport = hasRolePermission('Report', 'View purchase & sell report');
+  const canViewTaxReport = hasRolePermission('Report', 'View Tax report');
+  const canViewProfitLossReport = hasRolePermission('Report', 'View profit/loss report');
+  const canViewExpenseReports = hasRolePermission('Report', 'View expense report');
+  const canViewSupplierCustomerReport = hasRolePermission('Report', 'View Supplier & Customer report');
+  const canViewCustomerGroupsReport = hasRolePermission('Report', 'View customer groups report');
+  const canViewProductStockValue = hasRolePermission('Report', 'View product stock value');
+  const canViewTrendingProductReport = hasRolePermission('Report', 'View trending product report');
+  const canViewRegisterReport = hasRolePermission('Report', 'View register report');
+  const canViewSalesRepresentativeReport = hasRolePermission('Report', 'View sales representative report');
+  const canViewActivityLog = hasRolePermission('Report', 'View activity log');
+  const canViewOrders = hasRolePermission('Order', 'View order');
+  const canAddOrders = hasRolePermission('Order', 'Add order');
+  const canEditOrders = hasRolePermission('Order', 'Edit order');
+  const canDeleteOrders = hasRolePermission('Order', 'Delete order');
+  const canApproveOrders = hasRolePermission('Order', 'Approve order');
+  const canAccessOrders = canViewOrders || canAddOrders || canEditOrders || canDeleteOrders || canApproveOrders;
+  const canGenerateInvoiceFromOrders = hasRolePermission('Sell', 'Add Sell');
+  const canViewSellPayments =
+    hasRolePermission('Sell', 'Add sell payment') ||
+    hasRolePermission('Sell', 'Edit sell payment') ||
+    hasRolePermission('Sell', 'Delete sell payment') ||
+    hasRolePermission('POS', 'Add/Edit Payment');
+  const canAddSellPayments =
+    hasRolePermission('Sell', 'Add sell payment') ||
+    hasRolePermission('POS', 'Add/Edit Payment');
+  const canViewFieldPayments =
+    hasRolePermission('Field Payment', 'View field payment') ||
+    hasRolePermission('Field Payment', 'Add field payment') ||
+    hasRolePermission('Field Payment', 'Edit field payment') ||
+    hasRolePermission('Field Payment', 'Delete field payment') ||
+    hasRolePermission('Field Payment', 'Approval field payment');
+  const canAccessAccounts = hasRolePermission('Account', 'Access Accounts');
+  const canEditAccountTransactions = hasRolePermission('Account', 'Edit account transaction');
+  const canDeleteAccountTransactions = hasRolePermission('Account', 'Delete account transaction');
+  const canAccessBusinessSettings = hasRolePermission('Settings', 'Access business settings');
+  const canAccessInvoiceSettings = hasRolePermission('Settings', 'Access invoice settings');
+  const canAccessBarcodeSettings = hasRolePermission('Settings', 'Access barcode settings');
+  const canAccessPrinters = hasRolePermission('Settings', 'Access printers');
+  const canViewTaxRates = hasRolePermission('Tax rate', 'View tax rate');
+  const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
 
   // Simple page router
   const renderPage = () => {
@@ -196,11 +452,81 @@ const AppContent: React.FC = () => {
        return <ViewSupplier onNavigate={setCurrentPage} contactId={id} initialTab={tab} />;
     }
 
+    // Handle view-sale/{saleId} — renders invoice details as a page (not a modal)
+    if (currentPage.startsWith('view-sale/')) {
+      const saleId = currentPage.split('/')[1] || '';
+      return (
+        <ViewSaleDetails
+          isOpen={true}
+          pageMode={true}
+          saleId={saleId}
+          onClose={() => setCurrentPage('sales')}
+        />
+      );
+    }
+
+    // Handle print-sale/{saleId} — opens invoice page and auto-triggers print.
+    if (currentPage.startsWith('print-sale/')) {
+      const saleId = currentPage.split('/')[1] || '';
+      return (
+        <ViewSaleDetails
+          isOpen={true}
+          pageMode={true}
+          saleId={saleId}
+          autoPrintRequestId={`print-${saleId}`}
+          onClose={() => setCurrentPage('sales')}
+        />
+      );
+    }
+
     // Handle parameterized EditProduct route: edit-product/{id}
     if (currentPage.startsWith('edit-product/')) {
         const parts = currentPage.split('/');
         const id = parts[1] || '';
         return <AddProduct isEdit={true} productId={id} onNavigate={setCurrentPage} />;
+    }
+
+    // Handle parameterized PrintLabels route: print-labels/{productId}
+    if (currentPage.startsWith('print-labels/')) {
+        const parts = currentPage.split('/');
+        const id = parts[1] || '';
+        return <PrintLabels initialProductId={id} />;
+    }
+
+    // Handle parameterized ProductStockHistory route: product-stock-history/{productId}
+    if (currentPage.startsWith('product-stock-history/')) {
+      const parts = currentPage.split('/');
+      const id = decodeURIComponent(parts[1] || '');
+      const selectedProduct = products.find((product) => String(product.id) === String(id)) || null;
+      if (!selectedProduct) {
+        return renderAccessDenied('Product');
+      }
+      return (
+        <ProductStockHistory
+          pageMode={true}
+          isOpen={true}
+          onClose={() => setCurrentPage('products')}
+          product={selectedProduct}
+        />
+      );
+    }
+
+    // Handle parameterized AddOpeningStock route: add-opening-stock/{productId}
+    if (currentPage.startsWith('add-opening-stock/')) {
+      const parts = currentPage.split('/');
+      const id = decodeURIComponent(parts[1] || '');
+      const selectedProduct = products.find((product) => String(product.id) === String(id)) || null;
+      if (!selectedProduct) {
+        return renderAccessDenied('Product');
+      }
+      return (
+        <AddOpeningStock
+          pageMode={true}
+          isOpen={true}
+          onClose={() => setCurrentPage('products')}
+          product={selectedProduct}
+        />
+      );
     }
 
     // Handle parameterized EditUser route: edit-user/{id}
@@ -211,14 +537,15 @@ const AppContent: React.FC = () => {
     }
 
     switch(currentPage) {
-      case 'dashboard': return <Dashboard />;
-      case 'users': return <UserManagement onNavigate={setCurrentPage} />;
+      case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
+      case 'users': return <Users onNavigate={setCurrentPage} />;
       case 'add-user': return <AddUser onNavigate={setCurrentPage} />;
       case 'roles': return <Roles onNavigate={setCurrentPage} />;
       case 'sales-commission-agents':
         return settings.enableCommissionAgents ? <SalesCommissionAgents /> : renderModuleDisabled('Sales Commission Agents');
       case 'products': return <Inventory onNavigate={setCurrentPage} />;
       case 'add-product': return <AddProduct onNavigate={setCurrentPage} />;
+      case 'product-view': return <ProductViewCatalog onNavigate={setCurrentPage} />;
       case 'update-price': return <UpdatePrice />;
       case 'print-labels': return <PrintLabels />;
       case 'variations': return <Variations />;
@@ -228,86 +555,327 @@ const AppContent: React.FC = () => {
       case 'categories': return settings.enableCategories ? <Categories /> : renderModuleDisabled('Categories');
       case 'brands': return settings.enableBrands ? <Brands /> : renderModuleDisabled('Brands');
       case 'warranties': return <Warranties />;
-      case 'purchases': return settings.enablePurchases ? <Purchases /> : renderModuleDisabled('Purchases');
-      case 'add-purchase': return settings.enablePurchases ? <AddPurchase /> : renderModuleDisabled('Purchases');
-      case 'purchase-requisition': return settings.enablePurchases ? <PurchaseRequisition /> : renderModuleDisabled('Purchases');
-      case 'purchase-order': return settings.enablePurchases ? <PurchaseOrder /> : renderModuleDisabled('Purchases');
+      case 'purchases': return settings.enablePurchases ? <Purchases onNavigate={setCurrentPage} /> : renderModuleDisabled('Purchases');
+      case 'add-purchase': return settings.enablePurchases ? <AddPurchase onNavigate={setCurrentPage} /> : renderModuleDisabled('Purchases');
+      case 'purchase-requisition':
+        if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+        return settings.enablePurchaseRequisition ? <PurchaseRequisition onNavigate={setCurrentPage} /> : renderModuleDisabled('Purchase Requisition');
+      case 'purchase-order':
+        if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+        return settings.enablePurchaseOrder ? <PurchaseOrder onNavigate={setCurrentPage} /> : renderModuleDisabled('Purchase Order');
       case 'purchase-return': return settings.enablePurchases ? <PurchaseReturn /> : renderModuleDisabled('Purchases');
       case 'sales': return <Sales onNavigate={setCurrentPage} statusFilter="Final" />;
       case 'add-sale': return <AddSale onNavigate={setCurrentPage} />;
       case 'edit-sale': return <AddSale isEdit={true} onNavigate={setCurrentPage} />;
       case 'list-pos': return settings.enablePOS ? <ListPOS onNavigate={setCurrentPage} /> : renderModuleDisabled('POS');
       case 'open-register': return settings.enablePOS ? <OpenRegister onNavigate={setCurrentPage} /> : renderModuleDisabled('POS');
-      case 'pos': return settings.enablePOS ? <POS /> : renderModuleDisabled('POS');
-      case 'drafts': return <Sales onNavigate={setCurrentPage} statusFilter="Draft" title="Drafts" addPage="add-draft" addButtonLabel="Add Draft" />;
-      case 'add-draft': return <AddSale onNavigate={setCurrentPage} initialStatus="Draft" />;
-      case 'quotations': return <Sales onNavigate={setCurrentPage} statusFilter="Quotation" title="Quotations" addPage="add-quotation" addButtonLabel="Add Quotation" />;
-      case 'add-quotation': return <AddSale onNavigate={setCurrentPage} initialStatus="Quotation" />;
-      case 'returns': return <ListReturns onNavigate={setCurrentPage} />;
-      case 'add-sell-return': return <AddSellReturn onNavigate={setCurrentPage} />;
-      case 'shipments': return <Shipments onNavigate={setCurrentPage} />;
-      case 'discounts': return <Discounts onNavigate={setCurrentPage} />;
-      case 'import-sales': return <ImportSales onNavigate={setCurrentPage} />;
-      case 'list-stock-transfers': return settings.enableStockTransfers ? <ListStockTransfers onNavigate={setCurrentPage} /> : renderModuleDisabled('Stock Transfers');
-      case 'add-stock-transfer': return settings.enableStockTransfers ? <AddStockTransfer /> : renderModuleDisabled('Stock Transfers');
-      case 'list-stock-adjustments': return settings.enableStockTransfers ? <ListStockAdjustments onNavigate={setCurrentPage} /> : renderModuleDisabled('Stock Transfers');
-      case 'add-stock-adjustment': return settings.enableStockTransfers ? <AddStockAdjustment /> : renderModuleDisabled('Stock Transfers');
+      case 'pos': return settings.enablePOS ? <POS onNavigate={setCurrentPage} /> : renderModuleDisabled('POS');
+      case 'drafts':
+        return settings.disableDraft
+          ? renderModuleDisabled('Draft')
+          : <Sales onNavigate={setCurrentPage} statusFilter="Draft" title="Drafts" addPage="add-draft" addButtonLabel="Add Draft" />;
+      case 'add-draft':
+        return settings.disableDraft
+          ? renderModuleDisabled('Draft')
+          : <AddSale onNavigate={setCurrentPage} initialStatus="Draft" />;
+      case 'quotations':
+        if (settings.disableQuotation) return renderModuleDisabled('Quotation');
+        if (!canViewQuotations) return renderAccessDenied('Quotation');
+        return <ListQuotations onNavigate={setCurrentPage} />;
+      case 'add-quotation':
+        if (settings.disableQuotation) return renderModuleDisabled('Quotation');
+        if (!canCreateQuotations) return renderAccessDenied('Quotation');
+        return <AddQuotation onNavigate={setCurrentPage} />;
+      case 'returns':
+        if (!canAccessSellReturns) return renderAccessDenied('Sell Returns');
+        return <ListReturns onNavigate={setCurrentPage} />;
+      case 'add-sell-return':
+        if (!canAccessSellReturns) return renderAccessDenied('Sell Returns');
+        return <AddSellReturn onNavigate={setCurrentPage} />;
+      case 'shipments':
+        if (!settings.enableShipments) return renderModuleDisabled('Shipments');
+        if (!canAccessShipments) return renderAccessDenied('Shipments');
+        return <Shipments onNavigate={setCurrentPage} />;
+      case 'discounts':
+        if (!settings.enableDiscounts) return renderModuleDisabled('Discounts');
+        if (!canManageDiscounts) return renderAccessDenied('Discounts');
+        return <Discounts onNavigate={setCurrentPage} />;
+      case 'import-sales':
+        if (!settings.enableImportSales) return renderModuleDisabled('Import Sales');
+        if (!canImportSales) return renderAccessDenied('Import Sales');
+        return <ImportSales onNavigate={setCurrentPage} />;
+      case 'list-stock-transfers':
+        if (!settings.enableStockTransfers) return renderModuleDisabled('Stock Transfers');
+        if (!canViewStockTransfers) return renderAccessDenied('Stock Transfers');
+        return <ListStockTransfers onNavigate={setCurrentPage} canManage={canManageStockTransfers} />;
+      case 'add-stock-transfer':
+        if (!settings.enableStockTransfers) return renderModuleDisabled('Stock Transfers');
+        if (!canManageStockTransfers) return renderAccessDenied('Stock Transfers');
+        return <AddStockTransfer onNavigate={setCurrentPage} />;
+      case 'list-stock-adjustments':
+        if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
+        if (!canViewStockAdjustments) return renderAccessDenied('Stock Adjustments');
+        return (
+          <ListStockAdjustments
+            onNavigate={setCurrentPage}
+            canAdd={canAddStockAdjustments}
+            canEdit={canEditStockAdjustments}
+            canDelete={canDeleteStockAdjustments}
+            restrictToAddedById={stockAdjustmentOwnerScopeId}
+            restrictToAddedByName={stockAdjustmentOwnerScopeName}
+          />
+        );
+      case 'add-stock-adjustment':
+        if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
+        try {
+          const editId = localStorage.getItem(getEditStockAdjustmentIdKey()) || '';
+          if (editId) {
+            if (!canEditStockAdjustments) return renderAccessDenied('Stock Adjustments');
+          } else if (!canAddStockAdjustments) {
+            return renderAccessDenied('Stock Adjustments');
+          }
+        } catch {
+          if (!canManageStockAdjustments) return renderAccessDenied('Stock Adjustments');
+        }
+        return (
+          <AddStockAdjustment
+            onNavigate={setCurrentPage}
+            canAdd={canAddStockAdjustments}
+            canEdit={canEditStockAdjustments}
+            restrictToAddedById={stockAdjustmentOwnerScopeId}
+            restrictToAddedByName={stockAdjustmentOwnerScopeName}
+          />
+        );
       case 'list-orders':
       case 'orders':
-        return <ListOrders onNavigate={setCurrentPage} onSelectOrder={setSelectedOrderId} />;
-      case 'add-order': return <AddOrder onNavigate={setCurrentPage} />;
-      case 'edit-order': return <AddOrder isEdit={true} orderId={selectedOrderId} onNavigate={setCurrentPage} />;
-      case 'view-order': return <ViewOrder onClose={() => setCurrentPage('list-orders')} orderId={selectedOrderId} />;
-      case 'convert-order-to-invoice': return <AddSale fromOrder={true} onNavigate={setCurrentPage} />;
-      case 'new-payment': return <NewPayment />;
-      case 'list-payments': return <ListPayments onNavigate={handleNavigate} onContactSelect={handleContactSelect} />;
-      case 'field-payments': return <FieldPayments />;
-      case 'list-accounts': return <ListAccounts onNavigate={setCurrentPage} />;
-      case 'balance-sheet': return <BalanceSheet />;
-      case 'trial-balance': return <TrialBalance />;
-      case 'cash-flow': return <CashFlow />;
-      case 'payment-account-report': return <PaymentAccountReport />;
+        if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+        if (!canAccessOrders) return renderAccessDenied('Orders');
+        return (
+          <Orders
+            onNavigate={setCurrentPage}
+            onSelectOrder={setSelectedOrderId}
+            canAdd={canAddOrders}
+            canEdit={canEditOrders}
+            canDelete={canDeleteOrders}
+            canGenerateInvoice={canGenerateInvoiceFromOrders}
+            canApprove={canApproveOrders}
+          />
+        );
+      case 'add-order':
+        if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+        if (!canAddOrders) return renderAccessDenied('Orders');
+        return <AddOrder onNavigate={setCurrentPage} />;
+      case 'edit-order':
+        if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+        if (!canEditOrders) return renderAccessDenied('Orders');
+        if (!selectedOrderId) return renderAccessDenied('Orders');
+        return <AddOrder isEdit={true} orderId={selectedOrderId} onNavigate={setCurrentPage} />;
+      case 'view-order':
+        if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+        if (!(canViewOrders || canEditOrders || canDeleteOrders)) return renderAccessDenied('Orders');
+        if (!selectedOrderId) return renderAccessDenied('Orders');
+        return <ViewOrder onClose={() => setCurrentPage('list-orders')} orderId={selectedOrderId} />;
+      case 'convert-order-to-invoice':
+        if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+        if (!canGenerateInvoiceFromOrders) return renderAccessDenied('Orders');
+        return <AddSale fromOrder={true} onNavigate={setCurrentPage} />;
+      case 'new-payment':
+        if (!canAddSellPayments) return renderAccessDenied('Payments');
+        return <NewPayment onNavigate={setCurrentPage} />;
+      case 'list-payments':
+        if (!canViewSellPayments) return renderAccessDenied('Payments');
+        return <ListPayments onNavigate={handleNavigate} onContactSelect={handleContactSelect} />;
+      case 'field-payments':
+        if (!settings.enableFieldPayments) return renderModuleDisabled('Field Payments');
+        if (!canViewFieldPayments) return renderAccessDenied('Field Payments');
+        return <FieldPayments onNavigate={setCurrentPage} />;
+      case 'list-accounts':
+        if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+        if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+        return (
+          <ListAccounts
+            onNavigate={setCurrentPage}
+            canEditAccountTransactions={canEditAccountTransactions}
+            canDeleteAccountTransactions={canDeleteAccountTransactions}
+          />
+        );
+      case 'balance-sheet':
+        if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+        if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+        return <BalanceSheet />;
+      case 'trial-balance':
+        if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+        if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+        return <TrialBalance />;
+      case 'cash-flow':
+        if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+        if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+        return <CashFlow />;
+      case 'payment-account-report':
+        if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+        if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+        return <PaymentAccountReport />;
       case 'vat-bills': return <VatBills />;
-      case 'tax-rates': return <TaxRates />;
+      case 'tax-rates':
+        if (!canViewTaxRates) return renderAccessDenied('Tax Rates');
+        return <TaxRates />;
       case 'suppliers': return <Suppliers onNavigate={setCurrentPage} />;
       case 'customers': return <Customers onNavigate={setCurrentPage} />;
       case 'customer-groups': return <CustomerGroups />;
       case 'selling-price-groups': return <SellingPriceGroups />;
       case 'import-contacts': return <ImportContacts />;
-      case 'expenses': return settings.enableExpenses ? <ListExpenses onNavigate={setCurrentPage} /> : renderModuleDisabled('Expenses');
-      case 'add-expense': return settings.enableExpenses ? <AddExpense /> : renderModuleDisabled('Expenses');
-      case 'edit-expense': return settings.enableExpenses ? <AddExpense isEdit={true} /> : renderModuleDisabled('Expenses');
-      case 'expense-categories': return settings.enableExpenses ? <ExpenseCategories /> : renderModuleDisabled('Expenses');
-      case 'report-profit-loss': return <ReportProfitLoss />;
-      case 'report-purchase-sale': return <ReportPurchaseSale />;
-      case 'report-tax': return <ReportTax />;
-      case 'report-supplier-customer': return <ReportSupplierCustomer />;
-      case 'report-customer-groups': return <ReportCustomerGroups />;
-      case 'report-stock': return <ReportStock />;
-      case 'report-stock-expiry': return <ReportStockExpiry />;
-      case 'report-lot': return <ReportLot />;
-      case 'report-stock-adjustment': return <ReportStockAdjustment />;
-      case 'report-trending-products': return <ReportTrendingProducts />;
-      case 'report-items': return <ReportItems />;
-      case 'report-product-purchase': return <ReportProductPurchase />;
-      case 'report-product-sell': return <ReportProductSell />;
-      case 'report-purchase-payment': return <ReportPurchasePayment />;
-      case 'report-sell-payment': return <ReportSellPayment />;
-      case 'report-expense': return <ReportExpense />;
-      case 'report-register': return <ReportRegister />;
-      case 'report-sales-rep': return <ReportSalesRep />;
-      case 'activity-log': return <ActivityLog />;
-      case 'settings': return <Settings />;
-      case 'locations': return <Locations />;
-      case 'invoice-settings': return <InvoiceSettings />;
-      case 'barcode-settings': return <BarcodeSettings />;
-      case 'printers': return <Printers />;
-      case 'help-center': return <HelpCenter />;
+      case 'expenses':
+        if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+        if (!canViewExpenses) return renderAccessDenied('Expenses');
+        return (
+          <ListExpenses
+            onNavigate={setCurrentPage}
+            canAdd={canAddExpenses}
+            canEdit={canEditExpenses}
+            canDelete={canDeleteExpenses}
+            restrictToAddedById={expenseOwnerScopeId}
+            restrictToAddedByName={expenseOwnerScopeName}
+          />
+        );
+      case 'add-expense':
+        if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+        if (!canAddExpenses) return renderAccessDenied('Expenses');
+        return (
+          <AddExpense
+            onNavigate={setCurrentPage}
+            canAdd={canAddExpenses}
+            canEdit={canEditExpenses}
+            restrictToAddedById={expenseOwnerScopeId}
+            restrictToAddedByName={expenseOwnerScopeName}
+          />
+        );
+      case 'edit-expense':
+        if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+        try {
+          const editId = localStorage.getItem(getEditExpenseIdKey()) || '';
+          if (!editId) return renderAccessDenied('Expenses');
+        } catch {
+          return renderAccessDenied('Expenses');
+        }
+        if (!canEditExpenses) return renderAccessDenied('Expenses');
+        return (
+          <AddExpense
+            isEdit
+            onNavigate={setCurrentPage}
+            canAdd={canAddExpenses}
+            canEdit={canEditExpenses}
+            restrictToAddedById={expenseOwnerScopeId}
+            restrictToAddedByName={expenseOwnerScopeName}
+          />
+        );
+      case 'expense-categories':
+        if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+        if (!canAddExpenses && !canEditExpenses && !canDeleteExpenses) return renderAccessDenied('Expense Categories');
+        return <ExpenseCategories canAdd={canAddExpenses} canEdit={canEditExpenses} canDelete={canDeleteExpenses} />;
+      case 'report-profit-loss':
+        if (!canViewProfitLossReport) return renderAccessDenied('Profit / Loss Report');
+        return <ReportProfitLoss />;
+      case 'report-purchase-sale':
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Purchase & Sale Report');
+        return <ReportPurchaseSale />;
+      case 'report-tax':
+        if (!canViewTaxReport) return renderAccessDenied('Tax Report');
+        return <ReportTax />;
+      case 'report-supplier-customer':
+        if (!canViewSupplierCustomerReport) return renderAccessDenied('Supplier & Customer Report');
+        return <ReportSupplierCustomer />;
+      case 'report-customer-groups':
+        if (!settings.enableCustomerGroupsReport) return renderModuleDisabled('Customer Groups Report');
+        if (!canViewCustomerGroupsReport) return renderAccessDenied('Customer Groups Report');
+        return <ReportCustomerGroups />;
+      case 'report-stock':
+        if (!settings.enableStockReport) return renderModuleDisabled('Stock Report');
+        if (!canViewStockReports) return renderAccessDenied('Stock Report');
+        return <ReportStock canViewValueMetrics={canViewProductStockValue} />;
+      case 'report-stock-expiry':
+        if (!settings.enableProductExpiry) return renderModuleDisabled('Stock Expiry Report');
+        if (!canViewStockReports) return renderAccessDenied('Stock Expiry Report');
+        return <ReportStockExpiry />;
+      case 'report-lot':
+        if (!(settings.enableLotNumber || settings.enableLotNumbers)) return renderModuleDisabled('Lot Report');
+        if (!canViewStockReports) return renderAccessDenied('Lot Report');
+        return <ReportLot />;
+      case 'report-stock-adjustment':
+        if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
+        if (!canViewStockReports) return renderAccessDenied('Stock Adjustment Report');
+        return (
+          <ReportStockAdjustment
+            restrictToAddedById={stockAdjustmentOwnerScopeId}
+            restrictToAddedByName={stockAdjustmentOwnerScopeName}
+          />
+        );
+      case 'report-trending-products':
+        if (!settings.enableTrendingProductsReport) return renderModuleDisabled('Trending Products Report');
+        if (!canViewTrendingProductReport) return renderAccessDenied('Trending Products Report');
+        return <ReportTrendingProducts />;
+      case 'report-items':
+        if (!settings.enableItemsReport) return renderModuleDisabled('Items Report');
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Items Report');
+        return <ReportItems />;
+      case 'report-product-purchase':
+        if (!settings.enableProductPurchaseReport) return renderModuleDisabled('Product Purchase Report');
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Product Purchase Report');
+        return <ReportProductPurchase />;
+      case 'report-product-sell':
+        if (!settings.enableProductSellReport) return renderModuleDisabled('Product Sell Report');
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Product Sell Report');
+        return <ReportProductSell />;
+      case 'report-purchase-payment':
+        if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+        if (!settings.enablePurchasePaymentReport) return renderModuleDisabled('Purchase Payment Report');
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Purchase Payment Report');
+        return <ReportPurchasePayment />;
+      case 'report-sell-payment':
+        if (!settings.enableSellPaymentReport) return renderModuleDisabled('Sell Payment Report');
+        if (!canViewPurchaseSaleReport) return renderAccessDenied('Sell Payment Report');
+        return <ReportSellPayment />;
+      case 'report-expense':
+        if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+        if (!canViewExpenseReports) return renderAccessDenied('Expense Report');
+        return <ReportExpense />;
+      case 'report-register':
+        if (!settings.enablePOS) return renderModuleDisabled('POS');
+        if (!canViewRegisterReport) return renderAccessDenied('Register Report');
+        return <ReportRegister />;
+      case 'report-sales-rep':
+        if (!canViewSalesRepresentativeReport) return renderAccessDenied('Sales Representative Report');
+        return <ReportSalesRep />;
+      case 'activity-log':
+        if (!settings.enableActivityLog) return renderModuleDisabled('Activity Log');
+        if (!canViewActivityLog) return renderAccessDenied('Activity Log');
+        return <ActivityLog />;
+      case 'settings':
+        if (!canAccessBusinessSettings) return renderAccessDenied('Business Settings');
+        return <Settings />;
+      case 'backup-restore':
+        if (!canAccessBusinessSettings) return renderAccessDenied('Backup & Restore');
+        return <BackupRestore />;
+      case 'locations':
+        if (!canAccessBusinessSettings) return renderAccessDenied('Business Locations');
+        return <Locations />;
+      case 'invoice-settings':
+        if (!canAccessInvoiceSettings) return renderAccessDenied('Invoice Settings');
+        return <InvoiceSettings />;
+      case 'barcode-settings':
+        if (!canAccessBarcodeSettings) return renderAccessDenied('Barcode Settings');
+        return <BarcodeSettings />;
+      case 'printers':
+        if (!canAccessPrinters) return renderAccessDenied('Receipt Printers');
+        return <Printers />;
+      case 'help-center':
+        if (!canAccessHelpCenter) return renderAccessDenied('Help Center');
+        return <HelpCenter onNavigate={setCurrentPage} />;
       case 'public-view-invoice': 
         return (
           <ViewOrder 
             onClose={handleClosePublicInvoice} 
-            invoiceNo={`INV-${publicInvoiceId}`} 
+            saleId={publicInvoiceId && !publicInvoiceId.startsWith('INV-') ? publicInvoiceId : undefined}
+            invoiceNo={publicInvoiceId && publicInvoiceId.startsWith('INV-') ? publicInvoiceId : undefined}
           />
         );
       default:
@@ -353,19 +921,176 @@ const AppContent: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input 
               type="text" 
-              placeholder="Search anything..." 
+              placeholder="Search module or page..." 
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleGlobalSearch();
+                }
+              }}
               className="pl-10 pr-4 py-2 rounded-full bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 w-64 shadow-sm"
             />
+            {searchMatches.length > 0 && globalSearch.trim().length > 0 && (
+              <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-40">
+                {searchMatches.map((match) => (
+                  <button
+                    key={`${match.page}-${match.label}`}
+                    type="button"
+                    onClick={() => {
+                      setCurrentPage(match.page);
+                      setGlobalSearch('');
+                    }}
+                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                  >
+                    <div className="font-bold text-slate-700">{match.label}</div>
+                    <div className="text-[11px] text-slate-400">{match.page}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <div className="relative" ref={calculatorRef}>
+                <button
+                  onClick={() => {
+                    setShowCalculator((prev) => !prev);
+                    setShowCalendar(false);
+                  }}
+                  className={`p-2 rounded-full transition shadow-sm ${showCalculator ? 'bg-blue-50 text-blue-600' : 'bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}
+                  title="Calculator"
+                >
+                  <Calculator size={18} />
+                </button>
+                {showCalculator && (
+                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70">
+                      <h4 className="text-sm font-bold text-slate-900">Calculator</h4>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <input
+                        type="text"
+                        value={calculatorExpression}
+                        onChange={(e) => setCalculatorExpression(e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                      <div className="h-6 text-right text-xs font-bold text-blue-700">{calculatorResult}</div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['7', '8', '9', '/', '4', '5', '6', '*', '1', '2', '3', '-', '0', '.', '%', '+'].map((key) => (
+                          <button
+                            key={key}
+                            type="button"
+                            onClick={() => setCalculatorExpression((prev) => `${prev}${key}`)}
+                            className="h-9 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
+                          >
+                            {key}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCalculatorExpression('');
+                            setCalculatorResult('');
+                          }}
+                          className="h-9 rounded-lg border border-rose-200 text-xs font-bold text-rose-600 hover:bg-rose-50 transition"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCalculatorExpression((prev) => prev.slice(0, -1))}
+                          className="h-9 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+                        >
+                          Back
+                        </button>
+                        <button
+                          type="button"
+                          onClick={evaluateCalculatorExpression}
+                          className="h-9 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition"
+                        >
+                          =
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="relative" ref={calendarRef}>
+                <button
+                  onClick={() => {
+                    setShowCalendar((prev) => !prev);
+                    setShowCalculator(false);
+                  }}
+                  className={`p-2 rounded-full transition shadow-sm ${showCalendar ? 'bg-blue-50 text-blue-600' : 'bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50'}`}
+                  title="Calendar"
+                >
+                  <CalendarDays size={18} />
+                </button>
+                {showCalendar && (
+                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70">
+                      <h4 className="text-sm font-bold text-slate-900">Calendar</h4>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <input
+                        type="date"
+                        value={calendarDate}
+                        onChange={(e) => setCalendarDate(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                      />
+                      <div className="text-xs text-slate-500">
+                        Selected: <span className="font-bold text-slate-700">{calendarDate || '--'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setCalendarDate(new Date().toISOString().slice(0, 10))}
+                        className="w-full h-9 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
+                      >
+                        Today
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => settings.enablePOS && setCurrentPage('pos')}
+                disabled={!settings.enablePOS}
+                className={`p-2 rounded-full transition shadow-sm ${settings.enablePOS ? 'bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                title={settings.enablePOS ? 'POS' : 'POS is disabled'}
+              >
+                <ShoppingCart size={18} />
+              </button>
+
+              <button
+                onClick={() => canAccessHelpCenter && setCurrentPage('help-center')}
+                disabled={!canAccessHelpCenter}
+                className={`p-2 rounded-full transition shadow-sm ${canAccessHelpCenter ? 'bg-white text-slate-600 hover:text-blue-600 hover:bg-blue-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                title={canAccessHelpCenter ? 'Application Guide' : 'Help Center access denied'}
+              >
+                <BookOpen size={18} />
+              </button>
+            </div>
+
             <div className="relative" ref={notificationRef}>
-              <button 
+              <button
                 onClick={() => setShowNotifications(!showNotifications)}
                 className={`p-2 rounded-full transition shadow-sm relative ${showNotifications ? 'bg-red-50 text-red-600' : 'bg-white text-slate-600 hover:text-red-600 hover:bg-red-50'}`}
               >
                 <Bell size={20} />
-                {unreadCount > 0 && (
+                {actionCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-amber-500 rounded-full border-2 border-white text-white text-[8px] font-bold flex items-center justify-center">
+                    {actionCount > 9 ? '9+' : actionCount}
+                  </span>
+                )}
+                {actionCount === 0 && unreadCount > 0 && (
                   <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
                 )}
               </button>
@@ -385,10 +1110,16 @@ const AppContent: React.FC = () => {
                     {notifications.length > 0 ? (
                       <div className="divide-y divide-slate-50">
                         {notifications.map((n) => (
-                          <div 
-                            key={n.id} 
-                            className={`p-4 hover:bg-slate-50 transition-colors cursor-pointer relative group ${!n.read ? 'bg-blue-50/30' : ''}`}
-                            onClick={() => markAsRead(n.id)}
+                          <div
+                            key={n.id}
+                            className={`p-4 hover:bg-slate-50 transition-colors cursor-pointer relative group ${!n.read ? (n.actionRequired ? 'bg-amber-50/40' : 'bg-blue-50/30') : ''}`}
+                            onClick={() => {
+                              markAsRead(n.id);
+                              if (n.navigateTo) {
+                                setCurrentPage(n.navigateTo);
+                                setShowNotifications(false);
+                              }
+                            }}
                           >
                             <div className="flex gap-3">
                               <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
@@ -400,17 +1131,27 @@ const AppContent: React.FC = () => {
                                 {n.type === 'success' ? <Check size={14} /> : <Clock size={14} />}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className={`text-sm ${!n.read ? 'font-bold text-slate-900' : 'text-slate-700'}`}>{n.title}</p>
+                                <div className="flex items-center gap-1.5">
+                                  <p className={`text-sm ${!n.read ? 'font-bold text-slate-900' : 'text-slate-700'}`}>{n.title}</p>
+                                  {n.actionRequired && (
+                                    <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0">Action</span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
-                                <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider font-medium">
-                                  {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                </p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
+                                    {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                  {n.triggeredBy && (
+                                    <p className="text-[10px] text-slate-400">by {n.triggeredBy}</p>
+                                  )}
+                                </div>
                               </div>
                               {!n.read && (
-                                <div className="w-2 h-2 bg-red-500 rounded-full mt-1.5 shrink-0"></div>
+                                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${n.actionRequired ? 'bg-amber-500' : 'bg-red-500'}`}></div>
                               )}
                             </div>
-                            <button 
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 removeNotification(n.id);
@@ -432,21 +1173,15 @@ const AppContent: React.FC = () => {
                     )}
                   </div>
                   <div className="p-3 border-t border-slate-100 bg-slate-50/50 text-center">
-                    <button className="text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors">
+                    <button
+                      onClick={() => { setCurrentPage('activity-log'); setShowNotifications(false); }}
+                      className="text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                    >
                       View all activity
                     </button>
                   </div>
                 </div>
               )}
-            </div>
-            <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-slate-900">{currentUser?.name || 'Admin'}</p>
-                <p className="text-xs text-slate-500">{currentUser?.role || 'Admin'}</p>
-              </div>
-              <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center text-slate-500 border-2 border-white shadow-sm">
-                <User size={20} />
-              </div>
             </div>
           </div>
         </header>

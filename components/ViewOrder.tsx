@@ -1,15 +1,20 @@
 import React, { useMemo } from 'react';
-import { X, Printer } from 'lucide-react';
+import { X, Printer, Check } from 'lucide-react';
 import { useGlobalContext } from '../src/context/GlobalContext';
+import { formatDateTimeBySettings } from '../src/utils/dateTime';
+import { useNotifications } from '../src/context/NotificationContext';
+import { findLocationByIdOrName, notifyReceiptPrintFallback, resolveInvoiceLayoutRenderConfig } from '../src/utils/receiptPrinting';
 
 interface ViewOrderProps {
   onClose: () => void;
   invoiceNo?: string;
   orderId?: string;
+  saleId?: string;
 }
 
-const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) => {
-  const { orders, sales, settings, formatCurrency } = useGlobalContext();
+const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId, saleId }) => {
+  const { orders, sales, settings, formatCurrency, invoiceLayouts, locations, printers } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const order = useMemo(
     () => (orderId ? orders.find(o => o.id === orderId) : undefined),
@@ -17,9 +22,27 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) =>
   );
 
   const sale = useMemo(
-    () => (invoiceNo ? sales.find(s => s.invoiceNo === invoiceNo) : undefined),
-    [sales, invoiceNo]
+    () => {
+      if (saleId) return sales.find(s => s.id === saleId);
+      if (invoiceNo) return sales.find(s => s.invoiceNo === invoiceNo);
+      return undefined;
+    },
+    [sales, saleId, invoiceNo]
   );
+
+  const layoutConfig = useMemo(
+    () => resolveInvoiceLayoutRenderConfig(sale?.invoiceLayout, invoiceLayouts),
+    [sale?.invoiceLayout, invoiceLayouts]
+  );
+
+  const formatDateTimeDisplay = (value?: string) => {
+    return formatDateTimeBySettings(
+      value,
+      settings.dateFormat,
+      settings.timeFormat,
+      settings.timeZone
+    );
+  };
 
   const lineItems = useMemo(() => {
     if (order) {
@@ -62,14 +85,24 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) =>
     ? Math.max(0, grandTotal - totalPaid)
     : (sale?.sellDue || 0);
   const paymentMethod = order?.paymentMethod || sale?.paymentMethod || '--';
+  const printableLocation = useMemo(
+    () => findLocationByIdOrName(locations, order?.businessLocation || sale?.location),
+    [locations, order?.businessLocation, sale?.location]
+  );
 
   const handlePrint = () => {
+    notifyReceiptPrintFallback({
+      location: printableLocation,
+      printers,
+      addNotification,
+      documentLabel: order ? 'Order Invoice' : 'Invoice',
+    });
     window.print();
   };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 print:p-0 print:bg-white print:static print:h-auto print:block">
-      <div className="bg-white w-full max-w-[210mm] h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 print:shadow-none print:h-auto print:max-w-none print:rounded-none print:overflow-visible">
+      <div className={`w-full max-w-[210mm] h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 print:shadow-none print:h-auto print:max-w-none print:rounded-none print:overflow-visible border ${layoutConfig.theme.surfaceClass}`}>
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0 print:hidden">
           <h2 className="text-lg font-bold text-slate-700">Invoice Preview</h2>
           <div className="flex gap-3">
@@ -85,11 +118,16 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) =>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-slate-100 custom-scrollbar print:p-0 print:bg-white print:overflow-visible">
+        <div className={`flex-1 overflow-y-auto custom-scrollbar print:p-0 print:bg-white print:overflow-visible ${layoutConfig.theme.contentWrapClass}`}>
           <div className="max-w-[210mm] mx-auto bg-white shadow-sm p-12 min-h-[297mm] print:shadow-none print:p-8">
             <div className="text-center mb-8">
               <h1 className="text-2xl font-black text-slate-900">{settings.businessName}</h1>
               <p className="text-xs text-slate-500 mt-1">Tax Invoice</p>
+              <p className="mt-2">
+                <span className={`inline-flex items-center px-2 py-1 rounded border text-[10px] font-bold ${layoutConfig.theme.layoutBadgeClass}`}>
+                  Layout: {layoutConfig.layoutName} ({layoutConfig.layoutDesign})
+                </span>
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-6 mb-8 text-sm">
@@ -99,22 +137,37 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) =>
                 <p className="font-bold text-slate-900">Mobile: <span className="font-medium text-slate-700">{customerPhone}</span></p>
               </div>
               <div className="text-right space-y-1.5">
-                <p className="font-bold text-slate-900">Date: <span className="font-medium text-slate-700">{invoiceDate}</span></p>
+                <p className="font-bold text-slate-900">Date: <span className="font-medium text-slate-700">{formatDateTimeDisplay(invoiceDate)}</span></p>
                 <p className="font-bold text-slate-900">Payment Method: <span className="font-medium text-slate-700">{paymentMethod}</span></p>
+                {order && (
+                  order.isApproved ? (
+                    <p className="flex items-center gap-1 justify-end">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        <Check size={10} /> Approved by {order.approvedBy || 'Manager'}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="flex items-center gap-1 justify-end">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                        Pending Approval
+                      </span>
+                    </p>
+                  )
+                )}
               </div>
             </div>
 
             <div className="mb-8">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-300 text-slate-700">
+                  <tr className={`${layoutConfig.theme.tableHeadClass} border-b border-slate-300`}>
                     <th className="text-left py-2">Product</th>
                     <th className="text-center py-2">Qty</th>
                     <th className="text-right py-2">Unit Price</th>
                     <th className="text-right py-2">Line Total</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className={layoutConfig.theme.tableBodyClass}>
                   {lineItems.length > 0 ? (
                     lineItems.map(item => (
                       <tr key={item.id} className="border-b border-slate-100">
@@ -133,7 +186,7 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId }) =>
               </table>
             </div>
 
-            <div className="ml-auto w-full max-w-sm space-y-1.5 text-sm">
+            <div className={`ml-auto w-full max-w-sm space-y-1.5 text-sm p-3 rounded border ${layoutConfig.theme.panelClass}`}>
               <div className="flex justify-between">
                 <span className="text-slate-600">Subtotal</span>
                 <span className="font-medium text-slate-700">{formatCurrency(subTotal)}</span>

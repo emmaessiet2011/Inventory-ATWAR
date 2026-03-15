@@ -1,28 +1,60 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
-  Plus, Search, Filter, MoreVertical, Edit, Trash2, Printer, 
+  Plus, Search, Edit, Trash2, Printer, 
   FileText, Download, FileSpreadsheet, Eye, Copy, ChevronDown, 
-  Settings, Database, Archive, BarChart3, Tag, MapPin, History, DollarSign,
-  Package, Zap, Box, Layers, ArrowUpRight, ArrowDownRight, SlidersHorizontal,
-  Columns, ArrowUpDown as ArrowUpDownIcon, Image as ImageIcon, X, AlertTriangle,
-  CheckCircle2
+  Database, BarChart3, Tag, History, Package, Zap, SlidersHorizontal,
+  Columns, ArrowUpDown as ArrowUpDownIcon, Image as ImageIcon, X
 } from 'lucide-react';
 import ViewProduct from './ViewProduct';
-import AddOpeningStock from './AddOpeningStock';
-import ProductStockHistory from './ProductStockHistory';
 import MultiSelect from './MultiSelect';
 import { useGlobalContext, Product } from '../src/context/GlobalContext';
+import { useNotifications } from '../src/context/NotificationContext';
+import { printDocument } from '../src/utils/printUtils';
+import { formatUnitWithPack } from '../src/utils/productPackaging';
+import { buildPaginationItems } from '../src/utils/pagination';
 
-// Utility for currency
-const formatOMR = (amount: number) => {
-  return `OMR ${amount.toLocaleString('en-OM', { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`;
+const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
+const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
+
+interface StockLedgerEntry {
+  id: string;
+  productId: string;
+  type: string;
+  change: number;
+  newQty: number;
+  date: string;
+  ref: string;
+  party: string;
+  location?: string;
+  note?: string;
+}
+
+const readStockLedger = (): StockLedgerEntry[] => {
+  try {
+    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 };
 
-const formatRiyal = (amount: number) => {
-   return `${amount.toLocaleString('en-OM', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} ريال`;
-}
+const writeStockLedger = (rows: StockLedgerEntry[]) => {
+  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(rows));
+};
+
+const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+const downloadFile = (filename: string, content: string, type: string) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 interface StockReportItem {
   id: string;
@@ -30,8 +62,12 @@ interface StockReportItem {
   product: string;
   variation: string;
   category: string;
+  brand: string;
+  productType: Product['type'];
+  tax: string;
   location: string;
   unitSellingPrice: number;
+  unitPurchasePrice: number;
   currentStock: number;
   unit: string;
   stockValuePurchase: number;
@@ -53,15 +89,40 @@ interface InventoryProps {
     onNavigate: (page: string) => void;
 }
 
+type ColumnKey = 'businessLocation' | 'sellingPrice' | 'stock' | 'type' | 'category' | 'brand' | 'tax' | 'sku';
+
 const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
-  const { products, addProduct, updateProduct, deleteProduct: globalDeleteProduct, locations } = useGlobalContext();
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    deleteProduct: globalDeleteProduct,
+    locations,
+    productCategories,
+    productBrands,
+    productUnits,
+    taxRates,
+    sales,
+    purchases,
+    currentUser,
+    formatCurrency,
+    generateId,
+    settings,
+  } = useGlobalContext();
+  const { addNotification } = useNotifications();
   const [view, setView] = useState<'list' | 'view'>('list');
   const [activeTab, setActiveTab] = useState<'all_products' | 'stock_report'>('all_products');
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [entriesPerPage, setEntriesPerPage] = useState(25);
+  const [productPage, setProductPage] = useState(1);
+  const [stockPage, setStockPage] = useState(1);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-right' });
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [showColMenu, setShowColMenu] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState<ColumnKey[]>([]);
+  const colMenuRef = useRef<HTMLDivElement>(null);
   
   // Modals for Actions
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -79,17 +140,10 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       brand: [] as string[],
       businessLocation: [] as string[]
   });
+  const [notForSellingOnly, setNotForSellingOnly] = useState(false);
 
   // View Product Modal State
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-
-  // Product History Modal State
-  const [productHistoryOpen, setProductHistoryOpen] = useState(false);
-  const [selectedProductForHistory, setSelectedProductForHistory] = useState<any>(null);
-
-  // Add Opening Stock Modal State
-  const [isAddOpeningStockOpen, setIsAddOpeningStockOpen] = useState(false);
-  const [productForOpeningStock, setProductForOpeningStock] = useState<Product | null>(null);
 
   // Inline Edit State
   const [editingCell, setEditingCell] = useState<{ id: string, field: 'sellingPrice' | 'stock' } | null>(null);
@@ -98,46 +152,210 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   // Bulk Actions State
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
+  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+
+  const typeOptions = useMemo(
+    () => Array.from(new Set(['Single', 'Variable', 'Combo', ...products.map(p => p.type)])).sort(),
+    [products]
+  );
+  const categoryOptions = useMemo(
+    () => Array.from(new Set([...productCategories.map(c => c.name), ...products.map(p => p.category)].filter(Boolean))).sort(),
+    [productCategories, products]
+  );
+  const unitOptions = useMemo(
+    () => Array.from(new Set([...productUnits.map(u => u.shortName), ...products.map(p => p.unit)].filter(Boolean))).sort(),
+    [productUnits, products]
+  );
+  const taxOptions = useMemo(
+    () => Array.from(new Set([...taxRates.map(t => t.name), ...products.map(p => p.tax)].filter(Boolean))).sort(),
+    [taxRates, products]
+  );
+  const brandOptions = useMemo(
+    () => Array.from(new Set([...productBrands.map(b => b.name), ...products.map(p => p.brand)].filter(Boolean))).sort(),
+    [productBrands, products]
+  );
+
+  const filteredProducts = useMemo(() => {
+    const q = normalize(searchTerm);
+    return products.filter((p) => {
+      if (q) {
+        const hay = [p.name, p.sku, p.category, p.brand, p.businessLocation, p.unit, p.tax].map(normalize);
+        if (!hay.some(v => v.includes(q))) return false;
+      }
+      if (filters.productType.length && !filters.productType.includes(p.type)) return false;
+      if (filters.category.length && !filters.category.includes(p.category)) return false;
+      if (filters.unit.length && !filters.unit.includes(p.unit)) return false;
+      if (filters.tax.length && !filters.tax.includes(p.tax)) return false;
+      if (filters.brand.length && !filters.brand.includes(p.brand)) return false;
+      if (filters.businessLocation.length && !filters.businessLocation.includes(p.businessLocation)) return false;
+      if (notForSellingOnly && !p.notForSelling) return false;
+      return true;
+    });
+  }, [products, searchTerm, filters, notForSellingOnly]);
+
+  const soldByProductName = useMemo(() => {
+    const map = new Map<string, number>();
+    sales.forEach((sale) => {
+      const status = sale.status || sale.saleStatus;
+      if (status !== 'Final') return;
+      sale.items.forEach((item) => {
+        const key = normalize(item.name);
+        map.set(key, (map.get(key) || 0) + (Number(item.qty) || 0));
+      });
+    });
+    return map;
+  }, [sales]);
+
+  const stockMovementByProductId = useMemo(() => {
+    const map = new Map<string, { transferred: number; adjusted: number }>();
+    readStockLedger().forEach((entry) => {
+      const productId = String(entry.productId || '').trim();
+      if (!productId) return;
+      const qty = Math.abs(Number(entry.change) || 0);
+      if (!qty) return;
+
+      const current = map.get(productId) || { transferred: 0, adjusted: 0 };
+      const type = normalize(entry.type);
+      const note = normalize(entry.note);
+      if (type === 'stock transfer out' || type === 'stock transfer in') {
+        current.transferred += qty;
+      } else if (type === 'stock transfer reversal in' || type === 'stock transfer reversal out') {
+        current.transferred = Math.max(0, current.transferred - qty);
+      } else if (
+        type === 'stock adjustment reversal'
+        || (type === 'stock adjustment' && (note.startsWith('edit rollback') || note.startsWith('delete rollback')))
+      ) {
+        current.adjusted = Math.max(0, current.adjusted - qty);
+      } else if (type === 'stock adjustment') {
+        current.adjusted += qty;
+      }
+
+      map.set(productId, {
+        transferred: Number(current.transferred.toFixed(3)),
+        adjusted: Number(current.adjusted.toFixed(3)),
+      });
+    });
+    return map;
+  }, [products]);
+
+  const stockReport = useMemo<StockReportItem[]>(() => products.map((p) => {
+    const currentStock = Number(p.stock) || 0;
+    const unitPurchasePrice = Number(p.unitPurchasePrice) || 0;
+    const unitSellingPrice = Number(p.sellingPrice) || 0;
+    const stockValuePurchase = currentStock * unitPurchasePrice;
+    const stockValueSale = currentStock * unitSellingPrice;
+    const movement = stockMovementByProductId.get(p.id) || { transferred: 0, adjusted: 0 };
+    return {
+      id: p.id,
+      sku: p.sku,
+      product: p.name,
+      variation: '-',
+      category: p.category,
+      brand: p.brand,
+      productType: p.type,
+      tax: p.tax,
+      location: p.businessLocation,
+      unitSellingPrice,
+      unitPurchasePrice,
+      currentStock,
+      unit: p.unit,
+      stockValuePurchase,
+      stockValueSale,
+      potentialProfit: stockValueSale - stockValuePurchase,
+      totalUnitSold: soldByProductName.get(normalize(p.name)) || 0,
+      totalUnitTransferred: movement.transferred,
+      totalUnitAdjusted: movement.adjusted,
+    };
+  }), [products, soldByProductName, stockMovementByProductId]);
+
+  const filteredStockReport = useMemo(() => {
+    const q = normalize(searchTerm);
+    return stockReport.filter((r) => {
+      if (q) {
+        const hay = [r.sku, r.product, r.category, r.brand, r.location].map(normalize);
+        if (!hay.some(v => v.includes(q))) return false;
+      }
+      if (filters.productType.length && !filters.productType.includes(r.productType)) return false;
+      if (filters.category.length && !filters.category.includes(r.category)) return false;
+      if (filters.unit.length && !filters.unit.includes(r.unit)) return false;
+      if (filters.tax.length && !filters.tax.includes(r.tax)) return false;
+      if (filters.brand.length && !filters.brand.includes(r.brand)) return false;
+      if (filters.businessLocation.length && !filters.businessLocation.includes(r.location)) return false;
+      if (notForSellingOnly && !products.find(p => p.id === r.id)?.notForSelling) return false;
+      return true;
+    });
+  }, [stockReport, searchTerm, filters, notForSellingOnly, products]);
+
+  const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / entriesPerPage));
+  const safeProductPage = Math.min(Math.max(productPage, 1), totalProductPages);
+  const productPageStart = (safeProductPage - 1) * entriesPerPage;
+  const pagedFilteredProducts = filteredProducts.slice(productPageStart, productPageStart + entriesPerPage);
+  const productPageItems = buildPaginationItems(safeProductPage, totalProductPages);
+  const showingProductsFrom = filteredProducts.length === 0 ? 0 : productPageStart + 1;
+  const showingProductsTo = Math.min(productPageStart + pagedFilteredProducts.length, filteredProducts.length);
+
+  const totalStockPages = Math.max(1, Math.ceil(filteredStockReport.length / entriesPerPage));
+  const safeStockPage = Math.min(Math.max(stockPage, 1), totalStockPages);
+  const stockPageStart = (safeStockPage - 1) * entriesPerPage;
+  const pagedStockReport = filteredStockReport.slice(stockPageStart, stockPageStart + entriesPerPage);
+  const stockPageItems = buildPaginationItems(safeStockPage, totalStockPages);
+  const showingStockFrom = filteredStockReport.length === 0 ? 0 : stockPageStart + 1;
+  const showingStockTo = Math.min(stockPageStart + pagedStockReport.length, filteredStockReport.length);
+
+  const allFilteredSelected = pagedFilteredProducts.length > 0
+    && pagedFilteredProducts.every(p => selectedProducts.includes(p.id));
+  const totalStockValue = useMemo(
+    () => products.reduce((sum, p) => sum + ((Number(p.stock) || 0) * (Number(p.sellingPrice) || 0)), 0),
+    [products]
+  );
+  const stockReportTotals = useMemo(() => filteredStockReport.reduce((acc, row) => {
+    acc.purchase += row.stockValuePurchase;
+    acc.sale += row.stockValueSale;
+    acc.profit += row.potentialProfit;
+    acc.sold += row.totalUnitSold;
+    acc.transferred += row.totalUnitTransferred;
+    acc.adjusted += row.totalUnitAdjusted;
+    return acc;
+  }, { purchase: 0, sale: 0, profit: 0, sold: 0, transferred: 0, adjusted: 0 }), [filteredStockReport]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedProducts(products.map(p => p.id));
-    } else {
-      setSelectedProducts([]);
+      setSelectedProducts(prev => [...new Set([...prev, ...pagedFilteredProducts.map(p => p.id)])]);
+      return;
     }
+    setSelectedProducts(prev => prev.filter(id => !pagedFilteredProducts.some(p => p.id === id)));
   };
 
   const handleSelectProduct = (id: string) => {
-    if (selectedProducts.includes(id)) {
-      setSelectedProducts(selectedProducts.filter(pId => pId !== id));
-    } else {
-      setSelectedProducts([...selectedProducts, id]);
-    }
+    setSelectedProducts(prev => prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]);
   };
 
   const handleBulkDelete = () => {
-    if (confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) {
-        selectedProducts.forEach(id => globalDeleteProduct(id));
-        setSelectedProducts([]);
-        setIsBulkActionOpen(false);
+    if (selectedProducts.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) return;
+    const blockedIds = selectedProducts.filter(id => {
+      const pid = String(id);
+      return (
+        sales.some(sale => (sale.items || []).some((item: any) => String(item.productId || item.id || '') === pid)) ||
+        purchases.some(purchase => (purchase.items || []).some((item: any) => String(item.productId || item.id || '') === pid))
+      );
+    });
+    if (blockedIds.length > 0) {
+      const blockedNames = blockedIds.map(id => products.find(p => String(p.id) === id)?.name || id).join(', ');
+      addNotification({
+        title: 'Some Products Skipped',
+        message: `${blockedIds.length} product(s) used in sales/purchases were skipped: ${blockedNames}`,
+        type: 'warning',
+      });
     }
+    const deletableIds = selectedProducts.filter(id => !blockedIds.includes(id));
+    deletableIds.forEach(id => globalDeleteProduct(id));
+    if (deletableIds.length > 0) {
+      addNotification({ title: 'Deleted', message: `${deletableIds.length} product(s) deleted successfully.`, type: 'success' });
+    }
+    setSelectedProducts([]);
+    setIsBulkActionOpen(false);
   };
-
-  // Mock Data for Stock Report
-  const stockReport: StockReportItem[] = [
-    { id: '1', sku: '0004', product: 'Kennol 5W-30 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 13.000, currentStock: 239.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 3107.000, potentialProfit: 3107.000, totalUnitSold: 673.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '2', sku: '0006', product: 'Kennol 5W-40 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 13.000, currentStock: 368.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 4784.000, potentialProfit: 4784.000, totalUnitSold: 782.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '3', sku: '0008', product: 'Kennol 0W-20 (5L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 73.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 1095.000, potentialProfit: 1095.000, totalUnitSold: 175.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '4', sku: '0009', product: 'Kennol 5W-30 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 3.500, currentStock: 728.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 2548.000, potentialProfit: 2548.000, totalUnitSold: 576.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '5', sku: '0010', product: 'Kennol 5W-40 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 3.500, currentStock: 315.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 1102.500, potentialProfit: 1102.500, totalUnitSold: 730.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '6', sku: '0011', product: 'Kennol 0W-20 (1L)', variation: '', category: 'Engine oil', location: 'CR:1450968', unitSellingPrice: 4.000, currentStock: 63.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 252.000, potentialProfit: 252.000, totalUnitSold: 173.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '7', sku: '0012', product: 'Cebican (Daily Care)_20kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 11.000, currentStock: 0.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 939.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 7.000 },
-    { id: '8', sku: '0012', product: 'Cebican (Daily Care)_20kg', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH', unitSellingPrice: 11.000, currentStock: 0.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 995.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 1.000 },
-    { id: '9', sku: '0013', product: 'Garpidog (Adult)', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 10.000, currentStock: 0.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 74.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '10', sku: '0014', product: 'Cebican (High Energy)_20kg', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 0.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 0.000, potentialProfit: 0.000, totalUnitSold: 144.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '11', sku: '0014', product: 'Cebican (High Energy)_20kg', variation: '', category: 'Dry Pet Food', location: 'KNWZ ARD ALKHALYJ ALMTHDAH', unitSellingPrice: 15.000, currentStock: 1.000, unit: 'Pc(s)', stockValuePurchase: 33.000, stockValueSale: 15.000, potentialProfit: -18.000, totalUnitSold: 136.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-    { id: '12', sku: '0015', product: 'Cebican (Cat) Mix_20KG', variation: '', category: 'Dry Pet Food', location: 'CR:1450968', unitSellingPrice: 15.000, currentStock: 1.000, unit: 'Pc(s)', stockValuePurchase: 0.000, stockValueSale: 15.000, potentialProfit: 15.000, totalUnitSold: 88.000, totalUnitTransferred: 0.000, totalUnitAdjusted: 0.000 },
-  ];
 
   const toggleActions = (e: React.MouseEvent<HTMLButtonElement>, id: string) => {
     e.stopPropagation();
@@ -166,15 +384,13 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       setActiveActionId(null);
   };
 
-  const handleProductHistory = (product: any) => {
-      setSelectedProductForHistory(product);
-      setProductHistoryOpen(true);
+  const handleProductHistory = (product: Product) => {
+      onNavigate(`product-stock-history/${encodeURIComponent(product.id)}`);
       setActiveActionId(null);
-  }
+  };
 
   const openAddOpeningStock = (product: Product) => {
-      setProductForOpeningStock(product);
-      setIsAddOpeningStockOpen(true);
+      onNavigate(`add-opening-stock/${encodeURIComponent(product.id)}`);
       setActiveActionId(null);
   };
 
@@ -194,14 +410,26 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
 
   const executeDuplicate = () => {
       if (!productToAction) return;
+      const name = duplicateName.trim();
+      const sku = duplicateSku.trim();
+      if (!name || !sku) {
+        addNotification({ title: 'Validation Error', message: 'New product name and SKU are required.', type: 'error' });
+        return;
+      }
+      if (products.some(p => normalize(p.sku) === normalize(sku))) {
+        addNotification({ title: 'Validation Error', message: `SKU "${sku}" already exists.`, type: 'error' });
+        return;
+      }
       const newProduct: Product = {
           ...productToAction,
-          id: `clone-${Date.now()}`,
-          name: duplicateName,
-          sku: duplicateSku,
-          stock: 0 // New duplicate starts with 0 stock
+          id: generateId('PRD'),
+          name,
+          sku,
+          stock: 0,
+          openingStock: 0
       };
       addProduct(newProduct);
+      addNotification({ title: 'Success', message: `Product "${name}" duplicated successfully.`, type: 'success' });
       setIsDuplicateModalOpen(false);
       setProductToAction(null);
   };
@@ -214,7 +442,26 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
 
   const executeDelete = () => {
       if (!productToAction) return;
+      const pid = String(productToAction.id);
+      const usedInSales = sales.some(sale =>
+        (sale.items || []).some((item: any) => String(item.productId || item.id || '') === pid)
+      );
+      const usedInPurchases = purchases.some(purchase =>
+        (purchase.items || []).some((item: any) => String(item.productId || item.id || '') === pid)
+      );
+      if (usedInSales || usedInPurchases) {
+        const usedIn = [usedInSales && 'sales', usedInPurchases && 'purchases'].filter(Boolean).join(' and ');
+        addNotification({
+          title: 'Cannot Delete',
+          message: `"${productToAction.name}" is used in existing ${usedIn} and cannot be deleted.`,
+          type: 'error',
+        });
+        setIsDeleteModalOpen(false);
+        setProductToAction(null);
+        return;
+      }
       globalDeleteProduct(productToAction.id);
+      addNotification({ title: 'Deleted', message: `"${productToAction.name}" deleted successfully.`, type: 'success' });
       setIsDeleteModalOpen(false);
       setProductToAction(null);
   };
@@ -227,11 +474,36 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const handleCellSave = () => {
       if (!editingCell) return;
       const val = parseFloat(editValue);
-      if (!isNaN(val)) {
-          const product = products.find(p => p.id === editingCell.id);
-          if (product) {
-              updateProduct({ ...product, [editingCell.field]: val });
-          }
+      const product = products.find(p => p.id === editingCell.id);
+      if (!product) {
+        setEditingCell(null);
+        return;
+      }
+      if (!Number.isFinite(val) || val < 0) {
+        addNotification({ title: 'Validation Error', message: 'Please enter a valid non-negative number.', type: 'error' });
+        setEditingCell(null);
+        return;
+      }
+      const nextValue = Number(val.toFixed(3));
+      if (editingCell.field === 'sellingPrice' && nextValue !== product.sellingPrice) {
+        updateProduct({ ...product, sellingPrice: nextValue });
+      }
+      if (editingCell.field === 'stock' && nextValue !== product.stock) {
+        const ledger = readStockLedger();
+        ledger.push({
+          id: `STK-${Date.now()}-${product.id}`,
+          productId: product.id,
+          type: 'Stock Adjustment',
+          change: Number((nextValue - product.stock).toFixed(3)),
+          newQty: nextValue,
+          date: new Date().toISOString(),
+          ref: `ADJ-${Date.now().toString().slice(-6)}`,
+          party: currentUser?.name || 'System',
+          location: product.businessLocation,
+          note: 'Inline update from product list',
+        });
+        writeStockLedger(ledger);
+        updateProduct({ ...product, stock: nextValue });
       }
       setEditingCell(null);
   };
@@ -269,6 +541,231 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     };
   }, [activeActionId]);
 
+  useEffect(() => {
+    setSelectedProducts(prev => prev.filter(id => products.some(p => p.id === id)));
+  }, [products]);
+
+  useEffect(() => {
+    setProductPage(1);
+    setStockPage(1);
+  }, [searchTerm, filters, notForSellingOnly, entriesPerPage]);
+
+  useEffect(() => {
+    if (productPage > totalProductPages) setProductPage(totalProductPages);
+  }, [productPage, totalProductPages]);
+
+  useEffect(() => {
+    if (stockPage > totalStockPages) setStockPage(totalStockPages);
+  }, [stockPage, totalStockPages]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(event.target as Node)) {
+        setShowColMenu(false);
+      }
+    };
+    if (showColMenu) document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [showColMenu]);
+
+  const exportCSV = () => {
+    if (activeTab === 'all_products') {
+      const headers = ['Name', 'SKU', 'Type', 'Category', 'Brand', 'Unit', 'Purchase Price', 'Selling Price', 'Stock', 'Tax', 'Location'];
+      const rows = filteredProducts.map(p => [
+        csvCell(p.name),
+        csvCell(p.sku),
+        csvCell(p.type),
+        csvCell(p.category),
+        csvCell(p.brand),
+        csvCell(formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage)),
+        csvCell((p.unitPurchasePrice || 0).toFixed(3)),
+        csvCell((p.sellingPrice || 0).toFixed(3)),
+        csvCell((p.stock || 0).toFixed(3)),
+        csvCell(p.tax || '--'),
+        csvCell(p.businessLocation || ''),
+      ].join(','));
+      downloadFile('products.csv', [headers.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;');
+      addNotification({ title: 'Exported', message: `${filteredProducts.length} product row(s) exported to CSV.`, type: 'success' });
+      return;
+    }
+
+    const headers = ['SKU', 'Product', 'Category', 'Brand', 'Location', 'Unit Selling Price', 'Current Stock', 'Stock Value (Purchase)', 'Stock Value (Sale)', 'Potential Profit', 'Total Sold'];
+    const rows = filteredStockReport.map(r => [
+      csvCell(r.sku),
+      csvCell(r.product),
+      csvCell(r.category),
+      csvCell(r.brand),
+      csvCell(r.location),
+      csvCell(r.unitSellingPrice.toFixed(3)),
+      csvCell(r.currentStock.toFixed(3)),
+      csvCell(r.stockValuePurchase.toFixed(3)),
+      csvCell(r.stockValueSale.toFixed(3)),
+      csvCell(r.potentialProfit.toFixed(3)),
+      csvCell(r.totalUnitSold.toFixed(3)),
+    ].join(','));
+    downloadFile('stock-report.csv', [headers.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;');
+    addNotification({ title: 'Exported', message: `${filteredStockReport.length} stock row(s) exported to CSV.`, type: 'success' });
+  };
+
+  const exportExcel = () => {
+    if (activeTab === 'all_products') {
+      const headers = ['Name', 'SKU', 'Type', 'Category', 'Brand', 'Unit', 'Purchase Price', 'Selling Price', 'Stock', 'Tax', 'Location'];
+      const rows = filteredProducts.map(p => [
+        p.name, p.sku, p.type, p.category, p.brand, formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage),
+        (p.unitPurchasePrice || 0).toFixed(3),
+        (p.sellingPrice || 0).toFixed(3),
+        (p.stock || 0).toFixed(3),
+        p.tax || '--',
+        p.businessLocation || '',
+      ].join('\t'));
+      downloadFile('products.xls', [headers.join('\t'), ...rows].join('\n'), 'application/vnd.ms-excel;charset=utf-8;');
+      addNotification({ title: 'Exported', message: `${filteredProducts.length} product row(s) exported to Excel.`, type: 'success' });
+      return;
+    }
+
+    const headers = ['SKU', 'Product', 'Category', 'Brand', 'Location', 'Unit Selling Price', 'Current Stock', 'Stock Value (Purchase)', 'Stock Value (Sale)', 'Potential Profit', 'Total Sold'];
+    const rows = filteredStockReport.map(r => [
+      r.sku, r.product, r.category, r.brand, r.location,
+      r.unitSellingPrice.toFixed(3),
+      r.currentStock.toFixed(3),
+      r.stockValuePurchase.toFixed(3),
+      r.stockValueSale.toFixed(3),
+      r.potentialProfit.toFixed(3),
+      r.totalUnitSold.toFixed(3),
+    ].join('\t'));
+    downloadFile('stock-report.xls', [headers.join('\t'), ...rows].join('\n'), 'application/vnd.ms-excel;charset=utf-8;');
+    addNotification({ title: 'Exported', message: `${filteredStockReport.length} stock row(s) exported to Excel.`, type: 'success' });
+  };
+
+  const exportPDF = () => {
+    handlePrint();
+  };
+
+  const inventoryPrintFilterParts = [
+    searchTerm.trim() ? `Search: ${searchTerm.trim()}` : '',
+    filters.productType.length ? `Type: ${filters.productType.join(', ')}` : '',
+    filters.category.length ? `Category: ${filters.category.join(', ')}` : '',
+    filters.unit.length ? `Unit: ${filters.unit.join(', ')}` : '',
+    filters.tax.length ? `Tax: ${filters.tax.join(', ')}` : '',
+    filters.brand.length ? `Brand: ${filters.brand.join(', ')}` : '',
+    filters.businessLocation.length ? `Location: ${filters.businessLocation.join(', ')}` : '',
+    notForSellingOnly ? 'Not for selling only' : '',
+  ].filter(Boolean);
+  const inventoryFilterSubtitle = inventoryPrintFilterParts.length
+    ? `Filters: ${inventoryPrintFilterParts.join(' | ')}`
+    : undefined;
+  const inventoryListSubtotalPurchase = filteredProducts.reduce(
+    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * Number(p.stock || 0)),
+    0
+  );
+  const inventoryListSubtotalSale = filteredProducts.reduce(
+    (sum, p) => sum + (Number(p.sellingPrice || 0) * Number(p.stock || 0)),
+    0
+  );
+  const inventoryListTotalQty = filteredProducts.reduce((sum, p) => sum + Number(p.stock || 0), 0);
+  const stockReportTotalQty = filteredStockReport.reduce((sum, row) => sum + Number(row.currentStock || 0), 0);
+
+  const handlePrint = () => {
+    const isStockView = activeTab === 'stock_report';
+    if (isStockView) {
+      // Stock report view
+      printDocument({
+        title: 'Stock Report',
+        subtitle: inventoryFilterSubtitle
+          ? `${inventoryFilterSubtitle} | View: Stock Report`
+          : 'View: Stock Report',
+        businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+        businessAddress: settings?.address || '',
+        printedBy: currentUser?.name || '',
+        columns: [
+          { label: 'Product' },
+          { label: 'SKU', width: '80px' },
+          { label: 'Category', width: '90px' },
+          { label: 'Location', width: '80px' },
+          { label: 'Selling Price', align: 'right', width: '90px' },
+          { label: 'Current Stock', align: 'right', width: '80px' },
+          { label: 'Stock Value (Cost)', align: 'right', width: '100px' },
+          { label: 'Stock Value (Sale)', align: 'right', width: '100px' },
+          { label: 'Units Sold', align: 'right', width: '70px' },
+        ],
+        rows: filteredStockReport.map(r => [
+          r.product,
+          r.sku,
+          r.category || '--',
+          r.location || '--',
+          formatCurrency(r.unitSellingPrice),
+          r.currentStock.toFixed(3),
+          formatCurrency(r.stockValuePurchase),
+          formatCurrency(r.stockValueSale),
+          r.totalUnitSold.toFixed(3),
+        ]),
+        stats: [
+          { label: 'Total Products', value: String(filteredStockReport.length), color: 'blue' },
+          { label: 'Stock Value (Cost)', value: formatCurrency(stockReportTotals.purchase), color: 'amber' },
+          { label: 'Stock Value (Sale)', value: formatCurrency(stockReportTotals.sale), color: 'green' },
+          { label: 'Units Sold', value: stockReportTotals.sold.toFixed(3), color: 'blue' },
+        ],
+        totalRow: [
+          'TOTAL',
+          '',
+          '',
+          '',
+          '',
+          stockReportTotalQty.toFixed(3),
+          formatCurrency(stockReportTotals.purchase),
+          formatCurrency(stockReportTotals.sale),
+          stockReportTotals.sold.toFixed(3),
+        ],
+      });
+    } else {
+      // Product list view
+      printDocument({
+        title: 'Inventory',
+        subtitle: inventoryFilterSubtitle
+          ? `${inventoryFilterSubtitle} | View: Product List`
+          : 'View: Product List',
+        businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+        businessAddress: settings?.address || '',
+        printedBy: currentUser?.name || '',
+        columns: [
+          { label: 'Name' },
+          { label: 'SKU', width: '90px' },
+          { label: 'Type', width: '70px' },
+          { label: 'Category', width: '90px' },
+          { label: 'Location', width: '80px' },
+          { label: 'Purchase Price', align: 'right', width: '90px' },
+          { label: 'Selling Price', align: 'right', width: '90px' },
+          { label: 'Stock', align: 'right', width: '60px' },
+        ],
+        rows: filteredProducts.map(p => [
+          p.name,
+          p.sku,
+          p.type,
+          p.category || '--',
+          p.businessLocation || '--',
+          formatCurrency(p.unitPurchasePrice || 0),
+          formatCurrency(p.sellingPrice || 0),
+          Number(p.stock || 0).toFixed(3),
+        ]),
+        stats: [
+          { label: 'Total Products', value: String(filteredProducts.length), color: 'blue' },
+          { label: 'Stock Value (Cost)', value: formatCurrency(inventoryListSubtotalPurchase), color: 'amber' },
+          { label: 'Stock Value (Sale)', value: formatCurrency(inventoryListSubtotalSale), color: 'green' },
+        ],
+        totalRow: [
+          'TOTAL',
+          '',
+          '',
+          '',
+          '',
+          formatCurrency(inventoryListSubtotalPurchase),
+          formatCurrency(inventoryListSubtotalSale),
+          inventoryListTotalQty.toFixed(3),
+        ],
+      });
+    }
+  };
+
   return (
     <div className="space-y-8 animate-fade-in pb-20">
       
@@ -276,6 +773,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         <>
       {/* 1. Futuristic Header */}
       <div className="relative overflow-hidden rounded-[2rem] bg-slate-900 p-10 text-white shadow-2xl">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         <div className="absolute top-0 right-0 -mr-20 -mt-20 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-80 h-80 bg-purple-600/20 rounded-full blur-3xl"></div>
         
@@ -298,11 +796,11 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
             <div className="flex items-center gap-6">
                  <div className="hidden lg:flex flex-col items-end border-r border-white/10 pr-6">
                     <span className="text-sm font-bold text-slate-400">Total SKUs</span>
-                    <span className="text-3xl font-mono font-bold text-white tracking-tight">{products.length + stockReport.length}</span>
+                    <span className="text-3xl font-mono font-bold text-white tracking-tight">{products.length}</span>
                 </div>
                  <div className="hidden lg:flex flex-col items-end mr-2">
                     <span className="text-sm font-bold text-slate-400">Stock Value</span>
-                    <span className="text-3xl font-mono font-bold text-emerald-400 tracking-tight">OMR 12.4k</span>
+                    <span className="text-3xl font-mono font-bold text-emerald-400 tracking-tight">{formatCurrency(totalStockValue)}</span>
                 </div>
                 {activeTab === 'all_products' && (
                   <button 
@@ -311,7 +809,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                   >
                       <div className="absolute inset-0 bg-gradient-to-r from-blue-100 via-white to-blue-100 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                       <Plus size={22} className="relative z-10" /> 
-                      <span className="relative z-10 text-lg">Add Product</span>
+                      <span className="relative z-10 text-lg">Add New Product</span>
                   </button>
                 )}
             </div>
@@ -392,23 +890,74 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                         </div>
                     )}
 
-                    {/* Export Actions Group - Modern Pill Design */}
+                    {/* Export Actions Group */}
                     <div className="flex items-center p-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-x-auto max-w-full no-scrollbar">
-                        {[
-                            { icon: FileText, label: 'Export CSV', color: 'hover:text-emerald-600 hover:bg-emerald-50' },
-                            { icon: FileSpreadsheet, label: 'Export Excel', color: 'hover:text-emerald-600 hover:bg-emerald-50' },
-                            { icon: Printer, label: 'Print', color: 'hover:text-blue-600 hover:bg-blue-50' },
-                            { icon: Columns, label: 'Column visibility', color: 'hover:text-purple-600 hover:bg-purple-50' },
-                            { icon: FileText, label: 'Export PDF', color: 'hover:text-red-600 hover:bg-red-50' }
-                        ].map((action, i) => (
-                            <React.Fragment key={i}>
-                                <button className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap ${action.color}`}>
-                                    <action.icon size={14} />
-                                    <span>{action.label}</span>
-                                </button>
-                                {i < 4 && <div className="w-px h-4 bg-slate-200 my-auto shrink-0"></div>}
-                            </React.Fragment>
-                        ))}
+                        <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap hover:text-emerald-600 hover:bg-emerald-50">
+                            <FileText size={14} />
+                            <span>Export CSV</span>
+                        </button>
+                        <div className="w-px h-4 bg-slate-200 my-auto shrink-0"></div>
+                        <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap hover:text-emerald-600 hover:bg-emerald-50">
+                            <FileSpreadsheet size={14} />
+                            <span>Export Excel</span>
+                        </button>
+                        <div className="w-px h-4 bg-slate-200 my-auto shrink-0"></div>
+                        <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap hover:text-blue-600 hover:bg-blue-50">
+                            <Printer size={14} />
+                            <span>Print</span>
+                        </button>
+                        <div className="w-px h-4 bg-slate-200 my-auto shrink-0"></div>
+                        <div className="relative" ref={colMenuRef}>
+                            <button onClick={() => setShowColMenu(v => !v)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap hover:text-purple-600 hover:bg-purple-50">
+                                <Columns size={14} />
+                                <span>Column visibility</span>
+                            </button>
+                            {showColMenu && activeTab === 'all_products' && (
+                                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 p-3 min-w-[190px]">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Toggle Columns</p>
+                                    {([
+                                      { key: 'businessLocation', label: 'Business Location' },
+                                      { key: 'sellingPrice', label: 'Selling Price' },
+                                      { key: 'stock', label: 'Current Stock' },
+                                      { key: 'type', label: 'Product Type' },
+                                      { key: 'category', label: 'Category' },
+                                      { key: 'brand', label: 'Brand' },
+                                      { key: 'tax', label: 'Tax' },
+                                      { key: 'sku', label: 'SKU' },
+                                    ] as { key: ColumnKey; label: string }[]).map(col => (
+                                      <label key={col.key} className="flex items-center gap-2 py-1 cursor-pointer hover:text-blue-600">
+                                        <input
+                                          type="checkbox"
+                                          checked={!hiddenCols.includes(col.key)}
+                                          onChange={() => setHiddenCols(prev => prev.includes(col.key) ? prev.filter(c => c !== col.key) : [...prev, col.key])}
+                                          className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <span className="text-xs font-medium text-slate-700">{col.label}</span>
+                                      </label>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="w-px h-4 bg-slate-200 my-auto shrink-0"></div>
+                        <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 transition-all whitespace-nowrap hover:text-red-600 hover:bg-red-50">
+                            <Download size={14} />
+                            <span>Export PDF</span>
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl shadow-sm">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Show</span>
+                        <select
+                          value={entriesPerPage}
+                          onChange={(event) => setEntriesPerPage(Number(event.target.value) || 25)}
+                          className="bg-transparent text-sm font-bold text-slate-700 focus:outline-none"
+                        >
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">entries</span>
                     </div>
                     
                     {/* Filter Button */}
@@ -433,31 +982,31 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                          <MultiSelect 
                             label="Product Type"
-                            options={['Single', 'Variable', 'Combo']}
+                            options={typeOptions}
                             selected={filters.productType}
                             onChange={(val) => setFilters({...filters, productType: val})}
                         />
                          <MultiSelect 
                             label="Category"
-                            options={['Engine Oil', 'Pet Food', 'Sand']}
+                            options={categoryOptions}
                             selected={filters.category}
                             onChange={(val) => setFilters({...filters, category: val})}
                         />
                          <MultiSelect 
                             label="Unit"
-                            options={['Pieces', 'Box', 'Kg']}
+                            options={unitOptions}
                             selected={filters.unit}
                             onChange={(val) => setFilters({...filters, unit: val})}
                         />
                          <MultiSelect 
                             label="Tax"
-                            options={['VAT', 'None']}
+                            options={taxOptions}
                             selected={filters.tax}
                             onChange={(val) => setFilters({...filters, tax: val})}
                         />
                          <MultiSelect 
                             label="Brand"
-                            options={['Brand A', 'Brand B']}
+                            options={brandOptions}
                             selected={filters.brand}
                             onChange={(val) => setFilters({...filters, brand: val})}
                         />
@@ -470,7 +1019,12 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
 
                         <div className="lg:col-span-2 flex items-end pb-1">
                             <label className="flex items-center gap-3 cursor-pointer group bg-white px-5 py-3 rounded-xl border border-slate-200 shadow-sm hover:border-blue-300 transition-all w-full">
-                                <input type="checkbox" className="w-5 h-5 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500 transition-all" />
+                                <input
+                                  type="checkbox"
+                                  checked={notForSellingOnly}
+                                  onChange={(e) => setNotForSellingOnly(e.target.checked)}
+                                  className="w-5 h-5 text-blue-600 rounded-md border-slate-300 focus:ring-blue-500 transition-all"
+                                />
                                 <span className="text-xs font-bold text-slate-600 group-hover:text-blue-700 transition-colors">Show "Not for selling" only</span>
                             </label>
                         </div>
@@ -489,25 +1043,25 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 <input 
                                     type="checkbox" 
                                     className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                    checked={selectedProducts.length === products.length && products.length > 0}
+                                    checked={allFilteredSelected}
                                     onChange={handleSelectAll}
                                 />
                             </th>
                             <th className="px-4 py-3 w-24">Product image</th>
                             <th className="px-4 py-3 text-center w-24">Action</th>
                             <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Business Location</th>
-                            <th className="px-4 py-3 text-right" title="Click a value to edit">Selling Price ✎</th>
-                            <th className="px-4 py-3 text-right" title="Click a value to edit">Current stock ✎</th>
-                            <th className="px-4 py-3">Product Type</th>
-                            <th className="px-4 py-3">Category</th>
-                            <th className="px-4 py-3">Brand</th>
-                            <th className="px-4 py-3">Tax</th>
-                            <th className="px-4 py-3">SKU</th>
+                            {!hiddenCols.includes('businessLocation') && <th className="px-4 py-3">Business Location</th>}
+                            {!hiddenCols.includes('sellingPrice') && <th className="px-4 py-3 text-right" title="Click a value to edit">Selling Price</th>}
+                            {!hiddenCols.includes('stock') && <th className="px-4 py-3 text-right" title="Click a value to edit">Current stock</th>}
+                            {!hiddenCols.includes('type') && <th className="px-4 py-3">Product Type</th>}
+                            {!hiddenCols.includes('category') && <th className="px-4 py-3">Category</th>}
+                            {!hiddenCols.includes('brand') && <th className="px-4 py-3">Brand</th>}
+                            {!hiddenCols.includes('tax') && <th className="px-4 py-3">Tax</th>}
+                            {!hiddenCols.includes('sku') && <th className="px-4 py-3">SKU</th>}
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {products.map((product) => (
+                        {pagedFilteredProducts.map((product) => (
                             <tr key={product.id} className={`group transition-all duration-300 relative text-sm ${selectedProducts.includes(product.id) ? 'bg-blue-50/50' : 'hover:bg-slate-50/80'}`}>
                                 <td className="px-4 py-3 text-center">
                                     <input 
@@ -519,7 +1073,18 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 </td>
                                 <td className="px-4 py-3">
                                     <div className="w-16 h-16 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shadow-sm group-hover:scale-105 transition-transform duration-300">
-                                        <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                                        {product.image && !brokenImages[product.id] ? (
+                                          <img
+                                            src={product.image}
+                                            alt={product.name}
+                                            className="w-full h-full object-cover"
+                                            onError={() => setBrokenImages(prev => ({ ...prev, [product.id]: true }))}
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center bg-slate-50">
+                                            <ImageIcon size={16} className="text-slate-400" />
+                                          </div>
+                                        )}
                                     </div>
                                 </td>
                                 <td className="px-4 py-3 text-center">
@@ -534,9 +1099,14 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                         Actions <ChevronDown size={10} />
                                     </button>
                                 </td>
-                                <td className="px-4 py-3 font-bold text-slate-800">{product.name}</td>
-                                <td className="px-4 py-3 text-slate-500 text-xs">{product.businessLocation}</td>
-                                <td 
+                                <td className="px-4 py-3">
+                                  <div className="font-bold text-slate-800">{product.name}</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">
+                                    {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}
+                                  </div>
+                                </td>
+                                {!hiddenCols.includes('businessLocation') && <td className="px-4 py-3 text-slate-500 text-xs">{product.businessLocation}</td>}
+                                {!hiddenCols.includes('sellingPrice') && <td 
                                     className="px-4 py-3 text-right font-bold text-slate-800 cursor-pointer hover:bg-slate-100 transition-colors"
                                     onClick={() => handleCellEdit(product, 'sellingPrice')}
                                 >
@@ -551,10 +1121,10 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                             autoFocus
                                         />
                                     ) : (
-                                        formatOMR(product.sellingPrice)
+                                        formatCurrency(product.sellingPrice || 0)
                                     )}
-                                </td>
-                                <td 
+                                </td>}
+                                {!hiddenCols.includes('stock') && <td 
                                     className="px-4 py-3 text-right font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors"
                                     onClick={() => handleCellEdit(product, 'stock')}
                                 >
@@ -569,22 +1139,59 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                             autoFocus
                                         />
                                     ) : (
-                                        <>{product.stock.toFixed(3)} {product.unit}</>
+                                        <>{product.stock.toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
                                     )}
-                                </td>
-                                <td className="px-4 py-3">
+                                </td>}
+                                {!hiddenCols.includes('type') && <td className="px-4 py-3">
                                     <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                                         {product.type}
                                     </span>
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">{product.category}</td>
-                                <td className="px-4 py-3 text-slate-600">{product.brand}</td>
-                                <td className="px-4 py-3 text-slate-500">{product.tax}</td>
-                                <td className="px-4 py-3 font-mono text-xs text-slate-500">{product.sku}</td>
+                                </td>}
+                                {!hiddenCols.includes('category') && <td className="px-4 py-3 text-slate-600">{product.category}</td>}
+                                {!hiddenCols.includes('brand') && <td className="px-4 py-3 text-slate-600">{product.brand}</td>}
+                                {!hiddenCols.includes('tax') && <td className="px-4 py-3 text-slate-500">{product.tax}</td>}
+                                {!hiddenCols.includes('sku') && <td className="px-4 py-3 font-mono text-xs text-slate-500">{product.sku}</td>}
                             </tr>
                         ))}
+                        {pagedFilteredProducts.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-10 text-center text-slate-400 italic" colSpan={12}>
+                              No products found for the current filters.
+                            </td>
+                          </tr>
+                        )}
                     </tbody>
                 </table>
+                <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500 bg-slate-50/50">
+                  <div>Showing {showingProductsFrom} to {showingProductsTo} of {filteredProducts.length} entries</div>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                      disabled={safeProductPage <= 1}
+                      onClick={() => setProductPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Previous
+                    </button>
+                    {productPageItems.map((item, index) => item === '...'
+                      ? <span key={`products-page-ellipsis-${index}`} className="px-2 py-1.5 text-slate-400">...</span>
+                      : (
+                        <button
+                          key={item}
+                          onClick={() => setProductPage(item)}
+                          className={`px-3 py-1.5 rounded shadow-sm transition ${item === safeProductPage ? 'bg-blue-600 text-white shadow-md shadow-blue-900/10' : 'bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-700'}`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    <button
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                      disabled={safeProductPage >= totalProductPages}
+                      onClick={() => setProductPage((prev) => Math.min(totalProductPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
             </div>
         ) : (
              <div className="overflow-x-auto min-h-[600px] px-2">
@@ -608,14 +1215,17 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {stockReport.map((item, idx) => (
+                        {pagedStockReport.map((item, idx) => (
                             <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
                                 <td className="px-6 py-4">
                                     <button 
-                                        onClick={() => handleProductHistory(item)}
+                                        onClick={() => {
+                                          const product = products.find(p => p.id === item.id);
+                                          if (product) handleProductHistory(product);
+                                        }}
                                         className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-indigo-600 rounded-lg text-[10px] font-bold hover:bg-indigo-50 hover:border-indigo-200 shadow-sm whitespace-nowrap transition-all"
                                     >
-                                        <History size={10} /> History
+                                        <History size={10} /> Product stock history
                                     </button>
                                 </td>
                                 <td className="px-6 py-4 font-mono font-bold text-slate-500">{item.sku}</td>
@@ -623,15 +1233,15 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 <td className="px-6 py-4 text-slate-500 italic">{item.variation || '-'}</td>
                                 <td className="px-6 py-4 text-slate-600">{item.category}</td>
                                 <td className="px-6 py-4 text-slate-500 truncate max-w-[120px]" title={item.location}>{item.location}</td>
-                                <td className="px-6 py-4 text-right font-medium text-slate-700 whitespace-nowrap">{formatRiyal(item.unitSellingPrice)}</td>
+                                <td className="px-6 py-4 text-right font-medium text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>
                                 <td className="px-6 py-4 text-right whitespace-nowrap">
                                     <span className="font-bold text-slate-800">{item.currentStock.toFixed(3)}</span> <span className="text-[10px] text-slate-400">{item.unit}</span>
                                 </td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatRiyal(item.stockValuePurchase)}</td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatRiyal(item.stockValueSale)}</td>
+                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatCurrency(item.stockValuePurchase)}</td>
+                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatCurrency(item.stockValueSale)}</td>
                                 <td className="px-6 py-4 text-right whitespace-nowrap">
                                     <span className={`font-bold ${item.potentialProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                        {formatRiyal(item.potentialProfit)}
+                                        {formatCurrency(item.potentialProfit)}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-right whitespace-nowrap">
@@ -645,19 +1255,56 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 </td>
                             </tr>
                         ))}
+                        {pagedStockReport.length === 0 && (
+                          <tr>
+                            <td colSpan={14} className="px-6 py-10 text-center text-slate-400 italic">
+                              No stock rows found for the current filters.
+                            </td>
+                          </tr>
+                        )}
                     </tbody>
                     <tfoot className="bg-slate-100 font-bold text-slate-800 border-t border-slate-200 sticky bottom-0 z-10 shadow-inner">
                         <tr>
                             <td colSpan={8} className="px-6 py-4 text-right uppercase text-xs tracking-wider text-slate-500">Total Aggregated:</td>
-                            <td className="px-6 py-4 text-right font-mono text-slate-700">{formatRiyal(44.200)}</td>
-                            <td className="px-6 py-4 text-right font-mono text-slate-700">{formatRiyal(12933.500)}</td>
-                            <td className="px-6 py-4 text-right font-mono text-emerald-700">{formatRiyal(12889.300)}</td>
-                            <td className="px-6 py-4 text-right font-mono text-slate-700">4521.000</td>
-                            <td className="px-6 py-4 text-right font-mono text-slate-700">0.000</td>
-                            <td className="px-6 py-4 text-right font-mono text-slate-700">8.000</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-700">{formatCurrency(stockReportTotals.purchase)}</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-700">{formatCurrency(stockReportTotals.sale)}</td>
+                            <td className="px-6 py-4 text-right font-mono text-emerald-700">{formatCurrency(stockReportTotals.profit)}</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-700">{stockReportTotals.sold.toFixed(3)}</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-700">{stockReportTotals.transferred.toFixed(3)}</td>
+                            <td className="px-6 py-4 text-right font-mono text-slate-700">{stockReportTotals.adjusted.toFixed(3)}</td>
                         </tr>
                     </tfoot>
                 </table>
+                <div className="p-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-medium text-slate-500 bg-slate-50/50">
+                  <div>Showing {showingStockFrom} to {showingStockTo} of {filteredStockReport.length} entries</div>
+                  <div className="flex gap-2">
+                    <button
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                      disabled={safeStockPage <= 1}
+                      onClick={() => setStockPage((prev) => Math.max(1, prev - 1))}
+                    >
+                      Previous
+                    </button>
+                    {stockPageItems.map((item, index) => item === '...'
+                      ? <span key={`stock-page-ellipsis-${index}`} className="px-2 py-1.5 text-slate-400">...</span>
+                      : (
+                        <button
+                          key={item}
+                          onClick={() => setStockPage(item)}
+                          className={`px-3 py-1.5 rounded shadow-sm transition ${item === safeStockPage ? 'bg-blue-600 text-white shadow-md shadow-blue-900/10' : 'bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-700'}`}
+                        >
+                          {item}
+                        </button>
+                      ))}
+                    <button
+                      className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                      disabled={safeStockPage >= totalStockPages}
+                      onClick={() => setStockPage((prev) => Math.min(totalStockPages, prev + 1))}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
             </div>
         )}
       </div>
@@ -674,10 +1321,23 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
             </div>
             
             <button 
-                onClick={() => onNavigate('print-labels')}
+                onClick={() => {
+                    if (activeActionId) onNavigate(`print-labels/${encodeURIComponent(activeActionId)}`);
+                    else onNavigate('print-labels');
+                    setActiveActionId(null);
+                }}
                 className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
             >
                 <Tag size={16} className="text-blue-500" /> Labels
+            </button>
+            <button 
+                onClick={() => {
+                    const product = products.find(p => p.id === activeActionId);
+                    if (product) openAddOpeningStock(product);
+                }}
+                className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+            >
+                <Plus size={16} className="text-green-600" /> Add or edit opening stock
             </button>
             <button 
                 onClick={() => {
@@ -686,10 +1346,10 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                 }}
                 className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
             >
-                <Eye size={16} className="text-emerald-500" /> View
+                <Eye size={16} className="text-emerald-500" /> Product View
             </button>
             <button 
-                onClick={() => handleEdit(activeActionId!)}
+                onClick={() => { if (activeActionId) handleEdit(activeActionId); }}
                 className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
             >
                 <Edit size={16} className="text-amber-500" /> Edit
@@ -701,7 +1361,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                 }}
                 className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
             >
-                <History size={16} className="text-purple-500" /> History
+                <History size={16} className="text-purple-500" /> Product stock history
             </button>
             <button 
                 onClick={() => {
@@ -712,16 +1372,6 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
             >
                 <Copy size={16} className="text-cyan-500" /> Duplicate
             </button>
-            <button 
-                onClick={() => {
-                    const product = products.find(p => p.id === activeActionId);
-                    if (product) openAddOpeningStock(product);
-                }}
-                className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
-            >
-                <Plus size={16} className="text-green-600" /> Add or edit opening stock
-            </button>
-            
             <div className="h-px bg-slate-100 my-1 mx-2"></div>
             
             <button 
@@ -740,6 +1390,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       ) : (
         <ViewProduct 
           onBack={() => setView('list')} 
+          onEdit={(product) => handleEdit(product.id)}
           product={selectedProduct}
         />
       )}
@@ -827,22 +1478,6 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
               </div>
           </div>
       )}
-
-
-
-       {/* Product History Modal */}
-      <ProductStockHistory
-        isOpen={productHistoryOpen}
-        onClose={() => setProductHistoryOpen(false)}
-        product={selectedProductForHistory}
-      />
-
-      {/* Add Opening Stock Modal */}
-      <AddOpeningStock
-        isOpen={isAddOpeningStockOpen}
-        onClose={() => setIsAddOpeningStockOpen(false)}
-        product={productForOpeningStock}
-      />
 
     </div>
   );

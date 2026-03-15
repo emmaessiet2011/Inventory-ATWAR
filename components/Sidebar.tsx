@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import {
   LayoutDashboard, Users, Package, ShoppingCart, 
-  CreditCard, Truck, RefreshCw, FileText, Settings, 
-  ChevronDown, ChevronRight, LogOut, Tags, Calculator,
-  PieChart, BarChart3, Layers, UserCircle, LifeBuoy,
-  Banknote, ShieldCheck, UserPlus, Sliders, Wallet,
+  CreditCard, Truck, RefreshCw, Settings, 
+  ChevronDown, ChevronRight, LogOut, Tags,
+  BarChart3, UserCircle, LifeBuoy,
+  Banknote, ShieldCheck, Sliders, Wallet,
   Menu, X
 } from 'lucide-react';
 import { useGlobalContext } from '../src/context/GlobalContext';
+import { getEditStockTransferIdKey } from '../src/utils/stockTransfers';
+import { getEditStockAdjustmentIdKey } from '../src/utils/stockAdjustments';
+import { getEditExpenseIdKey } from '../src/utils/expenses';
 
 interface SidebarProps {
   currentPage: string;
@@ -28,8 +31,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   onMobileClose
 }) => {
-  const { settings, currentUser } = useGlobalContext();
+  const { settings, currentUser, roles } = useGlobalContext();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+
+  const currentRoleRecord = roles.find(r => r.name === currentUser?.role);
+  const rolePermissions = currentRoleRecord?.permissions || [];
+  const roleHasExplicitPermissions = rolePermissions.length > 0;
+  const hasRolePermission = (moduleName: string, permission: string) => {
+    if (!currentUser) return false;
+    if (String(currentUser.role || '').toLowerCase() === 'admin' || currentRoleRecord?.isSystem) return true;
+    if (!roleHasExplicitPermissions) return true; // backward compatibility for older role data
+    return (
+      rolePermissions.includes(permission) ||
+      rolePermissions.includes(`${moduleName}::${permission}`)
+    );
+  };
+  const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
 
   const toggleMenu = (title: string) => {
     setExpandedMenus(prev => 
@@ -40,8 +57,22 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleNavigate = (path: string) => {
+    if (path === 'add-stock-transfer') {
+      localStorage.removeItem(getEditStockTransferIdKey());
+    }
+    if (path === 'add-stock-adjustment') {
+      localStorage.removeItem(getEditStockAdjustmentIdKey());
+    }
+    if (path === 'add-expense') {
+      localStorage.removeItem(getEditExpenseIdKey());
+    }
     onNavigate(path);
     onMobileClose(); // Close sidebar on mobile when navigating
+  };
+
+  const handleOpenProfile = () => {
+    const currentUserId = String(currentUser?.id || '').trim();
+    handleNavigate(currentUserId ? `view-user/${currentUserId}` : 'users');
   };
 
   const allMenuItems = [
@@ -71,7 +102,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       icon: Package, 
       subItems: [
         { title: 'List Products', path: 'products' },
-        { title: 'Add Product', path: 'add-product' },
+        { title: 'Add New Product', path: 'add-product' },
+        { title: 'Product View', path: 'product-view' },
         { title: 'Update Price', path: 'update-price' },
         { title: 'Print Labels', path: 'print-labels' },
         { title: 'Variations', path: 'variations' },
@@ -197,6 +229,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { title: 'Business Settings', path: 'settings' },
         { title: 'Business Locations', path: 'locations' },
+        { title: 'Backup & Restore', path: 'backup-restore' },
         { title: 'Invoice Settings', path: 'invoice-settings' },
         { title: 'Barcode Settings', path: 'barcode-settings' },
         { title: 'Receipt Printers', path: 'printers' },
@@ -215,8 +248,191 @@ const Sidebar: React.FC<SidebarProps> = ({
         subItems = subItems.filter(s => s.path !== 'sales-commission-agents');
       }
 
+      if (item.title === 'User Management') {
+        subItems = subItems.filter(s => {
+          if (s.path === 'users') return hasRolePermission('User', 'View user');
+          if (s.path === 'add-user') return hasRolePermission('User', 'Add user');
+          if (s.path === 'roles') return hasRolePermission('Roles', 'View role');
+          return true;
+        });
+      }
+
       if (item.title === 'Sell' && !settings.enablePOS) {
         subItems = subItems.filter(s => s.path !== 'open-register' && s.path !== 'list-pos');
+      }
+      if (item.title === 'Sell' && !settings.enableShipments) {
+        subItems = subItems.filter(s => s.path !== 'shipments');
+      }
+      if (item.title === 'Sell' && !settings.enableDiscounts) {
+        subItems = subItems.filter(s => s.path !== 'discounts');
+      }
+      if (item.title === 'Sell' && !settings.enableImportSales) {
+        subItems = subItems.filter(s => s.path !== 'import-sales');
+      }
+
+      if (item.title === 'Sell') {
+        const canViewSales =
+          hasRolePermission('Sell', 'View all sell') ||
+          hasRolePermission('Sell', 'View own sell only') ||
+          hasRolePermission('Sell', 'View paid sells only') ||
+          hasRolePermission('Sell', 'View due sells only') ||
+          hasRolePermission('Sell', 'View partially paid sells only') ||
+          hasRolePermission('Sell', 'View overdue sells only');
+        const canAddSell = hasRolePermission('Sell', 'Add Sell');
+        const canAccessSellReturns =
+          hasRolePermission('Sell', 'Access all sell return') ||
+          hasRolePermission('Sell', 'Access own sell return');
+        const canViewDrafts =
+          hasRolePermission('Draft', 'View all drafts') ||
+          hasRolePermission('Draft', 'View own drafts');
+        const canEditDraft = hasRolePermission('Draft', 'Edit draft');
+        const canViewQuotations =
+          hasRolePermission('Quotation', 'View all quotations') ||
+          hasRolePermission('Quotation', 'View own quotations');
+        const canEditQuotation = hasRolePermission('Quotation', 'Edit quotation');
+        const canAccessShipments =
+          hasRolePermission('Shipments', 'Access all shipments') ||
+          hasRolePermission('Shipments', 'Access own shipments') ||
+          hasRolePermission('Shipments', 'Access pending shipments only') ||
+          hasRolePermission('Shipments', 'Commission agent can access their own shipments');
+        const canManageDiscounts = hasRolePermission('Sell', 'Add/Edit/Delete Discount');
+        const canImportSales =
+          hasRolePermission('Sell', 'Import Sales') ||
+          hasRolePermission('Sell', 'Add Sell');
+
+        subItems = subItems.filter(s => {
+          if (s.path === 'sales') return canViewSales;
+          if (s.path === 'add-sale') return canAddSell;
+          if (s.path === 'drafts') return canViewDrafts;
+          if (s.path === 'add-draft') return canEditDraft || canAddSell;
+          if (s.path === 'quotations') return canViewQuotations;
+          if (s.path === 'add-quotation') return canEditQuotation || canAddSell;
+          if (s.path === 'returns') return canAccessSellReturns;
+          if (s.path === 'shipments') return canAccessShipments;
+          if (s.path === 'discounts') return canManageDiscounts;
+          if (s.path === 'import-sales') return canImportSales;
+          return true;
+        });
+      }
+
+      if (item.title === 'Sell' && settings.disableDraft) {
+        subItems = subItems.filter(s => s.path !== 'add-draft' && s.path !== 'drafts');
+      }
+
+      if (item.title === 'Sell' && settings.disableQuotation) {
+        subItems = subItems.filter(s => s.path !== 'add-quotation' && s.path !== 'quotations');
+      }
+
+      if (item.title === 'Stock' || item.title === 'Stock Adjustment') {
+        const canViewLegacyStockOperations =
+          hasRolePermission('Purchase & Stock Adjustment', 'View all Purchase & Stock Adjustment') ||
+          hasRolePermission('Purchase & Stock Adjustment', 'View own Purchase & Stock Adjustment');
+        const canManageLegacyStockOperations =
+          hasRolePermission('Purchase & Stock Adjustment', 'Add purchase & Stock Adjustment') ||
+          hasRolePermission('Purchase & Stock Adjustment', 'Edit purchase & Stock Adjustment');
+        const canViewStockTransfers =
+          hasRolePermission('Stock Transfer', 'View all stock transfers') ||
+          hasRolePermission('Stock Transfer', 'View own stock transfers') ||
+          canViewLegacyStockOperations;
+        const canManageStockTransfers =
+          hasRolePermission('Stock Transfer', 'Add stock transfer') ||
+          hasRolePermission('Stock Transfer', 'Edit stock transfer') ||
+          canManageLegacyStockOperations;
+        const canViewStockAdjustments =
+          hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
+          hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
+          canViewLegacyStockOperations;
+        const canAddStockAdjustments =
+          hasRolePermission('Stock Adjustment', 'Add stock adjustment') ||
+          canManageLegacyStockOperations;
+        subItems = subItems.filter((s) => {
+          if (s.path === 'list-stock-transfers') return canViewStockTransfers;
+          if (s.path === 'add-stock-transfer') return canManageStockTransfers;
+          if (s.path === 'list-stock-adjustments') return canViewStockAdjustments;
+          if (s.path === 'add-stock-adjustment') return canAddStockAdjustments;
+          return true;
+        });
+      }
+
+      if (item.title === 'Expenses') {
+        const canViewExpenses =
+          hasRolePermission('Expense', 'Access all expenses') ||
+          hasRolePermission('Expense', 'View own expense only') ||
+          hasRolePermission('Expense', 'Add Expense') ||
+          hasRolePermission('Expense', 'Edit Expense') ||
+          hasRolePermission('Expense', 'Delete Expense');
+        const canAddExpenses = hasRolePermission('Expense', 'Add Expense');
+        const canManageExpenseCategories =
+          hasRolePermission('Expense', 'Add Expense') ||
+          hasRolePermission('Expense', 'Edit Expense');
+
+        subItems = subItems.filter((s) => {
+          if (s.path === 'expenses') return canViewExpenses;
+          if (s.path === 'add-expense') return canAddExpenses;
+          if (s.path === 'expense-categories') return canManageExpenseCategories;
+          return true;
+        });
+      }
+
+      if (item.title === 'Orders') {
+        const canViewOrders =
+          hasRolePermission('Order', 'View order') ||
+          hasRolePermission('Order', 'Edit order') ||
+          hasRolePermission('Order', 'Delete order');
+        const canAddOrders = hasRolePermission('Order', 'Add order');
+
+        subItems = subItems.filter((s) => {
+          if (s.path === 'list-orders') return canViewOrders;
+          if (s.path === 'add-order') return canAddOrders;
+          return true;
+        });
+      }
+
+      if (item.title === 'Payments') {
+        const canViewSellPayments =
+          hasRolePermission('Sell', 'Add sell payment') ||
+          hasRolePermission('Sell', 'Edit sell payment') ||
+          hasRolePermission('Sell', 'Delete sell payment') ||
+          hasRolePermission('POS', 'Add/Edit Payment');
+        const canAddSellPayments =
+          hasRolePermission('Sell', 'Add sell payment') ||
+          hasRolePermission('POS', 'Add/Edit Payment');
+        const canViewFieldPayments =
+          hasRolePermission('Field Payment', 'View field payment') ||
+          hasRolePermission('Field Payment', 'Add field payment') ||
+          hasRolePermission('Field Payment', 'Edit field payment') ||
+          hasRolePermission('Field Payment', 'Delete field payment') ||
+          hasRolePermission('Field Payment', 'Approval field payment');
+
+        subItems = subItems.filter((s) => {
+          if (s.path === 'list-payments') return canViewSellPayments;
+          if (s.path === 'new-payment') return canAddSellPayments;
+          if (s.path === 'field-payments') return settings.enableFieldPayments && canViewFieldPayments;
+          return true;
+        });
+      }
+
+      if (item.title === 'Payment Accounts') {
+        const canAccessAccounts = hasRolePermission('Account', 'Access Accounts');
+        if (!settings.enablePaymentAccounts || !canAccessAccounts) {
+          subItems = [];
+        }
+      }
+
+      if (item.title === 'Settings') {
+        const canAccessBusinessSettings = hasRolePermission('Settings', 'Access business settings');
+        const canAccessInvoiceSettings = hasRolePermission('Settings', 'Access invoice settings');
+        const canAccessBarcodeSettings = hasRolePermission('Settings', 'Access barcode settings');
+        const canAccessPrinters = hasRolePermission('Settings', 'Access printers');
+        const canViewTaxRates = hasRolePermission('Tax rate', 'View tax rate');
+        subItems = subItems.filter((s) => {
+          if (s.path === 'settings' || s.path === 'locations' || s.path === 'backup-restore') return canAccessBusinessSettings;
+          if (s.path === 'invoice-settings') return canAccessInvoiceSettings;
+          if (s.path === 'barcode-settings') return canAccessBarcodeSettings;
+          if (s.path === 'printers') return canAccessPrinters;
+          if (s.path === 'tax-rates') return canViewTaxRates;
+          return true;
+        });
       }
 
       if (item.title === 'Products') {
@@ -228,12 +444,105 @@ const Sidebar: React.FC<SidebarProps> = ({
         }
       }
 
+      if (item.title === 'Purchases') {
+        if (!settings.enablePurchaseRequisition) {
+          subItems = subItems.filter(s => s.path !== 'purchase-requisition');
+        }
+        if (!settings.enablePurchaseOrder) {
+          subItems = subItems.filter(s => s.path !== 'purchase-order');
+        }
+      }
+
+      if (item.title === 'Reports') {
+        const canViewStockReports = hasRolePermission(
+          'Report',
+          'View stock report, stock adjustment report & stock expiry report',
+        );
+        const canViewPurchaseSaleReport = hasRolePermission('Report', 'View purchase & sell report');
+        const canViewTaxReport = hasRolePermission('Report', 'View Tax report');
+        const canViewProfitLossReport = hasRolePermission('Report', 'View profit/loss report');
+        const canViewExpenseReports = hasRolePermission('Report', 'View expense report');
+        const canViewSupplierCustomerReport = hasRolePermission('Report', 'View Supplier & Customer report');
+        const canViewCustomerGroupsReport = hasRolePermission('Report', 'View customer groups report');
+        const canViewTrendingProductReport = hasRolePermission('Report', 'View trending product report');
+        const canViewRegisterReport = hasRolePermission('Report', 'View register report');
+        const canViewSalesRepresentativeReport = hasRolePermission('Report', 'View sales representative report');
+        const canViewActivityLog = hasRolePermission('Report', 'View activity log');
+        subItems = subItems.filter((s) => {
+          if (s.path === 'report-purchase-sale') {
+            return canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-items') {
+            return settings.enableItemsReport && canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-product-purchase') {
+            return settings.enableProductPurchaseReport && canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-product-sell') {
+            return canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-purchase-payment') {
+            return settings.enablePurchases && settings.enablePurchasePaymentReport && canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-sell-payment') {
+            return settings.enableSellPaymentReport && canViewPurchaseSaleReport;
+          }
+          if (s.path === 'report-tax') {
+            return canViewTaxReport;
+          }
+          if (s.path === 'report-profit-loss') {
+            return canViewProfitLossReport;
+          }
+          if (s.path === 'report-supplier-customer') {
+            return canViewSupplierCustomerReport;
+          }
+          if (s.path === 'report-customer-groups') {
+            return settings.enableCustomerGroupsReport && canViewCustomerGroupsReport;
+          }
+          if (s.path === 'report-stock-adjustment') {
+            if (!settings.enableStockAdjustments) return false;
+            return canViewStockReports;
+          }
+          if (s.path === 'report-stock') {
+            return settings.enableStockReport && canViewStockReports;
+          }
+          if (s.path === 'report-stock-expiry') {
+            if (!settings.enableProductExpiry) return false;
+            return canViewStockReports;
+          }
+          if (s.path === 'report-lot') {
+            return (settings.enableLotNumber || settings.enableLotNumbers) && canViewStockReports;
+          }
+          if (s.path === 'report-expense') {
+            if (!settings.enableExpenses) return false;
+            return canViewExpenseReports;
+          }
+          if (s.path === 'report-register') {
+            if (!settings.enablePOS) return false;
+            return canViewRegisterReport;
+          }
+          if (s.path === 'report-sales-rep') {
+            return canViewSalesRepresentativeReport;
+          }
+          if (s.path === 'activity-log') {
+            return settings.enableActivityLog && canViewActivityLog;
+          }
+          if (s.path === 'report-trending-products') {
+            return settings.enableTrendingProductsReport && canViewTrendingProductReport;
+          }
+          return true;
+        });
+      }
+
       return { ...item, subItems };
     })
     .filter(item => {
       if (item.title === 'Purchases' && !settings.enablePurchases) return false;
       if (item.title === 'Expenses' && !settings.enableExpenses) return false;
-      if ((item.title === 'Stock' || item.title === 'Stock Adjustment') && !settings.enableStockTransfers) return false;
+      if (item.title === 'Orders' && !settings.enableSalesOrder) return false;
+      if (item.title === 'Payment Accounts' && !settings.enablePaymentAccounts) return false;
+      if (item.title === 'Stock' && !settings.enableStockTransfers) return false;
+      if (item.title === 'Stock Adjustment' && !settings.enableStockAdjustments) return false;
       if (item.subItems && item.subItems.length === 0) return false;
       return true;
     });
@@ -386,32 +695,41 @@ const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
         
-        {(!isCollapsed || isMobileOpen) && (
-          <div className="px-3 mt-6 mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Support</span>
-          </div>
+        {canAccessHelpCenter && (
+          <>
+            {(!isCollapsed || isMobileOpen) && (
+              <div className="px-3 mt-6 mb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Support</span>
+              </div>
+            )}
+            <button 
+                onClick={() => handleNavigate('help-center')}
+                className={`w-full flex items-center gap-3 ${(isCollapsed && !isMobileOpen) ? 'px-3' : 'px-6'} py-3 rounded-xl transition-all ${
+                    currentPage === 'help-center'
+                    ? 'bg-blue-600/10 text-blue-400'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
+                }`}
+                title={(isCollapsed && !isMobileOpen) ? 'Help Center' : ''}
+            >
+                <div className={`${(isCollapsed && !isMobileOpen) ? 'p-1.5 rounded-lg bg-slate-900' : ''}`}>
+                  <LifeBuoy size={18} />
+                </div>
+                {(!isCollapsed || isMobileOpen) && <span className="text-sm font-medium">Help Center</span>}
+            </button>
+          </>
         )}
-        <button 
-            onClick={() => handleNavigate('help-center')}
-            className={`w-full flex items-center gap-3 ${(isCollapsed && !isMobileOpen) ? 'px-3' : 'px-6'} py-3 rounded-xl transition-all ${
-                currentPage === 'help-center'
-                ? 'bg-blue-600/10 text-blue-400'
-                : 'text-slate-400 hover:text-white hover:bg-slate-900'
-            }`}
-            title={(isCollapsed && !isMobileOpen) ? 'Help Center' : ''}
-        >
-            <div className={`${(isCollapsed && !isMobileOpen) ? 'p-1.5 rounded-lg bg-slate-900' : ''}`}>
-              <LifeBuoy size={18} />
-            </div>
-            {(!isCollapsed || isMobileOpen) && <span className="text-sm font-medium">Help Center</span>}
-        </button>
 
       </nav>
 
       {/* User Footer */}
       <div className={`p-4 bg-[#0B1121] border-t border-slate-800 relative ${(isCollapsed && !isMobileOpen) ? 'flex flex-col items-center' : ''}`}>
         {(!isCollapsed || isMobileOpen) ? (
-          <div className="flex items-center gap-3 mb-4 p-3 bg-slate-900/50 rounded-xl border border-slate-800">
+          <button
+            type="button"
+            onClick={handleOpenProfile}
+            className="w-full text-left flex items-center gap-3 mb-4 p-3 bg-slate-900/50 rounded-xl border border-slate-800 hover:bg-slate-900 hover:border-slate-700 transition"
+            title="My profile"
+          >
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-red-500 to-orange-500 p-[2px]">
                   <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center">
                       <UserCircle size={24} className="text-slate-200" />
@@ -421,13 +739,18 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <p className="text-sm font-bold text-white truncate">{currentUser?.name || 'Admin User'}</p>
                   <p className="text-[10px] text-slate-500 truncate">{currentUser?.email || 'admin@atwar.com'}</p>
               </div>
-          </div>
+          </button>
         ) : (
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-red-500 to-orange-500 p-[2px] mb-4">
-              <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center">
-                  <UserCircle size={20} className="text-slate-200" />
-              </div>
-          </div>
+          <button
+            type="button"
+            onClick={handleOpenProfile}
+            className="w-10 h-10 rounded-full bg-gradient-to-tr from-red-500 to-orange-500 p-[2px] mb-4 hover:brightness-110 transition"
+            title="My profile"
+          >
+            <div className="w-full h-full rounded-full bg-slate-900 flex items-center justify-center">
+              <UserCircle size={20} className="text-slate-200" />
+            </div>
+          </button>
         )}
         
         <button 
