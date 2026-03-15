@@ -915,23 +915,31 @@ const AppContent: React.FC = () => {
         onMobileClose={() => setIsSidebarOpen(false)}
       />
       
-      <div className={`flex-1 ${isSidebarCollapsed ? 'ml-20' : 'ml-72'} p-8 overflow-y-auto h-screen transition-all duration-300 print:ml-0 print:p-0`}>
-        <header className="flex justify-between items-center mb-8 print:hidden">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input 
-              type="text" 
-              placeholder="Search module or page..." 
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleGlobalSearch();
-                }
-              }}
-              className="pl-10 pr-4 py-2 rounded-full bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 w-64 shadow-sm"
-            />
+      <div className={`flex-1 ml-0 ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-72'} p-4 md:p-8 overflow-y-auto h-screen transition-all duration-300 print:ml-0 print:p-0`}>
+        <header className="flex justify-between items-center mb-6 md:mb-8 print:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              className="md:hidden p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleGlobalSearch();
+                  }
+                }}
+                className="pl-10 pr-4 py-2 rounded-full bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 w-40 md:w-64 shadow-sm"
+              />
             {searchMatches.length > 0 && globalSearch.trim().length > 0 && (
               <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-40">
                 {searchMatches.map((match) => (
@@ -950,10 +958,11 @@ const AppContent: React.FC = () => {
                 ))}
               </div>
             )}
+            </div>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 md:gap-4">
+            <div className="hidden md:flex items-center gap-2">
               <div className="relative" ref={calculatorRef}>
                 <button
                   onClick={() => {
