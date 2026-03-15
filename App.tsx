@@ -1198,6 +1198,23 @@ const AppContent: React.FC = () => {
         <main>
           {renderPage()}
         </main>
+
+        <footer className="mt-10 pt-4 border-t border-slate-200 text-center print:hidden">
+          <p className="text-xs text-slate-400">
+            © {new Date().getFullYear()} ATWAR AL MUSTAQBAL. All rights reserved.
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Designed by{' '}
+            <a
+              href="https://emmanuelessiet.com.ng"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-500 hover:text-red-600 hover:underline transition-colors"
+            >
+              emmaessiet
+            </a>
+          </p>
+        </footer>
       </div>
     </div>
   );

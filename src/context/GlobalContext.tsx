@@ -1359,7 +1359,7 @@ const initialLocations: Location[] = [
 const initialProducts: Product[] = [];
 
 const initialCustomers: Customer[] = [
-  { id: 'WALK-IN', type: 'Customer', businessName: 'Walk-in Customer', name: 'Walk-in Customer', email: '', taxNumber: '', creditLimit: 0, payTerm: 'Immediate', openingBalance: 0, advanceBalance: 0, totalSellDue: 0, totalSellReturnDue: 0, addedOn: '01/01/2023', customerGroup: '', address: '', mobile: '', status: 'Active' },
+  { id: 'WALK-IN', type: 'Customer', businessName: 'Direct Customer', name: 'Direct Customer', email: '', taxNumber: '', creditLimit: 0, payTerm: 'Immediate', openingBalance: 0, advanceBalance: 0, totalSellDue: 0, totalSellReturnDue: 0, addedOn: '01/01/2023', customerGroup: '', address: '', mobile: '', status: 'Active' },
 ];
 
 const initialSuppliers: Supplier[] = [];
@@ -1622,202 +1622,27 @@ const initialRoles: Role[] = [
   { id: 5, name: 'Manager', description: 'Can manage inventory, purchases and staff.', userCount: 4, permissionsCount: 85, isSystem: false },
 ];
 
-const initialCommissionAgents: CommissionAgent[] = [
-  {
-    id: 1,
-    prefix: 'Mr',
-    firstName: 'Ahmed',
-    lastName: 'Al Balushi',
-    name: 'Mr Ahmed Al Balushi',
-    email: 'ahmed.b@example.com',
-    contactNo: '+968 9123 4567',
-    address: 'Muscat, Oman',
-    commissionPercentage: 5.0,
-    isActive: true,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-  {
-    id: 2,
-    prefix: 'Ms',
-    firstName: 'Fatma',
-    lastName: 'Al Said',
-    name: 'Ms Fatma Al Said',
-    email: 'fatma.s@example.com',
-    contactNo: '+968 9234 5678',
-    address: 'Sohar, Oman',
-    commissionPercentage: 3.5,
-    isActive: true,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  },
-].map(normalizeCommissionAgentRecord);
+const initialCommissionAgents: CommissionAgent[] = [];
 
 const FIELD_PAYMENTS_STORAGE_KEY = 'app_field_payments';
 
 // Legacy contacts array (minimal — kept so any component using contacts doesn't break)
-const initialContacts: Contact[] = [
-  { id: 1, type: 'Supplier', contactId: 'SUP-001', name: 'Ali Hassan', businessName: 'Al-Nour Electronics', mobile: '+968 9123 4567', email: 'ali@alnour.com', taxNumber: 'OM12345678', creditLimit: 5000, balance: -1200.50, payTerm: '30 Days', status: 'Active' },
-  { id: 2, type: 'Customer', contactId: 'CUS-001', name: 'Mohammed Al-Said', businessName: 'Personal', mobile: '+968 9876 5432', email: 'mohammed@gmail.com', taxNumber: '', creditLimit: 1000, balance: 450.00, payTerm: 'Immediate', status: 'Active' },
-];
+const initialContacts: Contact[] = [];
 
-const initialPurchases: Purchase[] = [
-  { id: '1', refNo: 'PO-2023-001', date: '2023-10-25 14:30', location: 'CR:1450968', supplier: 'Kennol Performance Oil', supplierId: 'SUP-1004', status: 'Received', paymentStatus: 'Paid', grandTotal: 1200, paymentDue: 0, addedBy: 'Admin' },
-  { id: '2', refNo: 'PO-2023-002', date: '2023-10-26 09:15', location: 'KNWZ ARD ALKHLYJ ALMTHDH CR:1282649', supplier: 'Global Pet Supplies LLC', supplierId: 'SUP-1002', status: 'Pending', paymentStatus: 'Due', grandTotal: 450.500, paymentDue: 450.500, addedBy: 'Admin' },
-  { id: '3', refNo: 'PO-2023-003', date: '2023-10-27 11:00', location: 'CR:1450968', supplier: 'Al Maha Ceramics', supplierId: 'SUP-1003', status: 'Ordered', paymentStatus: 'Partial', grandTotal: 3000, paymentDue: 1500, addedBy: 'Manager' },
-  { id: '4', refNo: 'PO-2023-004', date: '2023-10-28 16:45', location: 'CR:1450968', supplier: 'Oman Oil Marketing Co.', supplierId: 'SUP-1001', status: 'Received', paymentStatus: 'Paid', grandTotal: 850.250, paymentDue: 0, addedBy: 'Admin' },
-];
+const initialPurchases: Purchase[] = [];
 
-const initialPurchaseRequisitions: PurchaseRequisition[] = [
-  {
-    id: 'PR-MOCK-001',
-    date: '2023-11-24T14:30',
-    referenceNo: 'PR2023/0001',
-    location: 'CR:1450968',
-    supplier: 'Oman Oil Marketing Co.',
-    supplierId: 'SUP-1001',
-    status: 'Pending',
-    addedBy: 'Admin User',
-    note: '',
-  },
-  {
-    id: 'PR-MOCK-002',
-    date: '2023-11-25T10:15',
-    referenceNo: 'PR2023/0002',
-    location: 'KNWZ ARD ALKHLYJ ALMTHDH CR:1282649',
-    supplier: 'Global Pet Supplies LLC',
-    supplierId: 'SUP-1002',
-    status: 'Approved',
-    addedBy: 'Sales Manager',
-    note: '',
-  },
-];
+const initialPurchaseRequisitions: PurchaseRequisition[] = [];
 
-const initialPurchaseOrders: PurchaseOrder[] = [
-  {
-    id: 'PO-MOCK-001',
-    orderDate: '2023-11-26T10:27',
-    referenceNo: 'PO2023/0001',
-    supplierId: 'SUP-1001',
-    supplierName: 'Oman Oil Marketing Co.',
-    supplierAddress: 'PO Box 123, Muscat',
-    location: 'CR:1450968',
-    deliveryDate: '2023-11-30',
-    payTermValue: '30',
-    payTermType: 'Days',
-    attachDocumentName: '',
-    purchaseRequisitionId: 'PR-MOCK-001',
-    purchaseRequisitionRef: 'PR2023/0001',
-    items: [
-      {
-        productId: '0209',
-        productName: 'Danna 10W40 Engine Oil 1L',
-        orderQty: 50,
-        unitCostBeforeDiscount: 1.8,
-        discountPercent: 0,
-        unitCostBeforeTax: 1.8,
-        lineTotal: 90,
-      },
-    ],
-    shippingDetails: '',
-    shippingAddress: 'Muscat',
-    shippingCharges: 0,
-    shippingStatus: 'Ordered',
-    deliveredTo: '',
-    shippingDocumentName: '',
-    additionalExpenses: 0,
-    additionalNotes: '',
-    totalItems: 50,
-    netTotalAmount: 90,
-    orderTotal: 90,
-    status: 'Sent',
-    addedBy: 'Admin User',
-  },
-  {
-    id: 'PO-MOCK-002',
-    orderDate: '2023-11-27T09:45',
-    referenceNo: 'PO2023/0002',
-    supplierId: 'SUP-1002',
-    supplierName: 'Global Pet Supplies LLC',
-    supplierAddress: 'Rusayl Industrial Estate',
-    location: 'KNWZ ARD ALKHLYJ ALMTHDH CR:1282649',
-    deliveryDate: '2023-12-02',
-    payTermValue: '15',
-    payTermType: 'Days',
-    attachDocumentName: '',
-    purchaseRequisitionId: 'PR-MOCK-002',
-    purchaseRequisitionRef: 'PR2023/0002',
-    items: [
-      {
-        productId: '0201',
-        productName: 'Royal Canin Maxi Adult 15kg',
-        orderQty: 20,
-        unitCostBeforeDiscount: 22,
-        discountPercent: 0,
-        unitCostBeforeTax: 22,
-        lineTotal: 440,
-      },
-    ],
-    shippingDetails: '',
-    shippingAddress: '',
-    shippingCharges: 0,
-    shippingStatus: 'Pending',
-    deliveredTo: '',
-    shippingDocumentName: '',
-    additionalExpenses: 0,
-    additionalNotes: '',
-    totalItems: 20,
-    netTotalAmount: 440,
-    orderTotal: 440,
-    status: 'Draft',
-    addedBy: 'Sales Manager',
-  },
-];
+const initialPurchaseOrders: PurchaseOrder[] = [];
 
-const initialPurchaseReturns: PurchaseReturn[] = [
-  {
-    id: 'PRTN-MOCK-001',
-    date: '2026-03-07T11:39',
-    referenceNo: 'PRTN2026/0001',
-    supplierId: 'SUP-1001',
-    supplierName: 'Oman Oil Marketing Co.',
-    location: 'CR:1450968',
-    attachDocumentName: '',
-    parentPurchaseId: '1',
-    parentPurchaseRef: 'PO-2023-001',
-    items: [
-      {
-        productId: '0209',
-        productName: 'Danna 10W40 Engine Oil 1L',
-        lotNumber: '',
-        expDate: '',
-        quantity: 2,
-        unitPrice: 1.8,
-        subtotal: 3.6,
-      },
-    ],
-    purchaseTaxId: '',
-    purchaseTaxName: 'None',
-    purchaseTaxAmount: 0,
-    subTotal: 3.6,
-    grandTotal: 3.6,
-    paymentStatus: 'Due',
-    paymentDue: 3.6,
-    addedBy: 'Admin User',
-  },
-];
+const initialPurchaseReturns: PurchaseReturn[] = [];
 
 const initialTaxRates: TaxRate[] = [
   { id: 'TAX-001', name: 'VAT@5%', rate: 5, type: 'Exclusive', description: 'Standard Omani VAT' },
   { id: 'TAX-002', name: 'No Tax', rate: 0, type: 'Exclusive', description: 'Tax exempt items' },
 ];
 
-const initialCustomerGroups: CustomerGroup[] = [
-  { id: 'GRP-001', name: 'Supermarkets Customers', discountPercent: 0, description: 'Supermarket and grocery retailers' },
-  { id: 'GRP-002', name: 'Wholesale', discountPercent: 5, description: 'Wholesale buyers' },
-  { id: 'GRP-003', name: 'Pet Shops', discountPercent: 2, description: 'Pet specialty stores' },
-  { id: 'GRP-004', name: 'Individual', discountPercent: 0, description: 'Walk-in / individual customers' },
-];
+const initialCustomerGroups: CustomerGroup[] = [];
 
 const initialExpenseCategories: ExpenseCategory[] = [
   { id: 'ECAT-001', name: 'Rent', description: 'Rent and premises expenses', code: 'RENT' },
@@ -1828,50 +1653,9 @@ const initialExpenseCategories: ExpenseCategory[] = [
   { id: 'ECAT-006', name: 'Office Supplies', description: 'Stationery and supplies', code: 'OFFICE' },
 ];
 
-const initialProductCategories: ProductCategory[] = [
-  { id: 'CAT-001', name: '--BLOCK', code: '', description: '' },
-  { id: 'CAT-002', name: 'Break Oil', code: '', description: '' },
-  { id: 'CAT-003', name: 'Dry Pet Food', code: '', description: '' },
-  { id: 'CAT-004', name: 'Engine Flush', code: '', description: '' },
-  { id: 'CAT-005', name: 'Engine oil', code: '', description: '' },
-  { id: 'CAT-006', name: 'Food product', code: '', description: '' },
-  { id: 'CAT-007', name: 'Nilcutter', code: '', description: '' },
-  { id: 'CAT-008', name: 'Pet Oil', code: '', description: '' },
-  { id: 'CAT-009', name: 'Sand (clear cat)', code: '', description: 'clear cat' },
-  { id: 'CAT-010', name: '--STRAIGHT', code: '', description: '' },
-  { id: 'CAT-011', name: 'Tyres', code: '', description: '' },
-  { id: 'CAT-012', name: 'Wet Pet Food', code: '', description: '' },
-  { id: 'CAT-013', name: 'Windshield Washer', code: '', description: '' },
-  { id: 'CAT-014', name: '--ZIGZAG', code: 'SP901 (10.00R20)', description: 'ZIGZAG' },
-];
+const initialProductCategories: ProductCategory[] = [];
 
-const initialProductBrands: ProductBrand[] = [
-  { id: 'BRD-001', name: 'Barbicane', note: '' },
-  { id: 'BRD-002', name: 'Cebican', note: '' },
-  { id: 'BRD-003', name: 'Cebican Cosmo', note: '' },
-  { id: 'BRD-004', name: 'Clear Cat', note: 'Sand' },
-  { id: 'BRD-005', name: 'ClearCat Blanco', note: 'Cat Litter' },
-  { id: 'BRD-006', name: 'Danna', note: 'Premium quality' },
-  { id: 'BRD-007', name: 'Dimas Oil', note: '' },
-  { id: 'BRD-008', name: 'Dousti', note: '' },
-  { id: 'BRD-009', name: 'EuroPet', note: '' },
-  { id: 'BRD-010', name: 'Indomie', note: '' },
-  { id: 'BRD-011', name: 'Jaitun', note: '' },
-  { id: 'BRD-012', name: 'Kennol', note: '' },
-  { id: 'BRD-013', name: 'Kinza', note: '' },
-  { id: 'BRD-014', name: 'Maclin', note: '' },
-  { id: 'BRD-015', name: 'Merinda', note: '' },
-  { id: 'BRD-016', name: 'Naj', note: '' },
-  { id: 'BRD-017', name: 'Nestle', note: '' },
-  { id: 'BRD-018', name: 'Olive Pickle', note: '' },
-  { id: 'BRD-019', name: 'Pet Bottle', note: '' },
-  { id: 'BRD-020', name: 'Rainbow', note: '' },
-  { id: 'BRD-021', name: 'RC', note: '' },
-  { id: 'BRD-022', name: 'Redbull', note: '' },
-  { id: 'BRD-023', name: 'SIGMA PREMIUM', note: '' },
-  { id: 'BRD-024', name: 'Spada', note: '' },
-  { id: 'BRD-025', name: 'Sportrak Tyre', note: '' },
-];
+const initialProductBrands: ProductBrand[] = [];
 
 const initialProductUnits: ProductUnit[] = [
   { id: 'UNIT-001', name: 'Cartoons', shortName: 'Cartoon', allowDecimal: true },
@@ -1886,19 +1670,9 @@ const initialWarranties: ProductWarranty[] = [
   { id: 'WRN-003', name: '2 Years Warranty', description: 'Extended 2-year warranty', duration: 2, durationUnit: 'Years' },
 ];
 
-const initialProductVariations: ProductVariation[] = [
-  { id: 'VAR-001', name: 'Color', values: ['Red', 'Blue', 'Green', 'Black', 'White'] },
-  { id: 'VAR-002', name: 'Size', values: ['S', 'M', 'L', 'XL', 'XXL'] },
-  { id: 'VAR-003', name: 'Storage', values: ['64GB', '128GB', '256GB', '512GB'] },
-  { id: 'VAR-004', name: 'Material', values: ['Cotton', 'Polyester', 'Leather'] },
-];
+const initialProductVariations: ProductVariation[] = [];
 
-const initialSellingPriceGroups: SellingPriceGroup[] = [
-  { id: 'SPG-001', name: 'Default Selling Price', description: 'Standard retail price for walk-in customers', payTermDays: 0, payTermUnit: 'Days', taxRate: 5, discount: 0, priceCalcPercentage: 0, status: 'Active' },
-  { id: 'SPG-002', name: 'Wholesale Tier A', description: 'Bulk buyers ordering > 500 OMR / month', payTermDays: 30, payTermUnit: 'Days', taxRate: 5, discount: 10, priceCalcPercentage: -5, status: 'Active' },
-  { id: 'SPG-003', name: 'Distributor VIP', description: 'Key partners and regional distributors', payTermDays: 60, payTermUnit: 'Days', taxRate: 0, discount: 15, priceCalcPercentage: -12, status: 'Active' },
-  { id: 'SPG-004', name: 'Online Sales', description: 'E-commerce platform pricing', payTermDays: 0, payTermUnit: 'Days', taxRate: 5, discount: 0, priceCalcPercentage: 0, status: 'Active' },
-];
+const initialSellingPriceGroups: SellingPriceGroup[] = [];
 
 const initialInvoiceSchemes: InvoiceScheme[] = [
   {
