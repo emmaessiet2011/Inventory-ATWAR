@@ -38,7 +38,9 @@ import {
   fetchCoreSnapshot,
   hasCoreSnapshotData,
   isCoreSyncEnabled,
+  pingBackend,
   pushCoreSnapshot,
+  pushCoreSnapshotWithRetry,
   type CoreSyncSnapshot,
 } from '../utils/coreStateSync';
 import {
@@ -985,6 +987,7 @@ export interface AppSettings {
   amountRoundingMethod: string;
   salesPriceIsMinimumSellingPrice: boolean;
   isPayTermRequired: boolean;
+  filterProductsByLocation: boolean;
   salesCommissionAgent: 'Disable' | 'Enable';
   commissionCalculationType: 'Invoice value' | 'Paid amount';
   isCommissionAgentRequired: boolean;
@@ -1283,6 +1286,9 @@ interface GlobalContextType {
   formatCurrency: (amount: number) => string;
   generateId: (prefix: string) => string;
   nextInvoiceNumber: (locationId?: string, prefixOverride?: string) => string;
+
+  // --- Sync Status ---
+  syncStatus: 'idle' | 'syncing' | 'error' | 'synced';
 }
 
 // ============================================================
@@ -1911,6 +1917,7 @@ const defaultSettings: AppSettings = {
   amountRoundingMethod: 'None',
   salesPriceIsMinimumSellingPrice: false,
   isPayTermRequired: false,
+  filterProductsByLocation: false,
   salesCommissionAgent: 'Enable',
   commissionCalculationType: 'Invoice value',
   isCommissionAgentRequired: false,
@@ -2153,6 +2160,7 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   merged.enablePosition = !!merged.enablePosition;
   merged.salesPriceIsMinimumSellingPrice = !!merged.salesPriceIsMinimumSellingPrice;
   merged.strictCashDenominationCheck = !!merged.strictCashDenominationCheck;
+  merged.filterProductsByLocation = !!merged.filterProductsByLocation;
   return merged;
 };
 
@@ -2751,6 +2759,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const coreSyncReadyRef = useRef(false);
   const coreSyncApplyingRemoteRef = useRef(false);
   const coreSyncPushTimerRef = useRef<number | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'synced'>('idle');
   const dropdownSyncEnabled = isDropdownSyncEnabled();
   const dropdownSyncReadyRef = useRef(false);
   const dropdownSyncApplyingRemoteRef = useRef(false);
@@ -2895,7 +2904,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return;
       }
 
-      if (hasCoreSnapshotData(localSnapshot)) {
+      // Only push local data when the server responded successfully but had nothing stored.
+      // If remoteSnapshot is null the fetch itself failed — never overwrite DB with stale local data.
+      if (remoteSnapshot !== null && hasCoreSnapshotData(localSnapshot)) {
         await pushCoreSnapshot(localSnapshot);
       }
       if (!cancelled) {
@@ -2907,6 +2918,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       cancelled = true;
     };
+  }, [coreSyncEnabled]);
+
+  // Keep Render free-tier server warm — ping every 10 minutes so it never sleeps.
+  useEffect(() => {
+    if (!coreSyncEnabled) return;
+    const id = window.setInterval(() => { void pingBackend(); }, 10 * 60 * 1000);
+    return () => window.clearInterval(id);
   }, [coreSyncEnabled]);
 
   useEffect(() => {
@@ -2928,7 +2946,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     coreSyncPushTimerRef.current = window.setTimeout(() => {
-      void pushCoreSnapshot(snapshot);
+      void pushCoreSnapshotWithRetry(snapshot, setSyncStatus);
     }, 800);
 
     return () => {
@@ -6924,6 +6942,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       settings, updateSettings,
       currentUser, setCurrentUser,
       formatCurrency, generateId, nextInvoiceNumber,
+      syncStatus,
     }}>
       {children}
     </GlobalContext.Provider>
