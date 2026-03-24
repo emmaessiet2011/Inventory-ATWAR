@@ -417,7 +417,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-10">
+    <div className="space-y-6 animate-fade-in pb-16">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">

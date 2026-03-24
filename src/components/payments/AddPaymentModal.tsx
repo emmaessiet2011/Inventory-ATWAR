@@ -37,7 +37,12 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const { currentUser, settings, formatCurrency, customers, locations } = useGlobalContext();
   const { addNotification } = useNotifications();
   const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
-  const customerRecord = customers.find(c => c.id === sale?.customerId?.toString() || c.id === sale?.customerId);
+  const customerRecord = customers.find(c => {
+    if (sale?.customerId && c.id === String(sale.customerId).trim()) return true;
+    if (sale?.customerName && c.businessName?.toLowerCase().trim() === String(sale.customerName).toLowerCase().trim()) return true;
+    return false;
+  });
+  const customerRebatePercent = Number(customerRecord?.rebatePercent || 0);
   const activeLocation = useMemo(
     () => locations.find(location => location.name === sale?.location),
     [locations, sale?.location]
@@ -55,6 +60,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
   const [note, setNote] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
+  const [rebateEnabled, setRebateEnabled] = useState(false);
   const defaultAccountFromMethod = (methodName: string) =>
     resolveDefaultAccountFromMethod(methodName, activeLocation);
   const paymentAccountOptions = useMemo(() => (
@@ -84,7 +90,8 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     setMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash');
     setNote('');
     setAttachmentName('');
-  }, [isOpen, sale, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision]); // eslint-disable-line react-hooks/exhaustive-deps
+    setRebateEnabled(customerRebatePercent > 0);
+  }, [isOpen, sale, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision, customerRebatePercent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleAccountsUpdated = () => setAccountOptionsVersion(prev => prev + 1);
@@ -105,6 +112,11 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   }, [method, paymentAccountOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
+
+  const paymentAmountPreview = Math.max(0, Number(amount) || 0);
+  const rebateAmount = (rebateEnabled && customerRebatePercent > 0)
+    ? Number((paymentAmountPreview * customerRebatePercent / 100).toFixed(3))
+    : 0;
 
   const handleSave = () => {
     const paymentAmount = parseFloat(toFixedPrecision(amount, currencyPrecision));
@@ -154,6 +166,9 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       addedBy: currentUser?.name || 'Admin',
       linkedInvoices: linkedDocumentNo ? [linkedDocumentNo] : [],
       attachmentName: attachmentName || undefined,
+      rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
+      rebateAmount: rebateEnabled && rebateAmount > 0 ? rebateAmount : undefined,
+      rebateApplied: rebateEnabled && rebateAmount > 0,
     });
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(sale.location);
@@ -262,6 +277,33 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Rebate section — only shown for rebate customers */}
+          {customerRebatePercent > 0 && paymentType !== 'sent' && (
+            <div className="flex items-center justify-between p-4 rounded-2xl bg-amber-50 border border-amber-200">
+              <div>
+                <p className="text-sm font-bold text-amber-800">
+                  {customerRebatePercent}% Rebate — write-off: {formatCurrency(rebateAmount)}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  {rebateEnabled
+                    ? `Company nets: ${formatCurrency(Math.max(0, paymentAmountPreview - rebateAmount))}`
+                    : 'Rebate disabled for this payment'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRebateEnabled(v => !v)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                  rebateEnabled ? 'bg-amber-500' : 'bg-slate-300'
+                }`}
+              >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  rebateEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`} />
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

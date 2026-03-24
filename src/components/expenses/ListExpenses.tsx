@@ -309,7 +309,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
   const viewExpense = useMemo(() => expenses.find((e) => e.id === viewExpenseId) || null, [expenses, viewExpenseId]);
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-16 print:p-0">
       {/* Page Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-3">
@@ -447,7 +447,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
                     {visibleColumns.category && <td className="px-4 py-3 whitespace-nowrap">{expense.category}</td>}
                     {visibleColumns.subCategory && <td className="px-4 py-3 whitespace-nowrap">{expense.subCategory || '--'}</td>}
                     {visibleColumns.location && <td className="px-4 py-3 whitespace-nowrap text-[10px] text-slate-500 max-w-[150px] truncate" title={expense.location}>{expense.location}</td>}
-                    {visibleColumns.status && <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2 py-0.5 rounded text-[10px] font-bold text-white uppercase ${expense.paymentStatus === 'Paid' ? 'bg-emerald-500' : expense.paymentStatus === 'Partial' ? 'bg-sky-500' : 'bg-red-400'}`}>{expense.paymentStatus}</span></td>}
+                    {visibleColumns.status && <td className="px-4 py-3 whitespace-nowrap"><span className={`px-2.5 py-1 rounded-full text-xs font-bold text-white ${expense.paymentStatus === 'Paid' ? 'bg-emerald-500' : expense.paymentStatus === 'Partial' ? 'bg-sky-500' : 'bg-red-400'}`}>{expense.paymentStatus}</span></td>}
                     {visibleColumns.tax && <td className="px-4 py-3 whitespace-nowrap text-right">{formatCurrency(expense.tax || 0)}</td>}
                     {visibleColumns.total && <td className="px-4 py-3 whitespace-nowrap text-right font-bold text-slate-700">{formatCurrency(getTotal(expense))}</td>}
                     {visibleColumns.due && <td className="px-4 py-3 whitespace-nowrap text-right">{formatCurrency(getDue(expense))}</td>}
@@ -480,13 +480,13 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
             <button
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               disabled={safeCurrentPage <= 1}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >Previous</button>
-            <span className="px-3 py-1.5 text-sm text-slate-600">Page {safeCurrentPage} / {totalPages}</span>
+            <span className="px-4 py-2 text-sm text-slate-600">Page {safeCurrentPage} / {totalPages}</span>
             <button
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
               disabled={safeCurrentPage >= totalPages}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >Next</button>
           </div>
         </div>

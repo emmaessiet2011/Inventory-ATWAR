@@ -4,7 +4,7 @@ import {
   FileText, Download, Printer, ChevronDown,
   Edit, SlidersHorizontal,
   CreditCard, Eye, Ban, ShoppingBag, StickyNote, X, Filter,
-  CheckCircle2, FileSpreadsheet,
+  CheckCircle2, FileSpreadsheet, Paperclip,
   DollarSign, Calendar as CalendarIcon, Banknote, Trash2, Users
 } from 'lucide-react';
 import MultiSelect from '@/components/shared/MultiSelect';
@@ -41,6 +41,7 @@ interface Customer {
   lastSellDate?: string; // YYYY-MM-DD for filtering logic
   contactCategory?: 'Individual' | 'Business';
   customValues?: Record<string, string>;
+  rebatePercent?: number;
 }
 
 interface DropdownPosition {
@@ -168,6 +169,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
+  const [payRebateEnabled, setPayRebateEnabled] = useState(false);
   const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
 
   // Confirmation Modal State
@@ -488,6 +490,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       lastSellDate: formData.lastSellDate || today,
       customValues: formData.customValues || {},
       contactCategory: formData.contactCategory || 'Business',
+      rebatePercent: formData.rebatePercent ?? undefined,
     };
 
     if (isEdit) {
@@ -509,6 +512,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     setPaymentMethod(defaultMethod);
     setPaymentAccount(resolveDefaultAccountFromMethod(defaultMethod));
     setPaymentNote('');
+    setPayRebateEnabled(Number(customer.rebatePercent || 0) > 0);
     setIsPaymentModalOpen(true);
     setActiveActionId(null);
   };
@@ -523,6 +527,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     setPaymentNote('');
     setPaymentAccount(resolveDefaultAccountFromMethod(defaultMethod));
     setPayFileName('');
+    setPayRebateEnabled(false);
   };
 
   const processPayment = () => {
@@ -578,6 +583,10 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
 
     // GlobalContext addPayment handles: FIFO invoice distribution,
     // customer balance update, and localStorage persistence automatically
+    const payRebatePercent = Number(paymentCustomer.rebatePercent || 0);
+    const payRebateAmount = (payRebateEnabled && payRebatePercent > 0)
+      ? Number((roundedAmount * payRebatePercent / 100).toFixed(currencyPrecision))
+      : 0;
     globalAddPayment({
       id: `PAY-${Date.now()}`,
       date: dateValue,
@@ -594,6 +603,9 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       addedBy: currentUser?.name || 'Admin',
       attachmentName: payFileName || undefined,
       linkedInvoices: uniqueLinkedInvoices,
+      rebatePercent: payRebateEnabled && payRebatePercent > 0 ? payRebatePercent : undefined,
+      rebateAmount: payRebateEnabled && payRebateAmount > 0 ? payRebateAmount : undefined,
+      rebateApplied: payRebateEnabled && payRebateAmount > 0,
     });
 
     closePaymentModal();
@@ -1414,10 +1426,25 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Rebate %</label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        min="0" max="100" step="0.01"
+                                        placeholder="0.00"
+                                        className="w-full px-4 pr-10 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium"
+                                        value={formData.rebatePercent ?? ''}
+                                        onChange={(e) => handleInputChange('rebatePercent', e.target.value === '' ? undefined : Math.min(100, Math.max(0, Number(e.target.value))))}
+                                    />
+                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-xs">%</span>
+                                </div>
+                            </div>
+
+                            <div className="group">
                                 <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Address</label>
-                                <textarea 
-                                    placeholder="Street, City, Building..." 
-                                    rows={3} 
+                                <textarea
+                                    placeholder="Street, City, Building..."
+                                    rows={3}
                                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium resize-none"
                                     value={formData.address || ''}
                                     onChange={(e) => handleInputChange('address', e.target.value)}
@@ -1695,161 +1722,155 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
 
       {/* Add Payment Modal */}
       {isPaymentModalOpen && paymentCustomer && (
-            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
-                    {/* Header */}
-                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
-                        <h3 className="text-xl font-bold text-slate-800">Add payment</h3>
-                        <button onClick={closePaymentModal} className="text-slate-400 hover:text-slate-600 transition-colors">
-                            <X size={24} />
-                        </button>
-                    </div>
-                    
-                    {/* Content */}
-                    <div className="p-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            {/* Customer Info */}
-                            <div className="bg-slate-50 p-4 rounded border border-slate-200">
-                                <p className="text-sm font-bold text-slate-700">
-                                    Customer name: <span className="font-normal text-slate-600">{paymentCustomer.businessName} ({paymentCustomer.name})</span>
-                                </p>
-                            </div>
-                            
-                            {/* Financial Summary */}
-                            <div className="bg-slate-50 p-4 rounded border border-slate-200 text-sm space-y-1">
-                                <div className="flex justify-between">
-                                    <span className="font-bold text-slate-700">Total Sale Due:</span>
-                                    <span className="font-medium text-slate-600">{formatCurrency(paymentCustomer.totalSellDue)}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                    <span className="font-bold text-slate-700">Opening Balance:</span>
-                                    <span className="font-medium text-slate-600">{formatCurrency(paymentCustomer.openingBalance)}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                            <div className="group">
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Payment Method:*</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                                        <Banknote size={16} />
-                                    </div>
-                                    <select
-                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm appearance-none bg-white"
-                                        value={paymentMethod}
-                                        onChange={(e) => setPaymentMethod(e.target.value)}
-                                    >
-                                        {paymentMethodOptions.map(method => (
-                                            <option key={method} value={method}>{method}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
-                            </div>
-
-                            <div className="group">
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Paid on:*</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                                        <CalendarIcon size={16} />
-                                    </div>
-                                    <input
-                                        type="datetime-local"
-                                        value={paymentDate}
-                                        onChange={(e) => setPaymentDate(e.target.value)}
-                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="group">
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Amount:*</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                                        <DollarSign size={16} />
-                                    </div>
-                                    <input 
-                                        type="number" 
-                                        value={paymentAmount}
-                                        onChange={(e) => setPaymentAmount(e.target.value)}
-                                        onBlur={(e) => {
-                                          const parsed = parseFloat(e.target.value || '0');
-                                          if (!isNaN(parsed) && parsed > 0) {
-                                            setPaymentAmount(parsed.toFixed(currencyPrecision));
-                                          }
-                                        }}
-                                        step={amountStep}
-                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" 
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                            <div className="group">
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Attach Document:</label>
-                                <div>
-                                    <div className="flex items-center">
-                                        <label className="cursor-pointer bg-slate-100 border border-slate-300 text-slate-700 px-3 py-2 rounded-l text-sm hover:bg-slate-200 transition-colors whitespace-nowrap">
-                                            Choose File
-                                            <input type="file" accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png" className="hidden" onChange={(e) => setPayFileName(e.target.files?.[0]?.name || '')} />
-                                        </label>
-                                        <span className="px-3 py-2 border border-l-0 border-slate-300 rounded-r w-full text-sm text-slate-500 bg-white truncate">{payFileName || 'No file chosen'}</span>
-                                    </div>
-                                    <p className="text-[10px] text-slate-500 mt-1">Allowed File: .pdf, .csv, .zip, .doc, .docx, .jpeg, .jpg, .png</p>
-                                </div>
-                            </div>
-
-                            <div className="group">
-                                <label className="block text-sm font-bold text-slate-800 mb-1">Payment Account:</label>
-                                <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-500">
-                                        <Banknote size={16} />
-                                    </div>
-                                    <select
-                                        className="w-full pl-10 pr-3 py-2 border border-slate-300 rounded text-sm appearance-none bg-slate-100 cursor-not-allowed"
-                                        value={paymentAccount}
-                                        onChange={(e) => setPaymentAccount(e.target.value)}
-                                        disabled
-                                    >
-                                        {paymentAccountOptions.map(account => (
-                                            <option key={account} value={account}>{account}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="group mb-6">
-                            <label className="block text-sm font-bold text-slate-800 mb-1">Payment Note:</label>
-                            <textarea
-                                className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 h-24 resize-none"
-                                value={paymentNote}
-                                onChange={(e) => setPaymentNote(e.target.value)}
-                            ></textarea>
-                        </div>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
-                        <button 
-                            onClick={processPayment}
-                            className="px-6 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-blue-700 transition-colors"
-                        >
-                            Save
-                        </button>
-                        <button 
-                            onClick={closePaymentModal}
-                            className="px-6 py-2 bg-slate-800 text-white rounded font-bold text-sm hover:bg-slate-900 transition-colors"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-teal-500" />
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-4">
+              <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                <CreditCard size={20} className="text-emerald-600" />
+                Add Payment
+              </h3>
+              <button onClick={closePaymentModal} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+                <X size={18} />
+              </button>
             </div>
-        )}
+
+            <div className="px-6 pb-6 space-y-5 max-h-[75vh] overflow-y-auto">
+              {/* Info cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Customer</p>
+                  <p className="text-sm font-bold text-slate-800 truncate">{paymentCustomer.businessName}</p>
+                  <p className="text-xs text-slate-500 truncate">{paymentCustomer.name}</p>
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Sale Due</p>
+                  <p className="text-sm font-black text-rose-600">{formatCurrency(paymentCustomer.totalSellDue)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Opening Balance</p>
+                  <p className="text-sm font-bold text-slate-800">{formatCurrency(paymentCustomer.openingBalance)}</p>
+                </div>
+              </div>
+
+              {/* Form fields */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Method *</label>
+                  <div className="relative">
+                    <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <select
+                      className="w-full pl-9 pr-8 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                    >
+                      {paymentMethodOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Paid On *</label>
+                  <div className="relative">
+                    <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="datetime-local"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Amount *</label>
+                  <div className="relative">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="number"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      onBlur={(e) => {
+                        const parsed = parseFloat(e.target.value || '0');
+                        if (!isNaN(parsed) && parsed > 0) setPaymentAmount(parsed.toFixed(currencyPrecision));
+                      }}
+                      step={amountStep}
+                      className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-bold text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Rebate panel */}
+              {Number(paymentCustomer?.rebatePercent || 0) > 0 && (
+                <div className="flex items-center justify-between p-4 rounded-2xl bg-amber-50 border border-amber-200">
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">
+                      {paymentCustomer?.rebatePercent}% Rebate — write-off: {formatCurrency(payRebateEnabled && Number(paymentCustomer?.rebatePercent || 0) > 0 ? Number((Math.max(0, parseFloat(paymentAmount || '0')) * Number(paymentCustomer?.rebatePercent || 0) / 100).toFixed(currencyPrecision)) : 0)}
+                    </p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {payRebateEnabled
+                        ? `Company nets: ${formatCurrency(Math.max(0, Math.max(0, parseFloat(paymentAmount || '0')) - Number((Math.max(0, parseFloat(paymentAmount || '0')) * Number(paymentCustomer?.rebatePercent || 0) / 100).toFixed(currencyPrecision))))}`
+                        : 'Rebate disabled for this payment'}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setPayRebateEnabled(v => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${payRebateEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${payRebateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Account</label>
+                  <div className="relative">
+                    <Banknote className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <select
+                      className="w-full pl-9 pr-8 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
+                      value={paymentAccount}
+                      onChange={(e) => setPaymentAccount(e.target.value)}
+                    >
+                      {paymentAccountOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Attach Document</label>
+                  <label className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border-2 border-dashed border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer transition-all">
+                    <Paperclip size={16} className="text-slate-400 shrink-0" />
+                    <span className="text-sm text-slate-500 truncate">{payFileName || 'Choose file…'}</span>
+                    <input type="file" accept=".pdf,.csv,.zip,.doc,.docx,.jpeg,.jpg,.png" className="hidden" onChange={(e) => setPayFileName(e.target.files?.[0]?.name || '')} />
+                  </label>
+                  <p className="text-[10px] text-slate-400 mt-1">pdf, csv, zip, doc, jpeg, jpg, png</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Payment Note</label>
+                <textarea
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 resize-none"
+                  value={paymentNote}
+                  onChange={(e) => setPaymentNote(e.target.value)}
+                  placeholder="Optional note…"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50/50">
+              <button onClick={closePaymentModal} className="px-5 py-2.5 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition">
+                Cancel
+              </button>
+              <button onClick={processPayment} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95">
+                <CreditCard size={16} /> Save Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

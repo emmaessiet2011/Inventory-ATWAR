@@ -267,14 +267,14 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-16 print:p-0">
       <div>
         <h2 className="text-3xl font-black text-slate-900 tracking-tight">Purchases</h2>
       </div>
 
-      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-5">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
-        <div className="text-[#0ea5e9] text-sm font-bold mb-3 flex items-center gap-2"><Filter size={16} /> Filters</div>
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-5 relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600 rounded-t-[2rem]"></div>
+        <div className="text-slate-600 text-sm font-bold mb-3 flex items-center gap-2 pt-1"><Filter size={16} /> Filters</div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <div>
             <label className="block text-[11px] font-bold text-slate-600 mb-1">Business Location:</label>
@@ -397,8 +397,8 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
                   {visibleCols.referenceNo && <td className="px-4 py-3 font-bold text-slate-900">{item.refNo}</td>}
                   {visibleCols.location && <td className="px-4 py-3">{item.location}</td>}
                   {visibleCols.supplier && <td className="px-4 py-3">{item.supplier}</td>}
-                  {visibleCols.purchaseStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${statusBadge(item.status)}`}>{item.status}</span></td>}
-                  {visibleCols.paymentStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${paymentBadge(item.paymentStatus)}`}>{item.paymentStatus}</span></td>}
+                  {visibleCols.purchaseStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${statusBadge(item.status)}`}>{item.status}</span></td>}
+                  {visibleCols.paymentStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${paymentBadge(item.paymentStatus)}`}>{item.paymentStatus}</span></td>}
                   {visibleCols.grandTotal && <td className="px-4 py-3 text-right font-bold">{formatCurrency(item.grandTotal)}</td>}
                   {visibleCols.paymentDue && <td className="px-4 py-3 text-right font-bold">{formatCurrency(item.paymentDue)}</td>}
                   {visibleCols.addedBy && <td className="px-4 py-3">{item.addedBy}</td>}
@@ -427,8 +427,8 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
             {' '}of {filteredPurchases.length} entries
           </div>
           <div className="flex gap-2">
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded disabled:opacity-50" disabled={page <= 1} onClick={() => setPage(prev => Math.max(1, prev - 1))}>Previous</button>
-            <button className="px-4 py-2 bg-white border border-slate-200 rounded disabled:opacity-50" disabled={page >= totalPages} onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
+            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg disabled:opacity-50 hover:bg-slate-50" disabled={page <= 1} onClick={() => setPage(prev => Math.max(1, prev - 1))}>Previous</button>
+            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg disabled:opacity-50 hover:bg-slate-50" disabled={page >= totalPages} onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
           </div>
         </div>
       </div>

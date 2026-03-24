@@ -69,10 +69,13 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
 
   const invoicePayments = useMemo(() => {
     if (!sale?.invoiceNo) return [];
-    const invoiceNoLower = sale.invoiceNo.toLowerCase();
+    const invoiceNoLower = sale.invoiceNo.trim().toLowerCase();
     return payments
       .filter(p => {
-        const linked = (p.linkedInvoices || []).some(inv => inv === sale.invoiceNo);
+        // Case-insensitive + whitespace-safe match on linkedInvoices
+        const linked = (p.linkedInvoices || []).some(
+          inv => String(inv || '').trim().toLowerCase() === invoiceNoLower
+        );
         const refHit = (p.referenceNo || '').toLowerCase().includes(invoiceNoLower);
         const noteHit = (p.note || '').toLowerCase().includes(invoiceNoLower);
         return linked || refHit || noteHit;
@@ -121,7 +124,9 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   const grandTotal = Number(sale?.grandTotal || sale?.totalAmount || payableBeforeRound || 0);
   const roundOff = grandTotal - payableBeforeRound;
   const paidFromPayments = invoicePayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-  const totalPaid = invoicePayments.length > 0 ? paidFromPayments : Number(sale?.totalPaid || 0);
+  // Use whichever is larger: sum of linked payment records OR the sale's own totalPaid field.
+  // This prevents $0 display when sale.totalPaid was updated by FIFO but linkedInvoices lookup missed.
+  const totalPaid = Math.max(paidFromPayments, Number(sale?.totalPaid || 0));
   const totalRemaining = typeof sale?.sellDue === 'number'
     ? Math.max(0, sale.sellDue)
     : Math.max(0, grandTotal - totalPaid);
@@ -129,6 +134,14 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   const returnTotal = saleReturnRecords.reduce((sum, record) => sum + Number(record.total || 0), 0);
   const returnDue = Math.max(0, Number(sale?.sellReturnDue || 0));
   const netDue = Math.max(0, Number((totalRemaining - returnDue).toFixed(3)));
+  const payStatus = String(sale?.paymentStatus || '').trim().toLowerCase();
+  const isPaid = payStatus === 'paid' || (totalPaid >= grandTotal && grandTotal > 0);
+  const isPartiallyPaid = (payStatus === 'partial' || totalPaid > 0) && !isPaid;
+  // Collect all payment methods: from sale field, from linked payments, deduplicated
+  const invoicePaymentMethod = [
+    sale?.paymentMethod,
+    ...invoicePayments.map(p => p.method),
+  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ').trim();
   const businessName = String(locationRecord?.name || settings.businessName || '--').trim() || '--';
   const businessAddressLine = (() => {
     const configuredAddress = String(settings.businessAddress || '').trim();
@@ -521,12 +534,16 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                       <span>{sale.invoiceNo || '--'}</span>
                       <span className="font-semibold">Date</span>
                       <span>{formatDateTimeDisplay(sale.date)}</span>
+                      <span className="font-semibold">Status</span>
+                      <span className={`font-bold ${isPaid ? 'text-emerald-700' : isPartiallyPaid ? 'text-amber-600' : 'text-red-700'}`}>
+                        {isPaid ? '✓ PAID' : isPartiallyPaid ? 'PARTIAL' : 'UNPAID'}
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-3 grid grid-cols-[72px_1fr] gap-y-0.5 gap-x-2">
+              <div className="mt-3 grid grid-cols-[82px_1fr] gap-y-0.5 gap-x-2">
                 <span className="font-semibold">Customer</span>
                 <span>{customerName}</span>
                 <span className="font-semibold">VATIN</span>
@@ -575,21 +592,42 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                 </table>
               </div>
 
-              <div className="mt-3 ml-auto w-full max-w-[96mm] border border-slate-400">
-                {[
-                  { label: 'Due', value: formatCurrency(totalRemaining) },
-                  { label: 'Subtotal', value: formatCurrency(netSubtotal) },
-                  { label: vatSummaryLabel, value: formatCurrency(taxValue) },
-                  { label: 'Total', value: formatCurrency(grandTotal), bold: true },
-                ].map((row: any) => (
-                  <div
-                    key={row.label}
-                    className={`grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1 last:border-b-0 ${row.bold ? 'font-bold' : ''}`}
-                  >
-                    <span>{row.label}</span>
-                    <span>{row.value}</span>
+              <div className="mt-3 flex items-start gap-3">
+                {(isPaid || isPartiallyPaid) && (
+                  <div className="flex-1 border border-slate-400 px-2 py-1 self-end">
+                    <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">Payment</div>
+                    <div className="grid grid-cols-[80px_1fr] gap-y-0.5 gap-x-2">
+                      <span className="font-semibold">Amount Paid</span>
+                      <span className="font-bold text-emerald-700">
+                        {formatCurrency(totalPaid > 0 ? totalPaid : grandTotal)}
+                      </span>
+                      <span className="font-semibold">Pay Method</span>
+                      <span>{invoicePaymentMethod || '--'}</span>
+                    </div>
                   </div>
-                ))}
+                )}
+                <div className="flex-shrink-0 w-full max-w-[96mm] border border-slate-400 ml-auto">
+                  <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1">
+                    <span>Subtotal</span><span>{formatCurrency(netSubtotal)}</span>
+                  </div>
+                  {taxValue > 0 && (
+                    <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1">
+                      <span>{vatSummaryLabel}</span><span>{formatCurrency(taxValue)}</span>
+                    </div>
+                  )}
+                  {shippingValue > 0 && (
+                    <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1">
+                      <span>Shipping (+)</span><span>{formatCurrency(shippingValue)}</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1 font-bold">
+                    <span>Total</span><span>{formatCurrency(grandTotal)}</span>
+                  </div>
+                  <div className={`grid grid-cols-[1fr_auto] px-2 py-1.5 font-bold ${!isPaid ? 'bg-amber-50' : ''}`}>
+                    <span className={!isPaid ? 'text-amber-800' : ''}>Amount Due</span>
+                    <span className={!isPaid ? 'text-amber-800' : ''}>{formatCurrency(isPaid ? 0 : totalRemaining)}</span>
+                  </div>
+                </div>
               </div>
 
               {customerRecord && (

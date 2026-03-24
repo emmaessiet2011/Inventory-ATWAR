@@ -65,19 +65,26 @@ const ViewSellReturnDetails: React.FC<ViewSellReturnDetailsProps> = ({
     if (!sellReturn) return;
     printDocument({
       title: `Sell Return - ${sellReturn.referenceNo || '--'}`,
-      subtitle: `Customer: ${sellReturn.customerName || '--'} | Parent Sale: ${sellReturn.parentInvoiceNo || '--'}`,
+      subtitle: [
+        `Customer: ${sellReturn.customerName || '--'}`,
+        `Parent Sale: ${sellReturn.parentInvoiceNo || '--'}`,
+        `Settlement: ${settlementLabel}`,
+        sellReturn.note ? `Note: ${sellReturn.note}` : null,
+      ].filter(Boolean).join('  |  '),
       businessName: settings.businessName || 'ATWAR AL MUSTAQBAL',
       businessAddress: settings.businessAddress || settings.address || '',
       printedBy: sellReturn.addedBy || 'System',
       columns: [
         { label: 'Product' },
-        { label: 'Qty', width: '80px', align: 'right' },
+        { label: 'Sold Qty', width: '70px', align: 'right' },
+        { label: 'Return Qty', width: '80px', align: 'right' },
         { label: 'Unit Price', width: '95px', align: 'right' },
         { label: 'Line Total', width: '95px', align: 'right' },
       ],
       rows: (sellReturn.items || []).map(item => [
         item.productName || '--',
-        Number(item.qty || 0).toFixed(3),
+        `${Number(item.soldQty || 0).toFixed(3)} ${item.unit || ''}`.trim(),
+        `${Number(item.qty || 0).toFixed(3)} ${item.unit || ''}`.trim(),
         formatCurrency(Number(item.unitPrice || 0)),
         formatCurrency(Number(item.lineTotal || 0)),
       ]),

@@ -870,12 +870,13 @@ const AppContent: React.FC = () => {
       case 'help-center':
         if (!canAccessHelpCenter) return renderAccessDenied('Help Center');
         return <HelpCenter onNavigate={setCurrentPage} />;
-      case 'public-view-invoice': 
+      case 'public-view-invoice':
         return (
-          <ViewOrder 
-            onClose={handleClosePublicInvoice} 
-            saleId={publicInvoiceId && !publicInvoiceId.startsWith('INV-') ? publicInvoiceId : undefined}
-            invoiceNo={publicInvoiceId && publicInvoiceId.startsWith('INV-') ? publicInvoiceId : undefined}
+          <ViewSaleDetails
+            isOpen={true}
+            pageMode={true}
+            saleId={publicInvoiceId || undefined}
+            onClose={handleClosePublicInvoice}
           />
         );
       default:

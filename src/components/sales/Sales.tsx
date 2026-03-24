@@ -793,12 +793,12 @@ const Sales: React.FC<SalesProps> = ({
   }), { amount: 0, paid: 0, due: 0, returnDue: 0 });
 
   return (
-    <div className="space-y-8 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-16 print:p-0">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">{title || (statusFilter === 'Draft' ? 'Drafts' : statusFilter === 'Quotation' ? 'Quotations' : 'Sales')}</h2>
-          <p className="text-slate-500 mt-2 text-lg font-light">
+          <p className="text-slate-500 mt-0.5 text-sm">
             {statusFilter === 'Quotation'
               ? 'Manage quotation and proforma documents.'
               : statusFilter === 'Draft'
@@ -817,12 +817,13 @@ const Sales: React.FC<SalesProps> = ({
       </div>
 
       {/* Filter Section */}
-      <div className="relative z-30 bg-white rounded-xl border border-slate-200 shadow-sm overflow-visible">
-          <div 
-            className="flex items-center gap-2 p-4 cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-100"
+      <div className="relative z-30 bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-visible print:hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600 rounded-t-[2rem]" />
+          <div
+            className="flex items-center gap-2 p-4 pt-5 cursor-pointer hover:bg-slate-50/70 transition-colors border-b border-slate-100 rounded-t-[2rem]"
             onClick={() => setShowFilters(!showFilters)}
           >
-              <Filter size={16} className="text-blue-600" />
+              <Filter size={16} className="text-slate-600" />
               <span className="text-sm font-bold text-slate-700">Filters</span>
               <ChevronDown size={14} className={`text-slate-400 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </div>
@@ -1037,7 +1038,7 @@ const Sales: React.FC<SalesProps> = ({
                       <td style={getColumnStyle('contactNumber')} className="px-4 py-3 text-slate-500 font-medium whitespace-nowrap">{sale.contactNumber}</td>
                       <td style={getColumnStyle('location')} className="px-4 py-3 text-slate-500 whitespace-nowrap text-[10px]">{sale.location}</td>
                       <td style={getColumnStyle('status')} className="px-4 py-3 text-center">
-                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border ${
+                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
                                saleStatusLabel(sale) === 'Final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                saleStatusLabel(sale) === 'Suspend' ? 'bg-rose-50 text-rose-700 border-rose-200' :
                                saleStatusLabel(sale) === 'Draft' ? 'bg-amber-50 text-amber-700 border-amber-200' :
@@ -1050,11 +1051,11 @@ const Sales: React.FC<SalesProps> = ({
                       </td>
                       <td style={getColumnStyle('paymentStatus')} className="px-4 py-3 text-center">
                            {getDisplayPaymentStatus(sale) === 'N/A' ? (
-                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border bg-slate-100 text-slate-500 border-slate-200">
+                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
                                N/A
                              </span>
                            ) : (
-                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border ${
+                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
                                sale.paymentStatus === 'Paid' ? 'bg-emerald-500 text-white border-emerald-400' : 
                                sale.paymentStatus === 'Partial' ? 'bg-sky-500 text-white border-sky-400' :
                                'bg-amber-500 text-white border-amber-400'
@@ -1064,7 +1065,7 @@ const Sales: React.FC<SalesProps> = ({
                            )}
                       </td>
                       <td style={getColumnStyle('saleType')} className="px-4 py-3 text-center">
-                           <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shadow-sm border bg-indigo-50 text-indigo-700 border-indigo-200">
+                           <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
                                {sale.saleType || ((sale.paymentStatus === 'Due' && (sale.totalPaid || 0) === 0) ? 'Credit Sale' : 'Paid')}
                            </span>
                       </td>
@@ -1101,13 +1102,32 @@ const Sales: React.FC<SalesProps> = ({
                   </tr>
               )}
             </tbody>
-            {/* Footer Totals */}
-            <tfoot className="bg-slate-200 font-bold text-slate-800 text-[11px] uppercase border-t border-slate-300 sticky bottom-0 z-20 shadow-inner">
-                <tr>
-                    <td colSpan={visibleColumnCount} className="px-4 py-4 text-right bg-slate-300/50">
-                      Total: {formatCurrency(totals.amount)} | Paid: {formatCurrency(totals.paid)} | Due: {formatCurrency(totals.due)} | Return Due: {formatCurrency(totals.returnDue)}
-                    </td>
-                </tr>
+            {/* Footer Totals — each value sits directly under its column */}
+            <tfoot className="bg-slate-100 font-bold text-slate-800 text-[11px] border-t-2 border-slate-300 sticky bottom-0 z-20 shadow-inner">
+              <tr>
+                <td style={getColumnStyle('action')}          className="px-4 py-3" />
+                <td style={getColumnStyle('date')}            className="px-4 py-3" />
+                <td style={getColumnStyle('invoiceNo')}       className="px-4 py-3" />
+                <td style={getColumnStyle('customerName')}    className="px-4 py-3 text-slate-500 uppercase tracking-wide">Totals</td>
+                <td style={getColumnStyle('contactNumber')}   className="px-4 py-3" />
+                <td style={getColumnStyle('location')}        className="px-4 py-3" />
+                <td style={getColumnStyle('status')}          className="px-4 py-3" />
+                <td style={getColumnStyle('paymentStatus')}   className="px-4 py-3" />
+                <td style={getColumnStyle('saleType')}        className="px-4 py-3" />
+                <td style={getColumnStyle('commissionAgent')} className="px-4 py-3" />
+                <td style={getColumnStyle('commission')}      className="px-4 py-3" />
+                <td style={getColumnStyle('paymentMethod')}   className="px-4 py-3" />
+                <td style={getColumnStyle('totalAmount')}     className="px-4 py-3 text-right text-slate-900">{formatCurrency(totals.amount)}</td>
+                <td style={getColumnStyle('totalPaid')}       className="px-4 py-3 text-right text-emerald-700">{formatCurrency(totals.paid)}</td>
+                <td style={getColumnStyle('sellDue')}         className="px-4 py-3 text-right text-amber-700">{formatCurrency(totals.due)}</td>
+                <td style={getColumnStyle('sellReturnDue')}   className="px-4 py-3 text-right text-rose-700">{formatCurrency(totals.returnDue)}</td>
+                <td style={getColumnStyle('shippingStatus')}  className="px-4 py-3" />
+                <td style={getColumnStyle('totalItems')}      className="px-4 py-3" />
+                <td style={getColumnStyle('addedBy')}         className="px-4 py-3" />
+                <td style={getColumnStyle('sellNote')}        className="px-4 py-3" />
+                <td style={getColumnStyle('staffNote')}       className="px-4 py-3" />
+                <td style={getColumnStyle('shippingDetails')} className="px-4 py-3" />
+              </tr>
             </tfoot>
           </table>
         </div>
@@ -1121,21 +1141,21 @@ const Sales: React.FC<SalesProps> = ({
             </div>
             <div className="flex gap-1">
                  <button
-                   className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                   className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
                    disabled={safeCurrentPage <= 1}
                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                  >
                    Previous
                  </button>
                  {paginationItems.map((item, index) => item === '...'
-                   ? <span key={`page-ellipsis-${index}`} className="px-2 py-1.5 text-slate-400">...</span>
+                   ? <span key={`page-ellipsis-${index}`} className="px-2 py-2 text-slate-400">...</span>
                    : (
                      <button
                        key={item}
                        onClick={() => setCurrentPage(item)}
-                       className={`px-3 py-1.5 rounded shadow-sm transition ${
+                       className={`px-4 py-2 rounded-lg shadow-sm transition ${
                          item === safeCurrentPage
-                           ? 'bg-blue-600 text-white shadow-md shadow-blue-900/10'
+                           ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
                            : 'bg-white border border-slate-200 hover:bg-slate-50 hover:text-slate-700'
                        }`}
                      >
@@ -1143,7 +1163,7 @@ const Sales: React.FC<SalesProps> = ({
                      </button>
                    ))}
                  <button
-                   className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
+                   className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
                    disabled={safeCurrentPage >= totalPages}
                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                  >

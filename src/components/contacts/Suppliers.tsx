@@ -707,7 +707,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   })();
 
   return (
-    <div className="space-y-6 animate-fade-in relative pb-10">
+    <div className="space-y-6 animate-fade-in relative pb-16">
       
       {/* 1. Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">

@@ -47,6 +47,9 @@ interface FieldPaymentRecord {
   postedPaymentId?: string;
   approvedBy?: string;
   approvedAt?: string;
+  rebatePercent?: number;
+  rebateAmount?: number;
+  rebateApplied?: boolean;
 }
 
 const STORAGE_KEY = 'app_field_payments';
@@ -161,6 +164,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
   const [noteInput, setNoteInput] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
+  const [rebateEnabled, setRebateEnabled] = useState(false);
 
   const persistRecords = (next: FieldPaymentRecord[]) => {
     const sorted = sortByDateDesc(next);
@@ -282,6 +286,8 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     });
   }, [payments]);
 
+  const customerRebatePercent = Number(selectedCustomer?.rebatePercent || 0);
+
   const filteredCustomers = useMemo(() => {
     const query = normalizeText(customerQuery);
     return customers.filter(customer => {
@@ -326,6 +332,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     setAccountInput(defaultAccountFromMethod(settings.defaultSalePaymentMethod || paymentMethodOptions[0] || 'Cash') || paymentAccountOptions[0] || '');
     setNoteInput('');
     setAttachmentName('');
+    setRebateEnabled(false);
     setShowCustomerDropdown(false);
   };
 
@@ -359,6 +366,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     setAccountInput(record.account || '');
     setNoteInput(record.note || '');
     setAttachmentName(record.attachmentName || '');
+    setRebateEnabled(record.rebateApplied === true || Number(customer?.rebatePercent || 0) > 0);
     setIsModalOpen(true);
   };
 
@@ -439,6 +447,9 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
 
     const breakdown = resolveInvoiceBreakdown(selectedCustomer, paymentAmount, locationInput);
     const linkedInvoices = breakdown.map(b => b.invoiceNo);
+    const rebateAmt = (rebateEnabled && customerRebatePercent > 0)
+      ? Number((paymentAmount * customerRebatePercent / 100).toFixed(3))
+      : 0;
 
     if (editingId) {
       const current = records.find(record => record.id === editingId);
@@ -457,6 +468,9 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
             attachmentName: attachmentName || undefined,
             linkedInvoices,
             linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
+            rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
+            rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
+            rebateApplied: rebateEnabled && rebateAmt > 0,
           }
         : record));
       addNotification({ title: 'Field Payment Updated', message: `${current.referenceNo} was updated.`, type: 'success' });
@@ -482,6 +496,9 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       attachmentName: attachmentName || undefined,
       linkedInvoices,
       linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
+      rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
+      rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
+      rebateApplied: rebateEnabled && rebateAmt > 0,
     };
     persistRecords([newRecord, ...records]);
     addNotification({ title: 'Field Payment Added', message: `${referenceNo} created and pending approval.`, type: 'success' });
@@ -521,6 +538,9 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         addedBy: currentUser?.name || 'Admin',
         linkedInvoices: record.linkedInvoices || [],
         attachmentName: record.attachmentName,
+        rebatePercent: record.rebatePercent,
+        rebateAmount: record.rebateAmount,
+        rebateApplied: record.rebateApplied,
       });
     }
 
@@ -700,6 +720,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                           setSelectedCustomer(customer);
                           setCustomerQuery(customer.businessName || customer.name);
                           setShowCustomerDropdown(false);
+                          setRebateEnabled(Number(customer?.rebatePercent || 0) > 0);
                         }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
                       >
@@ -749,6 +770,25 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                   </select>
                 </div>
               </div>
+
+              {customerRebatePercent > 0 && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50 border border-amber-200">
+                  <div>
+                    <p className="text-xs font-bold text-amber-800">
+                      {customerRebatePercent}% Rebate — write-off: {formatCurrency(rebateEnabled && customerRebatePercent > 0 ? Number(((Math.max(0, Number(amountInput) || 0)) * customerRebatePercent / 100).toFixed(3)) : 0)}
+                    </p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      {rebateEnabled
+                        ? `Company nets: ${formatCurrency(Math.max(0, (Math.max(0, Number(amountInput) || 0)) - Number(((Math.max(0, Number(amountInput) || 0)) * customerRebatePercent / 100).toFixed(3))))}`
+                        : 'Rebate disabled for this payment'}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setRebateEnabled(v => !v)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${rebateEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${rebateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>

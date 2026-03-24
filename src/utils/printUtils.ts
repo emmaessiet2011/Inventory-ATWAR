@@ -27,6 +27,7 @@ export interface PrintConfig {
   totalRow?: string[];
   businessName: string;
   businessAddress?: string;
+  businessLogo?: string;
   printedBy?: string;
 }
 
@@ -78,6 +79,17 @@ export function statusBadge(status: string): string {
   return badge(status, 'slate');
 }
 
+function resolveLogoFromStorage(): string {
+  try {
+    const raw = localStorage.getItem('app_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return (parsed.businessLogo as string) || '';
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
 export function printDocument(config: PrintConfig): void {
   const w = window.open('', '_blank', 'width=960,height=720');
   if (!w) return;
@@ -86,6 +98,8 @@ export function printDocument(config: PrintConfig): void {
     title, subtitle, columns, rows, stats, totalRow,
     businessName, businessAddress, printedBy,
   } = config;
+
+  const businessLogo = config.businessLogo ?? resolveLogoFromStorage();
 
   const colWidthAttrs = columns
     .map(col => (col.width ? `<col style="width:${esc(col.width)}">` : '<col>'))
@@ -177,7 +191,9 @@ tbody tr:nth-child(even) td{background:#f8fafc}
 <body>
 <div class="header">
   <div class="biz-wrap">
-    <div class="biz-logo">A</div>
+    ${businessLogo
+      ? `<img src="${businessLogo}" style="width:40px;height:40px;object-fit:contain;border-radius:8px;flex-shrink:0" alt="logo">`
+      : `<div class="biz-logo">${esc((businessName || 'B').trim().charAt(0).toUpperCase())}</div>`}
     <div>
       <div class="biz-name">${esc(businessName)}</div>
       ${businessAddress ? `<div class="biz-sub">${esc(businessAddress)}</div>` : ''}
@@ -383,6 +399,7 @@ export interface ShippingDocConfig {
   items: ShippingDocItem[];
   businessName: string;
   businessAddress?: string;
+  businessLogo?: string;
   printedBy?: string;
 }
 
@@ -390,6 +407,7 @@ export function printShippingDocument(cfg: ShippingDocConfig): void {
   const w = window.open('', '_blank', 'width=860,height=700');
   if (!w) return;
 
+  const businessLogo = cfg.businessLogo ?? resolveLogoFromStorage();
   const logo = esc((cfg.businessName || 'B').trim().charAt(0).toUpperCase());
   const isDelivery = cfg.documentType === 'Delivery Note';
 
@@ -451,7 +469,9 @@ tbody tr:nth-child(even) td{background:#f8fafc}
 <body>
 <div class="header">
   <div class="biz-wrap">
-    <div class="biz-logo">${logo}</div>
+    ${businessLogo
+      ? `<img src="${businessLogo}" style="width:44px;height:44px;object-fit:contain;border-radius:8px;flex-shrink:0" alt="logo">`
+      : `<div class="biz-logo">${logo}</div>`}
     <div>
       <div class="biz-name">${esc(cfg.businessName)}</div>
       ${cfg.businessAddress ? `<div class="biz-sub">${esc(cfg.businessAddress)}</div>` : ''}
@@ -548,6 +568,7 @@ export interface CreditNoteConfig {
   note?: string;
   businessName: string;
   businessAddress?: string;
+  businessLogo?: string;
   printedBy?: string;
   /** Pre-formatted currency function result strings */
   fmtSubTotal: string;
@@ -564,6 +585,7 @@ export function printCreditNote(cfg: CreditNoteConfig): void {
   const w = window.open('', '_blank', 'width=860,height=700');
   if (!w) return;
 
+  const businessLogo = cfg.businessLogo ?? resolveLogoFromStorage();
   const logo = esc((cfg.businessName || 'B').trim().charAt(0).toUpperCase());
 
   const itemRows = cfg.items.length > 0
@@ -630,7 +652,9 @@ tbody tr:nth-child(even) td{background:#f8fafc}
 <body>
 <div class="header">
   <div class="biz-wrap">
-    <div class="biz-logo">${logo}</div>
+    ${businessLogo
+      ? `<img src="${businessLogo}" style="width:44px;height:44px;object-fit:contain;border-radius:8px;flex-shrink:0" alt="logo">`
+      : `<div class="biz-logo">${logo}</div>`}
     <div>
       <div class="biz-name">${esc(cfg.businessName)}</div>
       ${cfg.businessAddress ? `<div class="biz-sub">${esc(cfg.businessAddress)}</div>` : ''}

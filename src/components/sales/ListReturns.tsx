@@ -433,7 +433,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-16 print:p-0">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
           <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
@@ -449,7 +449,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
       <div className="rounded-[2rem] border border-slate-200 shadow-sm bg-white relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 to-red-600"></div>
         <div className="p-5">
-          <div className="flex items-center gap-2 cursor-pointer text-blue-600 mb-4" onClick={() => setShowFilters(!showFilters)}>
+          <div className="flex items-center gap-2 cursor-pointer text-slate-600 mb-4" onClick={() => setShowFilters(!showFilters)}>
             <Filter size={16} /><span className="text-sm font-medium">Filters</span>
           </div>
           {showFilters && (
@@ -531,13 +531,13 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
                   <td style={getColumnStyle('customerName')} className="px-4 py-3">{record.customerName}</td>
                   <td style={getColumnStyle('location')} className="px-4 py-3">{record.location}</td>
                   <td style={getColumnStyle('paymentStatus')} className="px-4 py-3 text-center">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${record.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-700' : record.paymentStatus === 'Partial' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{record.paymentStatus}</span>
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${record.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-700' : record.paymentStatus === 'Partial' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{record.paymentStatus}</span>
                   </td>
                   <td style={getColumnStyle('total')} className="px-4 py-3 text-right">{formatCurrency(Number(record.total || 0))}</td>
                   <td style={getColumnStyle('paymentDue')} className="px-4 py-3 text-right">{formatCurrency(Number(record.paymentDue || 0))}</td>
                   <td style={getColumnStyle('addedBy')} className="px-4 py-3">{record.addedByDisplay}</td>
                   <td style={getColumnStyle('action')} className="px-4 py-3 text-center">
-                    <button onClick={(e) => toggleActions(e, record.id)} className="px-3 py-1 rounded bg-blue-600 text-white font-bold flex items-center gap-1 transition-all hover:bg-blue-700 text-[10px] mx-auto">Actions <ChevronDown size={10} /></button>
+                    <button onClick={(e) => toggleActions(e, record.id)} className="px-3 py-1 rounded-lg bg-slate-900 text-white font-bold flex items-center gap-1 transition-all hover:bg-slate-700 text-xs mx-auto">Actions <ChevronDown size={10} /></button>
                   </td>
                 </tr>
               ))}
@@ -557,9 +557,9 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
         <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
           <div>Showing {totalRows === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + entriesPerPage, totalRows)} of {totalRows} entries</div>
           <div className="flex gap-1">
-            <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
-            <button className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm">{safeCurrentPage}</button>
-            <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
+            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
+            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm">{safeCurrentPage}</button>
+            <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
           </div>
         </div>
       </div>

@@ -161,6 +161,7 @@ export interface Customer {
   documents?: ContactDocument[];
   contactCategory?: 'Individual' | 'Business';
   rewardPoints?: number;
+  rebatePercent?: number;   // % rebate applied on payments (e.g. 5 = 5%)
 }
 
 // Rich Supplier record — used in Suppliers module + AddPurchase dropdown
@@ -570,6 +571,9 @@ export interface Payment {
   attachmentName?: string;
   attachmentData?: string;
   expenseId?: string;
+  rebatePercent?: number;   // % at time of payment (snapshot from customer profile)
+  rebateAmount?: number;    // Amount written off as rebate
+  rebateApplied?: boolean;  // Whether rebate was applied for this payment
 }
 
 export interface Expense {
@@ -5075,8 +5079,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       // Apply payment to outstanding customer invoices (FIFO)
-      let remaining = appliedPayment.amount;
       setSales(prev => {
+        let remaining = appliedPayment.amount;
         const updated = [...prev];
         // Sort by date ascending (oldest first)
         const dueInvoices = updated

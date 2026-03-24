@@ -427,7 +427,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
+    <div className="space-y-6 animate-fade-in pb-16 print:p-0">
       <div className="flex items-center gap-4">
         <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md">
           <Truck size={24} className="text-white" />
@@ -439,10 +439,9 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
       </div>
 
       <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm p-4 relative overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
- <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600 rounded-t-[2rem]"></div>
         <div
-          className="flex items-center gap-2 cursor-pointer text-blue-600 mb-4"
+          className="flex items-center gap-2 cursor-pointer text-slate-600 mb-4"
           onClick={() => setShowFilters(!showFilters)}
         >
           <Filter size={16} />
@@ -462,7 +461,8 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
         )}
       </div>
 
-      <div className="bg-white rounded shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600 rounded-t-[2rem]"></div>
         <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="text-sm text-slate-600">Show</span>
@@ -472,7 +472,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
                 const val = Number(e.target.value);
                 setEntriesPerPage(Number.isFinite(val) && val > 0 ? val : 25);
               }}
-              className="border border-slate-300 rounded px-2 py-1 text-sm focus:outline-none"
+              className="px-3 py-2 rounded-xl border-0 bg-slate-50 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 text-sm font-medium focus:outline-none"
             >
               <option value={25}>25</option>
               <option value={50}>50</option>
@@ -486,7 +486,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
             <input
               type="text"
               placeholder="Search..."
-              className="w-full md:w-64 pl-9 pr-3 py-2 rounded border border-slate-300 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full md:w-64 pl-9 pr-4 py-2.5 rounded-xl border-0 bg-slate-50 ring-1 ring-slate-200 focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm font-medium text-slate-700"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -531,12 +531,12 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
                     <td className="px-4 py-3 whitespace-nowrap text-[10px] text-slate-500">{ship.location}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{ship.deliveryPerson || '--'}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${shippingStatusClass(ship.shippingStatus)}`}>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${shippingStatusClass(ship.shippingStatus)}`}>
                         {ship.shippingStatus}
                       </span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${paymentStatusClass(ship.paymentStatus)}`}>
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${paymentStatusClass(ship.paymentStatus)}`}>
                         {ship.paymentStatus}
                       </span>
                     </td>
@@ -561,15 +561,15 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
           </div>
           <div className="flex gap-1">
             <button
-              className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
               disabled={safeCurrentPage <= 1}
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
             >
               Previous
             </button>
-            <button className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm">{safeCurrentPage}</button>
+            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm">{safeCurrentPage}</button>
             <button
-              className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
+              className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
               disabled={safeCurrentPage >= totalPages}
               onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
             >

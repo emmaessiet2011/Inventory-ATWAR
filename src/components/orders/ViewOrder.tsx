@@ -101,7 +101,25 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId, sale
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 print:p-0 print:bg-white print:static print:h-auto print:block">
+    <div id="view-order-print-root" className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 print:p-0 print:bg-white print:static print:h-auto print:block">
+      <style>{`
+        @media print {
+          @page { size: A4; margin: 10mm; }
+          html, body { margin: 0 !important; padding: 0 !important; }
+          body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          body * { visibility: hidden !important; }
+          #view-order-print-root, #view-order-print-root * { visibility: visible !important; }
+          #view-order-print-root {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 2147483647 !important;
+            background: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+          }
+        }
+      `}</style>
       <div className={`w-full max-w-[210mm] h-[90vh] rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 print:shadow-none print:h-auto print:max-w-none print:rounded-none print:overflow-visible border ${layoutConfig.theme.surfaceClass}`}>
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0 print:hidden">
           <h2 className="text-lg font-bold text-slate-700">Invoice Preview</h2>
@@ -123,7 +141,7 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId, sale
             <div className="text-center mb-8">
               <h1 className="text-2xl font-black text-slate-900">{settings.businessName}</h1>
               <p className="text-xs text-slate-500 mt-1">Tax Invoice</p>
-              <p className="mt-2">
+              <p className="mt-2 print:hidden">
                 <span className={`inline-flex items-center px-2 py-1 rounded border text-[10px] font-bold ${layoutConfig.theme.layoutBadgeClass}`}>
                   Layout: {layoutConfig.layoutName} ({layoutConfig.layoutDesign})
                 </span>

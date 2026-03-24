@@ -19,6 +19,7 @@ import {
 } from '@/utils/registerLedger';
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
+import { printDocument } from '@/utils/printUtils';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
@@ -224,69 +225,28 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   const { subtotal, total, itemsCount } = calculateTotals();
 
   const printSuspendReceipt = (sale: any) => {
-    const popup = window.open('', '_blank', 'width=980,height=720');
-    if (!popup) {
-      addNotification({
-        title: 'Print blocked',
-        message: 'Allow pop-ups to print suspended invoices.',
-        type: 'warning',
-      });
-      return;
-    }
-    const itemsHtml = (sale.items || [])
-      .map((item: any, index: number) => `
-        <tr>
-          <td>${index + 1}</td>
-          <td>${escapeHtml(String(item.name || ''))}</td>
-          <td style="text-align:right;">${Number(item.qty || 0).toFixed(3)}</td>
-          <td style="text-align:right;">${formatCurrency(Number(item.unitPrice || 0))}</td>
-          <td style="text-align:right;">${formatCurrency(Number(item.total || 0))}</td>
-        </tr>
-      `)
-      .join('');
-    popup.document.write(`
-      <html>
-      <head>
-        <title>Suspend Invoice ${escapeHtml(String(sale.invoiceNo || ''))}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 16px; color: #111827; }
-          h2 { margin: 0 0 8px; font-size: 20px; }
-          .meta { margin-bottom: 12px; font-size: 12px; line-height: 1.5; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          th, td { border: 1px solid #d1d5db; padding: 6px 8px; font-size: 12px; }
-          th { background: #f3f4f6; text-align: left; }
-          .totals { margin-top: 12px; text-align: right; font-weight: 700; }
-        </style>
-      </head>
-      <body>
-        <h2>Suspend Invoice</h2>
-        <div class="meta">
-          <div><strong>Invoice No:</strong> ${escapeHtml(String(sale.invoiceNo || '--'))}</div>
-          <div><strong>Date:</strong> ${escapeHtml(formatDateTimeDisplay(new Date(sale.date || Date.now())))}</div>
-          <div><strong>Customer:</strong> ${escapeHtml(String(sale.customerName || '--'))}</div>
-          <div><strong>Location:</strong> ${escapeHtml(String(sale.location || '--'))}</div>
-          <div><strong>Status:</strong> ${escapeHtml(String(sale.saleStatus || sale.status || '--'))}</div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Product</th>
-              <th style="text-align:right;">Qty</th>
-              <th style="text-align:right;">Unit Price</th>
-              <th style="text-align:right;">Line Total</th>
-            </tr>
-          </thead>
-          <tbody>${itemsHtml}</tbody>
-        </table>
-        <div class="totals">Grand Total: ${escapeHtml(formatCurrency(Number(sale.grandTotal || 0)))}</div>
-      </body>
-      </html>
-    `);
-    popup.document.close();
-    popup.focus();
-    popup.print();
-    popup.close();
+    printDocument({
+      title: 'Suspended Invoice',
+      subtitle: `Invoice: ${sale.invoiceNo || '--'}  |  Customer: ${sale.customerName || 'Walk-in'}  |  Location: ${sale.location || '--'}`,
+      businessName: settings.businessName || 'ATWAR AL MUSTAQBAL',
+      businessAddress: settings.businessAddress || settings.address || '',
+      printedBy: currentUser?.name || '',
+      columns: [
+        { label: 'Product' },
+        { label: 'Qty', width: '70px', align: 'right' },
+        { label: 'Unit Price', width: '95px', align: 'right' },
+        { label: 'Line Total', width: '95px', align: 'right' },
+      ],
+      rows: (sale.items || []).map((item: any) => [
+        String(item.name || '--'),
+        Number(item.qty || 0).toFixed(3),
+        formatCurrency(Number(item.unitPrice || 0)),
+        formatCurrency(Number(item.total || 0)),
+      ]),
+      stats: [
+        { label: 'Grand Total', value: formatCurrency(Number(sale.grandTotal || 0)), color: 'blue' },
+      ],
+    });
   };
 
   const resetCart = (withConfirm: boolean) => {

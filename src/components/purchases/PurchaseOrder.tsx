@@ -10,6 +10,7 @@ import {
   PurchaseOrderItem,
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
+import { printDocument, statusBadge, paymentBadge } from '@/utils/printUtils';
 
 interface PurchaseOrderProps {
   onNavigate?: (page: string) => void;
@@ -127,6 +128,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
     suppliers,
     products,
     currentUser,
+    settings,
     generateId,
     formatCurrency,
   } = useGlobalContext();
@@ -586,23 +588,32 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
   };
 
   const handlePrint = () => {
-    const w = window.open('', '_blank', 'width=1200,height=700');
-    if (!w) return;
-    w.document.write(`<html><head><title>Purchase Orders</title><style>
-      body{font-family:Arial;padding:20px;color:#111827}
-      table{width:100%;border-collapse:collapse;font-size:12px}
-      th,td{border:1px solid #d1d5db;padding:6px;text-align:left}
-      th{background:#f3f4f6}
-    </style></head><body>
-    <h2>Purchase Orders</h2>
-    <table><thead><tr>
-      <th>Date</th><th>Reference No</th><th>Location</th><th>Supplier</th><th>Status</th><th>Shipping Status</th><th>Qty</th><th>Order Total</th><th>Added By</th>
-    </tr></thead><tbody>
-      ${exportRows.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.referenceNo)}</td><td>${escapeHtml(r.location)}</td><td>${escapeHtml(r.supplier)}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.shippingStatus)}</td><td>${escapeHtml(r.quantity)}</td><td>${escapeHtml(r.total)}</td><td>${escapeHtml(r.addedBy)}</td></tr>`).join('')}
-    </tbody></table>
-    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script>
-    </body></html>`);
-    w.document.close();
+    printDocument({
+      title: 'Purchase Orders',
+      businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+      businessAddress: settings?.businessAddress || settings?.address || '',
+      printedBy: currentUser?.name || '',
+      columns: [
+        { label: 'Date', width: '90px' },
+        { label: 'Reference No', width: '100px' },
+        { label: 'Supplier' },
+        { label: 'Location' },
+        { label: 'Status', width: '80px', align: 'center' },
+        { label: 'Shipping', width: '80px', align: 'center' },
+        { label: 'Qty', width: '55px', align: 'right' },
+        { label: 'Total', width: '90px', align: 'right' },
+      ],
+      rows: exportRows.map(r => [
+        r.date,
+        r.referenceNo,
+        r.supplier,
+        r.location,
+        statusBadge(r.status),
+        statusBadge(r.shippingStatus),
+        r.quantity,
+        r.total,
+      ]),
+    });
   };
 
   const getStatusClass = (status: GlobalPurchaseOrder['status']) =>

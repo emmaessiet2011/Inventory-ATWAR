@@ -27,15 +27,19 @@ const ViewPaymentModal: React.FC<ViewPaymentModalProps> = ({ isOpen, onClose, pa
   const taxNumber = settings.tax1Number || settings.taxNumber;
 
   const handlePrint = () => {
+    const linkedInvoiceRows: string[][] = (payment.linkedInvoices || []).length > 0
+      ? (payment.linkedInvoices as string[]).map((inv: string) => [`Applied to Invoice: ${inv}`, ''])
+      : [];
+
     printDocument({
-      title: `Payment Receipt ${referenceNo}`,
-      subtitle: `Customer: ${customerBusinessName}`,
+      title: `Payment Receipt`,
+      subtitle: `Ref: ${referenceNo}  |  Customer: ${customerBusinessName}  |  Date: ${paidOn}`,
       businessName: settings.businessName || 'ATWAR AL MUSTAQBAL',
       businessAddress,
       printedBy: 'System',
       columns: [
         { label: 'Field' },
-        { label: 'Value' },
+        { label: 'Details' },
       ],
       rows: [
         ['Reference No', referenceNo],
@@ -45,9 +49,12 @@ const ViewPaymentModal: React.FC<ViewPaymentModalProps> = ({ isOpen, onClose, pa
         ['Mobile', customerMobile],
         ['Payment Method', String(payment.method || '--')],
         ['Payment Account', String(payment.account || payment.paymentAccount || '--')],
-        ['Amount', formatCurrency(amount)],
-        ['Payment Note', String(payment.note || '--')],
-        ['Attachment', attachmentName || '--'],
+        ['Amount Received', formatCurrency(amount)],
+        ...(payment.note ? [['Payment Note', String(payment.note)]] : []),
+        ...linkedInvoiceRows,
+      ],
+      stats: [
+        { label: 'Amount Received', value: formatCurrency(amount), color: 'green' },
       ],
     });
   };

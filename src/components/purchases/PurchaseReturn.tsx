@@ -9,6 +9,7 @@ import {
   PurchaseReturn as GlobalPurchaseReturn,
   PurchaseReturnItem,
 } from '@/context/GlobalContext';
+import { printDocument, paymentBadge } from '@/utils/printUtils';
 
 interface PurchaseReturnItemForm extends PurchaseReturnItem {
   rowId: string;
@@ -83,6 +84,7 @@ const PurchaseReturn: React.FC = () => {
     locations,
     taxRates,
     currentUser,
+    settings,
     formatCurrency,
     generateId,
   } = useGlobalContext();
@@ -436,16 +438,32 @@ const PurchaseReturn: React.FC = () => {
   };
 
   const handlePrint = () => {
-    const w = window.open('', '_blank', 'width=1200,height=700');
-    if (!w) return;
-    w.document.write(`<html><head><title>Purchase Returns</title><style>
-      body{font-family:Arial;padding:20px} table{width:100%;border-collapse:collapse;font-size:12px}
-      th,td{border:1px solid #d1d5db;padding:6px;text-align:left} th{background:#f3f4f6}
-    </style></head><body><h2>Purchase Returns</h2><table><thead><tr>
-      <th>Date</th><th>Reference No</th><th>Parent Purchase</th><th>Location</th><th>Supplier</th><th>Payment Status</th><th>Grand Total</th><th>Payment due</th>
-    </tr></thead><tbody>${exportRows.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.referenceNo)}</td><td>${escapeHtml(r.parentPurchase)}</td><td>${escapeHtml(r.location)}</td><td>${escapeHtml(r.supplier)}</td><td>${escapeHtml(r.paymentStatus)}</td><td>${escapeHtml(r.grandTotal)}</td><td>${escapeHtml(r.paymentDue)}</td></tr>`).join('')}</tbody></table>
-    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script></body></html>`);
-    w.document.close();
+    printDocument({
+      title: 'Purchase Returns',
+      businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+      businessAddress: settings?.businessAddress || settings?.address || '',
+      printedBy: currentUser?.name || '',
+      columns: [
+        { label: 'Date', width: '90px' },
+        { label: 'Reference No', width: '100px' },
+        { label: 'Parent Purchase', width: '100px' },
+        { label: 'Supplier' },
+        { label: 'Location' },
+        { label: 'Payment Status', width: '90px', align: 'center' },
+        { label: 'Grand Total', width: '90px', align: 'right' },
+        { label: 'Amount Due', width: '90px', align: 'right' },
+      ],
+      rows: exportRows.map(r => [
+        r.date,
+        r.referenceNo,
+        r.parentPurchase,
+        r.supplier,
+        r.location,
+        paymentBadge(r.paymentStatus),
+        r.grandTotal,
+        r.paymentDue,
+      ]),
+    });
   };
 
   const totalGrand = filteredReturns.reduce((sum, row) => sum + toNumber(row.grandTotal), 0);

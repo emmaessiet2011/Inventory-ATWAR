@@ -10,6 +10,7 @@ import {
   PurchaseRequisitionItem,
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
+import { printDocument, statusBadge } from '@/utils/printUtils';
 
 interface PurchaseRequisitionProps {
   onNavigate?: (page: string) => void;
@@ -343,17 +344,32 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   };
 
   const handlePrint = () => {
-    const w = window.open('', '_blank', 'width=1100,height=700');
-    if (!w) return;
-    w.document.write(`<html><head><title>Purchase Requisitions</title><style>
-      body{font-family:Arial;padding:20px;color:#111827} table{width:100%;border-collapse:collapse;font-size:12px}
-      th,td{border:1px solid #d1d5db;padding:6px;text-align:left} th{background:#f3f4f6}
-    </style></head><body><h2>Purchase Requisitions</h2><table><thead><tr>
-      <th>Date</th><th>Reference No</th><th>Location</th><th>Brand</th><th>Category</th><th>Required By</th><th>Items Qty</th><th>Status</th><th>Added By</th>
-    </tr></thead><tbody>
-      ${exportRows.map(r => `<tr><td>${escapeHtml(r.date)}</td><td>${escapeHtml(r.referenceNo)}</td><td>${escapeHtml(r.location)}</td><td>${escapeHtml(r.brand)}</td><td>${escapeHtml(r.category)}</td><td>${escapeHtml(r.requiredBy)}</td><td>${escapeHtml(String(r.itemsQty))}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.addedBy)}</td></tr>`).join('')}
-    </tbody></table><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close();}<\/script></body></html>`);
-    w.document.close();
+    printDocument({
+      title: 'Purchase Requisitions',
+      businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
+      businessAddress: settings?.businessAddress || settings?.address || '',
+      printedBy: currentUser?.name || '',
+      columns: [
+        { label: 'Date', width: '90px' },
+        { label: 'Reference No', width: '100px' },
+        { label: 'Location' },
+        { label: 'Required By', width: '90px' },
+        { label: 'Brand' },
+        { label: 'Category' },
+        { label: 'Items Qty', width: '65px', align: 'right' },
+        { label: 'Status', width: '80px', align: 'center' },
+      ],
+      rows: exportRows.map(r => [
+        r.date,
+        r.referenceNo,
+        r.location,
+        r.requiredBy,
+        r.brand,
+        r.category,
+        String(r.itemsQty),
+        statusBadge(r.status),
+      ]),
+    });
   };
 
   const statusClass = (status: GlobalPurchaseRequisition['status']) =>

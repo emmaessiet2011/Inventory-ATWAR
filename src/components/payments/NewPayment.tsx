@@ -76,6 +76,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [documentDataUrl, setDocumentDataUrl] = useState<string>('');
   const [confirmingBreakdown, setConfirmingBreakdown] = useState<InvoiceBreakdown[] | null>(null);
+  const [rebateEnabled, setRebateEnabled] = useState(false);
 
   useEffect(() => {
     if (locations.length === 0) {
@@ -194,10 +195,13 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     (customer.mobile && customer.mobile.includes(searchQuery))
   );
 
+  const customerRebatePercent = Number(selectedCustomer?.rebatePercent || 0);
+
   const handleSelectCustomer = (customer: any) => {
     setSelectedCustomer(customer);
     setSearchQuery(formatCustomerDisplayLabel(customer));
     setIsDropdownOpen(false);
+    setRebateEnabled(Number(customer?.rebatePercent || 0) > 0);
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,6 +275,9 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     if (!selectedCustomer || !confirmingBreakdown) return;
 
     const paymentAmount = parseFloat(formatToPrecision(amount));
+    const rebateAmount = (rebateEnabled && customerRebatePercent > 0)
+      ? Number((paymentAmount * customerRebatePercent / 100).toFixed(3))
+      : 0;
     const resolvedAccount = resolvePaymentAccount();
     if (!resolvedAccount) {
       addNotification({
@@ -301,6 +308,9 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
       linkedInvoices,
       attachmentName: documentFile?.name || undefined,
       attachmentData: documentDataUrl || undefined,
+      rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
+      rebateAmount: rebateEnabled && rebateAmount > 0 ? rebateAmount : undefined,
+      rebateApplied: rebateEnabled && rebateAmount > 0,
     });
 
     const activeRegister = getActiveRegisterSession();
@@ -416,6 +426,25 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
                 />
               </div>
             </div>
+
+            {customerRebatePercent > 0 && (
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-amber-50 border border-amber-200">
+                <div>
+                  <p className="text-sm font-bold text-amber-800">
+                    {customerRebatePercent}% Rebate — write-off: {formatCurrency(rebateEnabled && customerRebatePercent > 0 ? Number(((Math.max(0, Number(amount) || 0)) * customerRebatePercent / 100).toFixed(3)) : 0)}
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    {rebateEnabled
+                      ? `Company nets: ${formatCurrency(Math.max(0, (Math.max(0, Number(amount) || 0)) - Number(((Math.max(0, Number(amount) || 0)) * customerRebatePercent / 100).toFixed(3))))}`
+                      : 'Rebate disabled for this payment'}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setRebateEnabled(v => !v)}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${rebateEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${rebateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                </button>
+              </div>
+            )}
 
             <div className="group">
               <label className="block text-sm font-bold text-slate-700 mb-2">Payment Date</label>
