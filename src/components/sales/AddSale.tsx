@@ -2395,23 +2395,28 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
                                             return (
                                               <div
                                                 key={p.id}
-                                                className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                                className="px-3 py-2 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center gap-2"
                                                 onMouseDown={() => handleProductSelectForRow(row.id, p)}
                                               >
-                                                <div className="font-bold text-sm text-slate-800">{p.name}</div>
-                                                <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-0.5">
-                                                  <span>SKU: {p.sku}</span>
-                                                  <button
-                                                    type="button"
-                                                    onMouseDown={(e) => e.stopPropagation()}
-                                                    onClick={(e) => { e.stopPropagation(); openStockHistory(p); }}
-                                                    className={`font-bold hover:underline ${p.stock <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
-                                                    title="Open stock history"
-                                                  >
-                                                    Stock: {p.stock}
-                                                  </button>
-                                                  <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
-                                                  {packHint && <span>{packHint}</span>}
+                                                {p.image && (
+                                                  <img src={p.image} alt={p.name} className="w-8 h-8 object-contain rounded border border-slate-200 bg-slate-50 flex-shrink-0" />
+                                                )}
+                                                <div className="min-w-0">
+                                                  <div className="font-bold text-sm text-slate-800">{p.name}</div>
+                                                  <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-0.5">
+                                                    <span>SKU: {p.sku}</span>
+                                                    <button
+                                                      type="button"
+                                                      onMouseDown={(e) => e.stopPropagation()}
+                                                      onClick={(e) => { e.stopPropagation(); openStockHistory(p); }}
+                                                      className={`font-bold hover:underline ${p.stock <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                                                      title="Open stock history"
+                                                    >
+                                                      Stock: {p.stock}
+                                                    </button>
+                                                    <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
+                                                    {packHint && <span>{packHint}</span>}
+                                                  </div>
                                                 </div>
                                               </div>
                                             );
@@ -2422,17 +2427,26 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
                                       )}
                                     </div>
                                     {selectedProduct && (
-                                      <div className="text-[10px] text-slate-400 font-normal mt-0.5 px-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => openStockHistory(selectedProduct)}
-                                          className="text-blue-600 hover:underline"
-                                          title="Open stock history"
-                                        >
-                                          Stock: {selectedProduct.stock} {selectedProduct.unit}
-                                        </button>
-                                        {selectedProductPackHint && <span> | {selectedProductPackHint}</span>}
-                                        <span> | {selectedProduct.category}</span>
+                                      <div className="flex items-center gap-2 mt-1 px-1">
+                                        {selectedProduct.image && (
+                                          <img
+                                            src={selectedProduct.image}
+                                            alt={selectedProduct.name}
+                                            className="w-10 h-10 object-contain rounded-lg border border-slate-200 bg-slate-50 flex-shrink-0"
+                                          />
+                                        )}
+                                        <div className="text-[10px] text-slate-400 font-normal">
+                                          <button
+                                            type="button"
+                                            onClick={() => openStockHistory(selectedProduct)}
+                                            className="text-blue-600 hover:underline"
+                                            title="Open stock history"
+                                          >
+                                            Stock: {selectedProduct.stock} {selectedProduct.unit}
+                                          </button>
+                                          {selectedProductPackHint && <span> | {selectedProductPackHint}</span>}
+                                          <span> | {selectedProduct.category}</span>
+                                        </div>
                                       </div>
                                     )}
                                 </td>

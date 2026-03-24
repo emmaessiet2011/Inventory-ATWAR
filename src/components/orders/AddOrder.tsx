@@ -874,7 +874,21 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
                                 )}
                               </div>
                             )}
-                            {packHint && (
+                            {selectedProduct && (
+                              <div className="flex items-center gap-2 mt-1">
+                                {selectedProduct.image && (
+                                  <img
+                                    src={selectedProduct.image}
+                                    alt={selectedProduct.name}
+                                    className="w-10 h-10 object-contain rounded-lg border border-slate-200 bg-slate-50 flex-shrink-0"
+                                  />
+                                )}
+                                {packHint && (
+                                  <div className="text-[10px] text-slate-500 font-semibold">{packHint}</div>
+                                )}
+                              </div>
+                            )}
+                            {!selectedProduct && packHint && (
                               <div className="text-[10px] text-slate-500 font-semibold mt-1">{packHint}</div>
                             )}
                           </td>
