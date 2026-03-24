@@ -714,8 +714,11 @@ app.post('/api/bootstrap/defaults', async (_req, res) => {
   }
 });
 
-app.use((_req, res) => {
-  res.status(404).json({ ok: false, error: 'Route not found' });
+// Serve React frontend static files (built by `npm run build`)
+const distPath = path.resolve(__dirname, '../dist');
+app.use(express.static(distPath));
+app.get('*', (_req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(port, () => {
