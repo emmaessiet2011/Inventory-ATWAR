@@ -940,7 +940,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                   {locations.map(loc => (
                     <div key={loc.id} className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                       <h5 className="text-[10px] font-bold text-slate-700 mb-2 uppercase">{loc.name} ({loc.id}):</h5>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <input type="text" placeholder="Rack"
                           value={getLocationRack(loc.id).rack}
                           onChange={(e) => updateLocationRack(loc.id, 'rack', e.target.value)}

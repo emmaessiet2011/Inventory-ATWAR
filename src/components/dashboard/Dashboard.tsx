@@ -1384,7 +1384,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
           { label: 'Total Sales', value: totalSales, icon: ShoppingCart, tone: 'blue' },
           { label: 'Net Revenue', value: netSales, icon: Banknote, tone: 'emerald' },
@@ -1568,7 +1568,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-[2rem] p-4 border border-slate-200 shadow-sm relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
           <div className="flex justify-between items-start mb-2">
@@ -1672,7 +1672,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 Money In & Out
               </h3>
               <p className="text-sm text-slate-500 mb-4">Payment collections and payouts recorded for the selected period.</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3">
                 <div className="border border-slate-200 rounded-lg p-3">
                   <p className="text-xs text-slate-500">Cash In</p>
                   <p className="text-lg font-black text-emerald-700">{formatCurrency(cashIn)}</p>
@@ -1743,7 +1743,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 Stock Alerts
               </h3>
               <p className="text-sm text-slate-500 mb-4">Products that need restocking, are expiring, or have stopped selling.</p>
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
                 <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Out of Stock</p><p className="text-xl font-black text-rose-700">{inventoryRisk.outOfStock}</p></div>
                 <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Below Alert</p><p className="text-xl font-black text-amber-700">{inventoryRisk.belowAlert}</p></div>
                 <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Near Expiry</p><p className="text-xl font-black text-orange-700">{inventoryRisk.nearExpiry}</p></div>
@@ -1772,7 +1772,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 Orders & Deliveries
               </h3>
               <p className="text-sm text-slate-500 mb-4">Current status of all orders and delivery progress.</p>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-3">
                 {Object.entries(pipelineStats.orderCounts).map(([status, count]) => (
                   <div key={status} className="border border-slate-200 rounded-lg p-3">
                     <p className="text-xs text-slate-500">{status}</p>
@@ -1780,7 +1780,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   </div>
                 ))}
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
                 <div className="border border-amber-200 bg-amber-50 rounded-lg p-3">
                   <p className="text-xs text-amber-700">Delayed Orders</p>
                   <p className="text-xl font-black text-amber-800">{pipelineStats.delayedOrders}</p>
@@ -1812,7 +1812,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 Returns & Discounts
               </h3>
               <p className="text-sm text-slate-500 mb-4">Revenue given back through returns and discounts.</p>
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
                 <div className="border border-slate-200 rounded-lg p-3">
                   <p className="text-xs text-slate-500">Discount Value</p>
                   <p className="text-lg font-black text-slate-800">{formatCurrency(discountLeakage.discountValue)}</p>
@@ -1930,7 +1930,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                       </div>
                       <p className="text-sm font-black text-rose-700">{formatCurrency(row.due)}</p>
                     </div>
-                    <div className="mt-3 grid grid-cols-4 gap-2">
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                       <button type="button" onClick={() => dialCustomer(row.phone)} className="text-xs px-2 py-1.5 rounded border border-slate-200 flex items-center justify-center gap-1"><Phone size={12} />Call</button>
                       <button type="button" onClick={() => openWhatsapp(row.phone)} className="text-xs px-2 py-1.5 rounded border border-slate-200 flex items-center justify-center gap-1"><MessageCircle size={12} />WA</button>
                       <button type="button" onClick={() => onNavigate?.('new-payment')} className="text-xs px-2 py-1.5 rounded border border-slate-200 flex items-center justify-center gap-1"><CreditCard size={12} />Pay</button>

@@ -562,11 +562,11 @@ const Sidebar: React.FC<SidebarProps> = ({
       <aside className={`
         fixed top-0 left-0 h-screen bg-slate-950 text-slate-400 flex flex-col z-50 border-r border-slate-800 shadow-[4px_0_24px_rgba(0,0,0,0.4)] transition-all duration-300 ease-in-out font-sans selection:bg-red-500/30
         ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
-        ${isCollapsed ? 'md:w-20' : 'md:w-72'} w-72
+        ${isCollapsed ? 'md:w-20' : 'md:w-72'} w-[min(288px,100vw)]
       `}>
       
       {/* Brand Header */}
-      <div className={`h-24 flex flex-col justify-center ${isCollapsed ? 'md:px-4' : 'px-8'} border-b border-slate-800 bg-[#0B1121] relative overflow-hidden shrink-0`}>
+      <div className={`h-16 sm:h-20 md:h-24 flex flex-col justify-center ${isCollapsed ? 'md:px-4' : 'px-4 sm:px-6 md:px-8'} border-b border-slate-800 bg-[#0B1121] relative overflow-hidden shrink-0`}>
         <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-red-600 via-orange-500 to-red-600"></div>
         <div className="absolute -right-6 -top-6 w-24 h-24 bg-red-600/10 rounded-full blur-2xl"></div>
         

@@ -932,7 +932,7 @@ const Sales: React.FC<SalesProps> = ({
                   </button>
 
                   {showColumnMenu && (
-                    <div className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-slate-200 bg-white shadow-xl z-30 p-3">
+                    <div className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white shadow-xl z-30 p-3">
                       <div className="text-xs font-bold text-slate-600 mb-2">Toggle Columns</div>
                       <div className="space-y-1 max-h-72 overflow-y-auto pr-1">
                         {columnDefs.map(col => (
@@ -966,7 +966,7 @@ const Sales: React.FC<SalesProps> = ({
 
         {/* Table */}
         <div className="overflow-x-auto min-h-[500px]">
-          <table className="w-full text-[10px] text-left border-collapse">
+          <table className="w-full text-[10px] sm:text-xs text-left border-collapse">
             <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 text-slate-500 font-semibold border-b border-slate-200 z-10">
               <tr>
                 <th style={getColumnStyle('action')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Action</th>

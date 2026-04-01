@@ -1477,7 +1477,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       {/* Supplier Payment Modal */}
       {isPaymentModalOpen && paymentSupplier && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 border-b border-slate-100 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800">Add payment</h3>

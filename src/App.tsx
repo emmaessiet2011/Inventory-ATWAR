@@ -916,7 +916,7 @@ const AppContent: React.FC = () => {
         onMobileClose={() => setIsSidebarOpen(false)}
       />
       
-      <div className={`flex-1 ml-0 ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-72'} p-4 md:p-8 overflow-y-auto h-screen transition-all duration-300 print:ml-0 print:p-0`}>
+      <div className={`flex-1 ml-0 ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-72'} p-3 sm:p-4 md:p-8 overflow-y-auto min-h-screen md:h-screen transition-all duration-300 print:ml-0 print:p-0`}>
         <header className="flex justify-between items-center mb-6 md:mb-8 print:hidden">
           <div className="flex items-center gap-3">
             <button
@@ -942,7 +942,7 @@ const AppContent: React.FC = () => {
                 className="pl-10 pr-4 py-2 rounded-full bg-white border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 w-40 md:w-64 shadow-sm"
               />
             {searchMatches.length > 0 && globalSearch.trim().length > 0 && (
-              <div className="absolute left-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-40">
+              <div className="absolute left-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden z-40">
                 {searchMatches.map((match) => (
                   <button
                     key={`${match.page}-${match.label}`}
@@ -976,7 +976,7 @@ const AppContent: React.FC = () => {
                   <Calculator size={18} />
                 </button>
                 {showCalculator && (
-                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
+                  <div className="absolute right-0 mt-3 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70">
                       <h4 className="text-sm font-bold text-slate-900">Calculator</h4>
                     </div>
@@ -1044,7 +1044,7 @@ const AppContent: React.FC = () => {
                   <CalendarDays size={18} />
                 </button>
                 {showCalendar && (
-                  <div className="absolute right-0 mt-3 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
+                  <div className="absolute right-0 mt-3 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/70">
                       <h4 className="text-sm font-bold text-slate-900">Calendar</h4>
                     </div>
@@ -1106,7 +1106,7 @@ const AppContent: React.FC = () => {
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
+                <div className="absolute right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-slate-100 z-[1000] overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-top-right">
                   <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                     <h3 className="font-bold text-slate-900">Notifications</h3>
                     <button 
