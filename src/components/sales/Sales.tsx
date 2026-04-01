@@ -969,43 +969,43 @@ const Sales: React.FC<SalesProps> = ({
           <table className="w-full text-[10px] text-left border-collapse">
             <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 text-slate-500 font-semibold border-b border-slate-200 z-10">
               <tr>
-                <th style={getColumnStyle('action')} className="px-4 py-4 whitespace-nowrap">Action</th>
-                <th style={getColumnStyle('date')} className="px-4 py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('date')}>
+                <th style={getColumnStyle('action')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Action</th>
+                <th style={getColumnStyle('date')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('date')}>
                   Date <ArrowUpDown size={12} className={`inline ml-1 ${sortKey === 'date' ? 'text-blue-500' : 'text-slate-400'}`} />
                 </th>
-                <th style={getColumnStyle('invoiceNo')} className="px-4 py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('invoiceNo')}>
+                <th style={getColumnStyle('invoiceNo')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('invoiceNo')}>
                   Invoice No. <ArrowUpDown size={12} className={`inline ml-1 ${sortKey === 'invoiceNo' ? 'text-blue-500' : 'text-slate-400'}`} />
                 </th>
-                <th style={getColumnStyle('customerName')} className="px-4 py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('customerName')}>
+                <th style={getColumnStyle('customerName')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap cursor-pointer select-none" onClick={() => handleSort('customerName')}>
                   Customer Name <ArrowUpDown size={12} className={`inline ml-1 ${sortKey === 'customerName' ? 'text-blue-500' : 'text-slate-400'}`} />
                 </th>
-                <th style={getColumnStyle('contactNumber')} className="px-4 py-4 whitespace-nowrap">Contact Number</th>
-                <th style={getColumnStyle('location')} className="px-4 py-4 whitespace-nowrap">Location</th>
-                <th style={getColumnStyle('status')} className="px-4 py-4 whitespace-nowrap text-center">Status</th>
-                <th style={getColumnStyle('paymentStatus')} className="px-4 py-4 whitespace-nowrap text-center">{paymentStatusColumnLabel}</th>
-                <th style={getColumnStyle('saleType')} className="px-4 py-4 whitespace-nowrap text-center">Sale Type</th>
-                <th style={getColumnStyle('commissionAgent')} className="px-4 py-4 whitespace-nowrap">Commission Agent</th>
-                <th style={getColumnStyle('commission')} className="px-4 py-4 whitespace-nowrap text-right">Commission</th>
-                <th style={getColumnStyle('paymentMethod')} className="px-4 py-4 whitespace-nowrap text-center">Payment Method</th>
-                <th style={getColumnStyle('totalAmount')} className="px-4 py-4 whitespace-nowrap text-right cursor-pointer select-none" onClick={() => handleSort('grandTotal')}>
+                <th style={getColumnStyle('contactNumber')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Contact Number</th>
+                <th style={getColumnStyle('location')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Location</th>
+                <th style={getColumnStyle('status')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">Status</th>
+                <th style={getColumnStyle('paymentStatus')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">{paymentStatusColumnLabel}</th>
+                <th style={getColumnStyle('saleType')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">Sale Type</th>
+                <th style={getColumnStyle('commissionAgent')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Commission Agent</th>
+                <th style={getColumnStyle('commission')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Commission</th>
+                <th style={getColumnStyle('paymentMethod')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">Payment Method</th>
+                <th style={getColumnStyle('totalAmount')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right cursor-pointer select-none" onClick={() => handleSort('grandTotal')}>
                   Total Amount <ArrowUpDown size={12} className={`inline ml-1 ${sortKey === 'grandTotal' ? 'text-blue-500' : 'text-slate-400'}`} />
                 </th>
-                <th style={getColumnStyle('totalPaid')} className="px-4 py-4 whitespace-nowrap text-right">Total Paid</th>
-                <th style={getColumnStyle('sellDue')} className="px-4 py-4 whitespace-nowrap text-right">Sell Due</th>
-                <th style={getColumnStyle('sellReturnDue')} className="px-4 py-4 whitespace-nowrap text-right">Sell Return Due</th>
-                <th style={getColumnStyle('shippingStatus')} className="px-4 py-4 whitespace-nowrap text-center">Shipping Status</th>
-                <th style={getColumnStyle('totalItems')} className="px-4 py-4 whitespace-nowrap text-right">Total Items</th>
-                <th style={getColumnStyle('addedBy')} className="px-4 py-4 whitespace-nowrap">Added By</th>
-                <th style={getColumnStyle('sellNote')} className="px-4 py-4 whitespace-nowrap">Sell Note</th>
-                <th style={getColumnStyle('staffNote')} className="px-4 py-4 whitespace-nowrap">Staff Note</th>
-                <th style={getColumnStyle('shippingDetails')} className="px-4 py-4 whitespace-nowrap">Shipping Details</th>
+                <th style={getColumnStyle('totalPaid')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Total Paid</th>
+                <th style={getColumnStyle('sellDue')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Sell Due</th>
+                <th style={getColumnStyle('sellReturnDue')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Sell Return Due</th>
+                <th style={getColumnStyle('shippingStatus')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">Shipping Status</th>
+                <th style={getColumnStyle('totalItems')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Total Items</th>
+                <th style={getColumnStyle('addedBy')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Added By</th>
+                <th style={getColumnStyle('sellNote')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Sell Note</th>
+                <th style={getColumnStyle('staffNote')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Staff Note</th>
+                <th style={getColumnStyle('shippingDetails')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap">Shipping Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagedSales.length > 0 ? (
                   pagedSales.map((sale) => (
                     <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors group">
-                      <td style={getColumnStyle('action')} className="px-4 py-3 text-center">
+                      <td style={getColumnStyle('action')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                           <button 
                             onClick={(e) => toggleActions(e, sale.id)}
                             className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-all ${
@@ -1017,8 +1017,8 @@ const Sales: React.FC<SalesProps> = ({
                               Actions <ChevronDown size={10} />
                           </button>
                       </td>
-                      <td style={getColumnStyle('date')} className="px-4 py-3 text-slate-600 font-medium whitespace-nowrap">{formatDateTimeDisplay(sale.date)}</td>
-                      <td style={getColumnStyle('invoiceNo')} className="px-4 py-3 text-slate-700 font-bold whitespace-nowrap">
+                      <td style={getColumnStyle('date')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-600 font-medium whitespace-nowrap">{formatDateTimeDisplay(sale.date)}</td>
+                      <td style={getColumnStyle('invoiceNo')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-700 font-bold whitespace-nowrap">
                         <div className="flex flex-col items-start">
                           <span>{sale.invoiceNo}</span>
                           {settings.showInvoiceScheme && (
@@ -1034,10 +1034,10 @@ const Sales: React.FC<SalesProps> = ({
                           )}
                         </div>
                       </td>
-                      <td style={getColumnStyle('customerName')} className="px-4 py-3 text-slate-800 font-bold whitespace-nowrap">{sale.customerName}</td>
-                      <td style={getColumnStyle('contactNumber')} className="px-4 py-3 text-slate-500 font-medium whitespace-nowrap">{sale.contactNumber}</td>
-                      <td style={getColumnStyle('location')} className="px-4 py-3 text-slate-500 whitespace-nowrap text-[10px]">{sale.location}</td>
-                      <td style={getColumnStyle('status')} className="px-4 py-3 text-center">
+                      <td style={getColumnStyle('customerName')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-800 font-bold whitespace-nowrap">{sale.customerName}</td>
+                      <td style={getColumnStyle('contactNumber')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 font-medium whitespace-nowrap">{sale.contactNumber}</td>
+                      <td style={getColumnStyle('location')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 whitespace-nowrap text-[10px]">{sale.location}</td>
+                      <td style={getColumnStyle('status')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
                                saleStatusLabel(sale) === 'Final' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                saleStatusLabel(sale) === 'Suspend' ? 'bg-rose-50 text-rose-700 border-rose-200' :
@@ -1049,7 +1049,7 @@ const Sales: React.FC<SalesProps> = ({
                                {saleStatusLabel(sale)}
                            </span>
                       </td>
-                      <td style={getColumnStyle('paymentStatus')} className="px-4 py-3 text-center">
+                      <td style={getColumnStyle('paymentStatus')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                            {getDisplayPaymentStatus(sale) === 'N/A' ? (
                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
                                N/A
@@ -1064,34 +1064,34 @@ const Sales: React.FC<SalesProps> = ({
                            </span>
                            )}
                       </td>
-                      <td style={getColumnStyle('saleType')} className="px-4 py-3 text-center">
+                      <td style={getColumnStyle('saleType')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
                                {sale.saleType || ((sale.paymentStatus === 'Due' && (sale.totalPaid || 0) === 0) ? 'Credit Sale' : 'Paid')}
                            </span>
                       </td>
-                      <td style={getColumnStyle('commissionAgent')} className="px-4 py-3 text-slate-600 whitespace-nowrap">{sale.commissionAgentName || '--'}</td>
-                      <td style={getColumnStyle('commission')} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(Number(sale.commissionAmount || 0))}</td>
-                      <td style={getColumnStyle('paymentMethod')} className="px-4 py-3 text-center text-slate-600 font-medium whitespace-nowrap">{sale.paymentMethod || '--'}</td>
-                      <td style={getColumnStyle('totalAmount')} className="px-4 py-3 text-right font-bold text-slate-800 whitespace-nowrap">{formatCurrency(sale.grandTotal || sale.totalAmount || 0)}</td>
-                      <td style={getColumnStyle('totalPaid')} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(sale.totalPaid || 0)}</td>
-                      <td style={getColumnStyle('sellDue')} className="px-4 py-3 text-right whitespace-nowrap">
+                      <td style={getColumnStyle('commissionAgent')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-600 whitespace-nowrap">{sale.commissionAgentName || '--'}</td>
+                      <td style={getColumnStyle('commission')} className="px-2 py-2 sm:px-4 sm:py-3text-right text-slate-600 whitespace-nowrap">{formatCurrency(Number(sale.commissionAmount || 0))}</td>
+                      <td style={getColumnStyle('paymentMethod')} className="px-2 py-2 sm:px-4 sm:py-3text-center text-slate-600 font-medium whitespace-nowrap">{sale.paymentMethod || '--'}</td>
+                      <td style={getColumnStyle('totalAmount')} className="px-2 py-2 sm:px-4 sm:py-3text-right font-bold text-slate-800 whitespace-nowrap">{formatCurrency(sale.grandTotal || sale.totalAmount || 0)}</td>
+                      <td style={getColumnStyle('totalPaid')} className="px-2 py-2 sm:px-4 sm:py-3text-right text-slate-600 whitespace-nowrap">{formatCurrency(sale.totalPaid || 0)}</td>
+                      <td style={getColumnStyle('sellDue')} className="px-2 py-2 sm:px-4 sm:py-3text-right whitespace-nowrap">
                           <span className={`${getDisplaySellDue(sale) > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>{formatCurrency(getDisplaySellDue(sale))}</span>
                       </td>
-                      <td style={getColumnStyle('sellReturnDue')} className="px-4 py-3 text-right whitespace-nowrap">
+                      <td style={getColumnStyle('sellReturnDue')} className="px-2 py-2 sm:px-4 sm:py-3text-right whitespace-nowrap">
                           <span className={`${getDisplaySellReturnDue(sale) > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>{formatCurrency(getDisplaySellReturnDue(sale))}</span>
                       </td>
-                      <td style={getColumnStyle('shippingStatus')} className="px-4 py-3 text-center">
+                      <td style={getColumnStyle('shippingStatus')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
                                sale.shippingStatus === 'Delivered' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-600 border-slate-200'
                            }`}>
                                {sale.shippingStatus}
                            </span>
                       </td>
-                      <td style={getColumnStyle('totalItems')} className="px-4 py-3 text-right text-slate-600 font-medium whitespace-nowrap">{(sale.totalItems || 0).toFixed(3)}</td>
-                      <td style={getColumnStyle('addedBy')} className="px-4 py-3 text-slate-500 whitespace-nowrap">{sale.addedBy}</td>
-                      <td style={getColumnStyle('sellNote')} className="px-4 py-3 text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.sellNote}</td>
-                      <td style={getColumnStyle('staffNote')} className="px-4 py-3 text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.staffNote}</td>
-                      <td style={getColumnStyle('shippingDetails')} className="px-4 py-3 text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.shippingDetails}</td>
+                      <td style={getColumnStyle('totalItems')} className="px-2 py-2 sm:px-4 sm:py-3text-right text-slate-600 font-medium whitespace-nowrap">{(sale.totalItems || 0).toFixed(3)}</td>
+                      <td style={getColumnStyle('addedBy')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 whitespace-nowrap">{sale.addedBy}</td>
+                      <td style={getColumnStyle('sellNote')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.sellNote}</td>
+                      <td style={getColumnStyle('staffNote')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.staffNote}</td>
+                      <td style={getColumnStyle('shippingDetails')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 whitespace-nowrap truncate max-w-[100px]">{sale.shippingDetails}</td>
                     </tr>
                   ))
               ) : (
@@ -1108,7 +1108,7 @@ const Sales: React.FC<SalesProps> = ({
                 <td style={getColumnStyle('action')}          className="px-4 py-3" />
                 <td style={getColumnStyle('date')}            className="px-4 py-3" />
                 <td style={getColumnStyle('invoiceNo')}       className="px-4 py-3" />
-                <td style={getColumnStyle('customerName')}    className="px-4 py-3 text-slate-500 uppercase tracking-wide">Totals</td>
+                <td style={getColumnStyle('customerName')}    className="px-2 py-2 sm:px-4 sm:py-3text-slate-500 uppercase tracking-wide">Totals</td>
                 <td style={getColumnStyle('contactNumber')}   className="px-4 py-3" />
                 <td style={getColumnStyle('location')}        className="px-4 py-3" />
                 <td style={getColumnStyle('status')}          className="px-4 py-3" />
@@ -1117,10 +1117,10 @@ const Sales: React.FC<SalesProps> = ({
                 <td style={getColumnStyle('commissionAgent')} className="px-4 py-3" />
                 <td style={getColumnStyle('commission')}      className="px-4 py-3" />
                 <td style={getColumnStyle('paymentMethod')}   className="px-4 py-3" />
-                <td style={getColumnStyle('totalAmount')}     className="px-4 py-3 text-right text-slate-900">{formatCurrency(totals.amount)}</td>
-                <td style={getColumnStyle('totalPaid')}       className="px-4 py-3 text-right text-emerald-700">{formatCurrency(totals.paid)}</td>
-                <td style={getColumnStyle('sellDue')}         className="px-4 py-3 text-right text-amber-700">{formatCurrency(totals.due)}</td>
-                <td style={getColumnStyle('sellReturnDue')}   className="px-4 py-3 text-right text-rose-700">{formatCurrency(totals.returnDue)}</td>
+                <td style={getColumnStyle('totalAmount')}     className="px-2 py-2 sm:px-4 sm:py-3text-right text-slate-900">{formatCurrency(totals.amount)}</td>
+                <td style={getColumnStyle('totalPaid')}       className="px-2 py-2 sm:px-4 sm:py-3text-right text-emerald-700">{formatCurrency(totals.paid)}</td>
+                <td style={getColumnStyle('sellDue')}         className="px-2 py-2 sm:px-4 sm:py-3text-right text-amber-700">{formatCurrency(totals.due)}</td>
+                <td style={getColumnStyle('sellReturnDue')}   className="px-2 py-2 sm:px-4 sm:py-3text-right text-rose-700">{formatCurrency(totals.returnDue)}</td>
                 <td style={getColumnStyle('shippingStatus')}  className="px-4 py-3" />
                 <td style={getColumnStyle('totalItems')}      className="px-4 py-3" />
                 <td style={getColumnStyle('addedBy')}         className="px-4 py-3" />
@@ -1178,7 +1178,7 @@ const Sales: React.FC<SalesProps> = ({
       {activeActionId && createPortal(
         <div 
             ref={dropdownRef}
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-64 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`}
+            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-64 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`}
             style={{ 
                 top: dropdownPosition.top, 
                 left: dropdownPosition.left, 

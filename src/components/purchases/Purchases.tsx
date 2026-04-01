@@ -368,22 +368,22 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
           <table className="w-full text-sm border-collapse">
             <thead className="bg-slate-50 text-slate-600 text-[11px] uppercase tracking-wider font-bold border-b border-slate-200">
               <tr>
-                <th className="px-4 py-3 text-left">Action</th>
-                {visibleCols.date && <th className="px-4 py-3 text-left">Date</th>}
-                {visibleCols.referenceNo && <th className="px-4 py-3 text-left">Reference No</th>}
-                {visibleCols.location && <th className="px-4 py-3 text-left">Location</th>}
-                {visibleCols.supplier && <th className="px-4 py-3 text-left">Supplier</th>}
-                {visibleCols.purchaseStatus && <th className="px-4 py-3 text-left">Purchase Status</th>}
-                {visibleCols.paymentStatus && <th className="px-4 py-3 text-left">Payment Status</th>}
-                {visibleCols.grandTotal && <th className="px-4 py-3 text-right">Grand Total</th>}
-                {visibleCols.paymentDue && <th className="px-4 py-3 text-right">Payment Due</th>}
-                {visibleCols.addedBy && <th className="px-4 py-3 text-left">Added By</th>}
+                <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Action</th>
+                {visibleCols.date && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Date</th>}
+                {visibleCols.referenceNo && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Reference No</th>}
+                {visibleCols.location && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Location</th>}
+                {visibleCols.supplier && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Supplier</th>}
+                {visibleCols.purchaseStatus && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Purchase Status</th>}
+                {visibleCols.paymentStatus && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Payment Status</th>}
+                {visibleCols.grandTotal && <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Grand Total</th>}
+                {visibleCols.paymentDue && <th className="px-2 py-2 sm:px-4 sm:py-3 text-right">Payment Due</th>}
+                {visibleCols.addedBy && <th className="px-2 py-2 sm:px-4 sm:py-3 text-left">Added By</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {pagedPurchases.length > 0 ? pagedPurchases.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => handleStartPurchaseReturn(item.id)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Return Purchase">
                         <RefreshCcw size={14} />
@@ -393,22 +393,22 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
                       </button>
                     </div>
                   </td>
-                  {visibleCols.date && <td className="px-4 py-3 whitespace-nowrap">{formatAppDateTime(item.date)}</td>}
-                  {visibleCols.referenceNo && <td className="px-4 py-3 font-bold text-slate-900">{item.refNo}</td>}
-                  {visibleCols.location && <td className="px-4 py-3">{item.location}</td>}
-                  {visibleCols.supplier && <td className="px-4 py-3">{item.supplier}</td>}
-                  {visibleCols.purchaseStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${statusBadge(item.status)}`}>{item.status}</span></td>}
-                  {visibleCols.paymentStatus && <td className="px-4 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${paymentBadge(item.paymentStatus)}`}>{item.paymentStatus}</span></td>}
-                  {visibleCols.grandTotal && <td className="px-4 py-3 text-right font-bold">{formatCurrency(item.grandTotal)}</td>}
-                  {visibleCols.paymentDue && <td className="px-4 py-3 text-right font-bold">{formatCurrency(item.paymentDue)}</td>}
-                  {visibleCols.addedBy && <td className="px-4 py-3">{item.addedBy}</td>}
+                  {visibleCols.date && <td className="px-2 py-2 sm:px-4 sm:py-3 whitespace-nowrap">{formatAppDateTime(item.date)}</td>}
+                  {visibleCols.referenceNo && <td className="px-2 py-2 sm:px-4 sm:py-3 font-bold text-slate-900">{item.refNo}</td>}
+                  {visibleCols.location && <td className="px-2 py-2 sm:px-4 sm:py-3">{item.location}</td>}
+                  {visibleCols.supplier && <td className="px-2 py-2 sm:px-4 sm:py-3">{item.supplier}</td>}
+                  {visibleCols.purchaseStatus && <td className="px-2 py-2 sm:px-4 sm:py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${statusBadge(item.status)}`}>{item.status}</span></td>}
+                  {visibleCols.paymentStatus && <td className="px-2 py-2 sm:px-4 sm:py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${paymentBadge(item.paymentStatus)}`}>{item.paymentStatus}</span></td>}
+                  {visibleCols.grandTotal && <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-bold">{formatCurrency(item.grandTotal)}</td>}
+                  {visibleCols.paymentDue && <td className="px-2 py-2 sm:px-4 sm:py-3 text-right font-bold">{formatCurrency(item.paymentDue)}</td>}
+                  {visibleCols.addedBy && <td className="px-2 py-2 sm:px-4 sm:py-3">{item.addedBy}</td>}
                 </tr>
               )) : (
                 <tr><td colSpan={1 + visibleColumnCount} className="px-4 py-10 text-center text-slate-400 italic">No data available in table</td></tr>
               )}
 
               <tr className="bg-slate-100 font-bold">
-                <td colSpan={1 + visibleColumnCount} className="px-4 py-3">
+                <td colSpan={1 + visibleColumnCount} className="px-2 py-2 sm:px-4 sm:py-3">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-6 text-right">
                     <div className="text-lg">Total: {formatCurrency(totalGrand)}</div>
                     <div>Purchase Due - {formatCurrency(totalDue)}</div>

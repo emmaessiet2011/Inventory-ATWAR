@@ -565,7 +565,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
       </div>
 
       {activeActionId && createPortal(
-        <div ref={dropdownRef} className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-48 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`} style={{ top: dropdownPosition.top, left: dropdownPosition.left, bottom: dropdownPosition.bottom }} onClick={(e) => e.stopPropagation()}>
+        <div ref={dropdownRef} className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-48 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`} style={{ top: dropdownPosition.top, left: dropdownPosition.left, bottom: dropdownPosition.bottom }} onClick={(e) => e.stopPropagation()}>
           <div className="px-4 py-2.5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Actions</span>
             <button onClick={() => setActiveActionId(null)} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={14} /></button>

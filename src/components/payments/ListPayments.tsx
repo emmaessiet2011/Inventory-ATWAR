@@ -551,23 +551,23 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50 sticky top-0 text-slate-500 font-semibold border-b border-slate-200">
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-44"><div className="flex items-center gap-2">Date <ArrowUpDown size={12} /></div></th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-40">Reference No</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500">Customer</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-36">Location</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-36">Amount</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-40">Payment Method</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-44">Attachment</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-56">Cleared Invoices</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-40">Added By</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-56">Note</th>
-                <th className="px-6 py-4 text-xs font-semibold text-slate-500 w-24 text-center">Action</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-44"><div className="flex items-center gap-2">Date <ArrowUpDown size={12} /></div></th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-40">Reference No</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500">Customer</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-36">Location</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-36">Amount</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-40">Payment Method</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-44">Attachment</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-56">Cleared Invoices</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-40">Added By</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-56">Note</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-xs font-semibold text-slate-500 w-24 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredPayments.length > 0 ? paginatedPayments.map((payment) => (
                 <tr key={payment.id} className="group hover:bg-slate-50/80 transition-colors">
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <div className="font-bold text-slate-700 text-sm">
                       {parseDateSafe(payment.date)?.toLocaleDateString() || payment.date}
                       <span className="block text-[10px] text-slate-400 font-medium">
@@ -575,18 +575,18 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <span className="font-bold text-slate-600 text-sm bg-slate-100 px-2 py-1 rounded border border-slate-200">{payment.referenceNo}</span>
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <span className="font-bold text-slate-800 text-sm">{payment.customerName}</span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{payment.location || '--'}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-sm text-slate-600">{payment.location || '--'}</td>
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <span className="font-black text-emerald-600 text-sm">{formatCurrency(payment.amount)}</span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-700">{payment.method}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-sm text-slate-700">{payment.method}</td>
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     {payment.attachmentName ? (
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
                         <Paperclip size={12} /> {payment.attachmentName}
@@ -595,7 +595,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                       <span className="text-xs text-slate-400 font-medium italic">No file</span>
                     )}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     {payment.clearedInvoices.length > 0 ? (
                       <div className="flex flex-col gap-1">
                         {payment.clearedInvoices.slice(0, 3).map((invoice, index) => (
@@ -623,11 +623,11 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                       </div>
                     ) : <span className="text-xs text-slate-400 italic">None</span>}
                   </td>
-                  <td className="px-6 py-4 text-sm text-slate-600">{payment.addedBy || '--'}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-sm text-slate-600">{payment.addedBy || '--'}</td>
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <p className="text-sm text-slate-500 truncate max-w-[220px]" title={payment.note}>{payment.note || '-'}</p>
                   </td>
-                  <td className="px-6 py-4 text-center relative">
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-center relative">
                     <button
                       ref={el => { actionButtonRefs.current[payment.id] = el; }}
                       onClick={(event) => toggleActions(event, payment.id)}
@@ -637,7 +637,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                     </button>
                     {activeActionId === payment.id && createPortal(
                       <div
-                        className="fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 animate-in fade-in zoom-in-95"
+                        className="fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95"
                         style={{ top: dropdownPosition.top, left: dropdownPosition.left }}
                         onClick={(event) => event.stopPropagation()}
                       >
@@ -669,7 +669,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
           </table>
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 border-t border-slate-100 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 text-sm text-slate-600">
             <label className="flex items-center gap-2">
               <span>Show</span>

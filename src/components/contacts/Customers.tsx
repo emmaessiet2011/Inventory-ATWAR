@@ -1095,27 +1095,26 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
             <table className="w-full text-sm text-left border-collapse">
                 <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 z-10 text-slate-500 font-semibold border-b border-slate-200 whitespace-nowrap">
                     <tr>
-                        <th className="px-6 py-4 w-[100px] text-center text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-50/90 sticky left-0 z-10 print:hidden">Action</th>
-                        <th className="px-6 py-4 min-w-[130px]">Contact ID</th>
-                        <th className="px-6 py-4 min-w-[170px]">Business Name</th>
-                        <th className="px-6 py-4 min-w-[140px]">Name</th>
-                        <th className="px-6 py-4 min-w-[180px]">Email</th>
-                        <th className="px-6 py-4 min-w-[120px]">Tax number</th>
-                        <th className="px-6 py-4 min-w-[120px] text-right">Credit Limit</th>
-                        <th className="px-6 py-4 min-w-[110px]">Pay term</th>
-                        <th className="px-6 py-4 min-w-[130px] text-right">Opening Balance</th>
-                        <th className="px-6 py-4 min-w-[130px] text-right">Advance Balance</th>
-                        <th className="px-6 py-4 min-w-[120px]">Added On</th>
-                        <th className="px-6 py-4 min-w-[140px]">Customer Group</th>
-                        <th className="px-6 py-4 min-w-[160px]">Address</th>
-                        <th className="px-6 py-4 min-w-[120px]">Mobile</th>
-                        <th className="px-6 py-4 min-w-[150px] text-right">Total Sale Due</th>
-                        <th className="px-6 py-4 min-w-[170px] text-right">Total Sell Return Due</th>
-                        <th className="px-6 py-4 min-w-[110px]">Status</th>
-                        
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 w-[60px] md:w-[100px] text-center text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-50/90 sticky left-0 z-10 print:hidden">Action</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[130px] hidden sm:table-cell">Contact ID</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[170px]">Business Name</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[140px] hidden sm:table-cell">Name</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[180px] hidden lg:table-cell">Email</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[120px] hidden lg:table-cell">Tax number</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[120px] text-right hidden lg:table-cell">Credit Limit</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[110px] hidden lg:table-cell">Pay term</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[130px] text-right hidden lg:table-cell">Opening Balance</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[130px] text-right hidden lg:table-cell">Advance Balance</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[120px] hidden lg:table-cell">Added On</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[140px] hidden md:table-cell">Customer Group</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[160px] hidden md:table-cell">Address</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[120px]">Mobile</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[150px] text-right">Total Sale Due</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[170px] text-right hidden lg:table-cell">Total Sell Return Due</th>
+                        <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 min-w-[110px]">Status</th>
                         {/* Custom Column Headers */}
                         {customColumns.map((col) => (
-                            <th key={col} className="px-6 py-4 whitespace-nowrap text-blue-600 bg-blue-50/30 border-l border-blue-100">
+                            <th key={col} className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-4 whitespace-nowrap text-blue-600 bg-blue-50/30 border-l border-blue-100 hidden lg:table-cell">
                                 {col}
                             </th>
                         ))}
@@ -1125,43 +1124,43 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                     {paginatedCustomers.length > 0 ? (
                         paginatedCustomers.map((customer) => (
                         <tr key={customer.id} className={`hover:bg-slate-50/80 transition-all duration-200 group ${customer.status === 'Inactive' ? 'bg-slate-50/50' : ''}`}>
-                            <td className="px-4 py-3 text-center bg-white group-hover:bg-slate-50 sticky left-0 z-10 border-r border-transparent group-hover:border-slate-200 print:hidden">
-                                <button 
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-4 md:py-3 text-center bg-white group-hover:bg-slate-50 sticky left-0 z-10 border-r border-transparent group-hover:border-slate-200 print:hidden">
+                                <button
                                     onClick={(e) => toggleActions(e, customer.id)}
-                                    className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 mx-auto transition-all duration-200 ${activeActionId === customer.id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
+                                    className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 mx-auto transition-all duration-200 ${activeActionId === customer.id ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'}`}
                                 >
                                     Actions <ChevronDown size={10} />
                                 </button>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 hidden sm:table-cell">
                                 <div className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded w-fit">{customer.id}</div>
                             </td>
-                            <td className="px-6 py-4 text-slate-900 font-bold">{customer.businessName}</td>
-                            <td className="px-6 py-4 text-slate-700 font-medium">{customer.name}</td>
-                            <td className="px-6 py-4 text-slate-600">{customer.email}</td>
-                            <td className="px-6 py-4 font-mono text-slate-600 text-xs">{customer.taxNumber}</td>
-                            <td className="px-6 py-4 text-right text-slate-700 font-medium">{customer.creditLimit === 0 ? 'No Limit' : formatCurrency(customer.creditLimit)}</td>
-                            <td className="px-6 py-4 text-slate-600">{customer.payTerm}</td>
-                            <td className="px-6 py-4 text-right text-slate-700 font-medium">{formatCurrency(customer.openingBalance)}</td>
-                            <td className="px-6 py-4 text-right text-emerald-600 font-medium">{formatCurrency(customer.advanceBalance)}</td>
-                            <td className="px-6 py-4 text-slate-600">{customer.addedOn}</td>
-                            <td className="px-6 py-4 text-slate-700">{customer.customerGroup}</td>
-                            <td className="px-6 py-4 text-slate-600 truncate max-w-[220px]" title={customer.address}>{customer.address}</td>
-                            <td className="px-6 py-4 text-slate-700">{customer.mobile}</td>
-                            <td className="px-6 py-4 text-right">
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-900 font-bold">{customer.businessName}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-700 font-medium hidden sm:table-cell">{customer.name}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-600 hidden lg:table-cell">{customer.email}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 font-mono text-slate-600 text-xs hidden lg:table-cell">{customer.taxNumber}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-right text-slate-700 font-medium hidden lg:table-cell">{customer.creditLimit === 0 ? 'No Limit' : formatCurrency(customer.creditLimit)}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-600 hidden lg:table-cell">{customer.payTerm}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-right text-slate-700 font-medium hidden lg:table-cell">{formatCurrency(customer.openingBalance)}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-right text-emerald-600 font-medium hidden lg:table-cell">{formatCurrency(customer.advanceBalance)}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-600 hidden lg:table-cell">{customer.addedOn}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-700 hidden md:table-cell">{customer.customerGroup}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-600 truncate max-w-[220px] hidden md:table-cell" title={customer.address}>{customer.address}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-700">{customer.mobile}</td>
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-right">
                                 <span className={`font-bold ${customer.totalSellDue > 0 ? 'text-red-600' : 'text-slate-400'}`}>
                                     {formatCurrency(customer.totalSellDue)}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 text-right">
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-right hidden lg:table-cell">
                                 <span className={`font-bold ${customer.totalSellReturnDue > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                                     {formatCurrency(customer.totalSellReturnDue)}
                                 </span>
                             </td>
-                            <td className="px-6 py-4">
+                            <td className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4">
                                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
-                                    customer.status === 'Active' 
-                                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+                                    customer.status === 'Active'
+                                    ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                                     : 'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
                                     {customer.status}
@@ -1170,7 +1169,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
 
                             {/* Custom Column Values */}
                             {customColumns.map((col) => (
-                                <td key={`${customer.id}-${col}`} className="px-6 py-4 text-slate-600 border-l border-r border-dashed border-slate-100 bg-slate-50/20 whitespace-nowrap">
+                                <td key={`${customer.id}-${col}`} className="px-2 py-2 sm:px-3 sm:py-3 md:px-6 md:py-4 text-slate-600 border-l border-r border-dashed border-slate-100 bg-slate-50/20 whitespace-nowrap hidden lg:table-cell">
                                     {customer.customValues && customer.customValues[col] ? (
                                         <span className="font-medium text-slate-800">{customer.customValues[col]}</span>
                                     ) : (
@@ -1189,12 +1188,12 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                 </tbody>
                 <tfoot className="bg-slate-50/80 backdrop-blur-sm font-bold text-slate-700 text-xs uppercase border-t border-slate-200 sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] print:bg-white print:border-t-2 print:border-slate-800">
                     <tr>
-                        <td colSpan={8} className="px-6 py-4 text-right">Grand Total:</td>
-                        <td className="px-6 py-4 text-right">{formatCurrency(totalOpeningBalance)}</td>
-                        <td className="px-6 py-4 text-right text-emerald-700">{formatCurrency(totalAdvanceBalance)}</td>
+                        <td colSpan={8} className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right">Grand Total:</td>
+                        <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right hidden lg:table-cell">{formatCurrency(totalOpeningBalance)}</td>
+                        <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-emerald-700 hidden lg:table-cell">{formatCurrency(totalAdvanceBalance)}</td>
                         <td colSpan={4}></td>
-                        <td className="px-6 py-4 text-right text-red-700">{formatCurrency(totalSellDue)}</td>
-                        <td className="px-6 py-4 text-right text-amber-700">{formatCurrency(totalSellReturnDue)}</td>
+                        <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-red-700">{formatCurrency(totalSellDue)}</td>
+                        <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-amber-700 hidden lg:table-cell">{formatCurrency(totalSellReturnDue)}</td>
                         <td></td>
                         {customColumns.length > 0 && <td colSpan={customColumns.length}></td>}
                     </tr>
@@ -1649,7 +1648,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       {/* Action Menu Portal */}
       {activeActionId && (
         <div 
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-56 animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
+            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-56 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
             style={{ top: dropdownPosition.top, left: dropdownPosition.left, bottom: dropdownPosition.bottom }}
         >
             <div className="px-4 py-2 border-b border-slate-50 mb-1">

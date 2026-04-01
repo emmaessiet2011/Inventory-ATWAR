@@ -859,26 +859,26 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
           <table className="w-full text-sm text-left border-collapse">
             <thead className="bg-slate-50/80 backdrop-blur-sm sticky top-0 z-10 text-slate-500 font-semibold border-b border-slate-200 whitespace-nowrap">
               <tr>
-                <th className="px-6 py-4 w-[100px] text-center text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-50/90">
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 w-[100px] text-center text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-50/90">
                     Action
                 </th>
-                <th className="px-6 py-4 min-w-[140px] cursor-pointer hover:text-slate-800 transition-colors group">
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[140px] cursor-pointer hover:text-slate-800 transition-colors group">
                      <div className="flex items-center gap-1">
                         Contact ID <ArrowUpDown size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                 </th>
-                <th className="px-6 py-4 min-w-[180px]">Business Name</th>
-                <th className="px-6 py-4 min-w-[150px]">Contact Person</th>
-                <th className="px-6 py-4 min-w-[180px]">Email Address</th>
-                <th className="px-6 py-4 min-w-[120px]">Tax Number</th>
-                <th className="px-6 py-4 min-w-[120px]">Pay Term</th>
-                <th className="px-6 py-4 min-w-[130px] text-right">Opening Bal.</th>
-                <th className="px-6 py-4 min-w-[130px] text-right">Advance Bal.</th>
-                <th className="px-6 py-4 min-w-[150px] text-right">Total Due</th>
-                <th className="px-6 py-4 min-w-[150px] text-right">Return Due</th>
-                <th className="px-6 py-4 min-w-[120px]">Status</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[180px]">Business Name</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[150px]">Contact Person</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[180px]">Email Address</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[120px]">Tax Number</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[120px]">Pay Term</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[130px] text-right">Opening Bal.</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[130px] text-right">Advance Bal.</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[150px] text-right">Total Due</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[150px] text-right">Return Due</th>
+                <th className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 min-w-[120px]">Status</th>
                 {customColumns.map((col) => (
-                    <th key={col} className="px-6 py-4 whitespace-nowrap text-blue-600 bg-blue-50/30 border-l border-blue-100">
+                    <th key={col} className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 whitespace-nowrap text-blue-600 bg-blue-50/30 border-l border-blue-100">
                         {col}
                     </th>
                 ))}
@@ -902,12 +902,12 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                         </button>
                       </td>
 
-                      <td className="px-6 py-4">
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                           <div className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded w-fit">
                               {supplier.id}
                           </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                           <div className="flex flex-col">
                               <span className="font-bold text-slate-900">{supplier.businessName}</span>
                               <span className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
@@ -915,7 +915,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                               </span>
                           </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                           <div className="flex flex-col">
                               <span className="text-slate-700 font-medium">{supplier.name}</span>
                               <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
@@ -923,18 +923,18 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                               </span>
                           </div>
                       </td>
-                      <td className="px-6 py-4 text-slate-600">{supplier.email}</td>
-                      <td className="px-6 py-4 font-mono text-slate-600 text-xs">{supplier.taxNumber}</td>
-                      <td className="px-6 py-4 text-slate-600">{supplier.payTerm}</td>
-                      <td className="px-6 py-4 text-right text-slate-700 font-medium">{formatCurrency(supplier.openingBalance)}</td>
-                      <td className="px-6 py-4 text-right text-emerald-600 font-medium">{formatCurrency(supplier.advanceBalance)}</td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-600">{supplier.email}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 font-mono text-slate-600 text-xs">{supplier.taxNumber}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-600">{supplier.payTerm}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-slate-700 font-medium">{formatCurrency(supplier.openingBalance)}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-emerald-600 font-medium">{formatCurrency(supplier.advanceBalance)}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right">
                           <span className={`font-bold ${supplier.totalPurchaseDue > 0 ? 'text-red-600' : 'text-slate-400'}`}>
                               {formatCurrency(supplier.totalPurchaseDue)}
                           </span>
                       </td>
-                      <td className="px-6 py-4 text-right text-amber-600 font-medium">{formatCurrency(supplier.totalReturnDue)}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-amber-600 font-medium">{formatCurrency(supplier.totalReturnDue)}</td>
+                      <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold ${
                               supplier.status === 'Active' 
                               ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
@@ -946,7 +946,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                       
                       {/* Custom Fields */}
                       {customColumns.map((col) => (
-                        <td key={`${supplier.id}-${col}`} className="px-6 py-4 text-slate-600 border-l border-r border-dashed border-slate-100 bg-slate-50/20">
+                        <td key={`${supplier.id}-${col}`} className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-600 border-l border-r border-dashed border-slate-100 bg-slate-50/20">
                             {supplier.customValues && supplier.customValues[col] ? (
                                 <span className="font-medium text-slate-800">{supplier.customValues[col]}</span>
                             ) : (
@@ -968,10 +968,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
              <tfoot className="bg-slate-50/80 backdrop-blur-sm font-bold text-slate-700 text-xs uppercase border-t border-slate-200 sticky bottom-0 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
                 <tr>
                     <td colSpan={7} className="px-4 py-4 text-right">Grand Total:</td>
-                    <td className="px-6 py-4 text-right">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.openingBalance, 0))}</td>
-                    <td className="px-6 py-4 text-right text-emerald-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.advanceBalance, 0))}</td>
-                    <td className="px-6 py-4 text-right text-red-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalPurchaseDue, 0))}</td>
-                    <td className="px-6 py-4 text-right text-amber-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalReturnDue, 0))}</td>
+                    <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.openingBalance, 0))}</td>
+                    <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-emerald-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.advanceBalance, 0))}</td>
+                    <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-red-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalPurchaseDue, 0))}</td>
+                    <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right text-amber-700">{formatCurrency(filteredSuppliers.reduce((a, c) => a + c.totalReturnDue, 0))}</td>
                     <td colSpan={1 + customColumns.length}></td>
                 </tr>
             </tfoot>
@@ -1380,7 +1380,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       {activeActionId && createPortal(
         <div 
             ref={dropdownRef}
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 text-left w-56 animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
+            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 text-left w-56 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
             style={{ 
                 top: dropdownPosition.top, 
                 left: dropdownPosition.left,
@@ -1479,7 +1479,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95">
             {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+            <div className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 border-b border-slate-100 flex justify-between items-center">
               <h3 className="text-xl font-bold text-slate-800">Add payment</h3>
               <button onClick={closePaymentModal} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X size={24} />
@@ -1608,7 +1608,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
+            <div className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
               <button
                 onClick={processSupplierPayment}
                 className="px-6 py-2 bg-blue-600 text-white rounded font-bold text-sm hover:bg-blue-700 transition-colors"

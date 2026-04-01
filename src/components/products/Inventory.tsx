@@ -1198,59 +1198,59 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                 <table className="w-full text-[11px] text-left border-collapse">
                     <thead className="bg-white border-b border-slate-100 sticky top-0 z-10 shadow-sm">
                         <tr>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Action</th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">SKU <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Product <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Variation <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Category <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Location</th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Unit Selling Price <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Current stock <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Stock Value <br/>(Purchase) <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Stock Value <br/>(Sale) <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Profit Potential</th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Total Sold <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Transferred <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
-                            <th className="px-6 py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Adjusted <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Action</th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white hidden sm:table-cell">SKU <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white">Product <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white hidden lg:table-cell">Variation <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white hidden md:table-cell">Category <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white hidden md:table-cell">Location</th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Unit Selling Price <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right">Current stock <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden lg:table-cell">Stock Value <br/>(Purchase) <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden lg:table-cell">Stock Value <br/>(Sale) <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden lg:table-cell">Profit Potential</th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden xl:table-cell">Total Sold <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden xl:table-cell">Transferred <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
+                            <th className="px-2 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 text-[10px] font-extrabold text-slate-400 uppercase tracking-widest bg-white text-right hidden xl:table-cell">Adjusted <ArrowUpDownIcon size={12} className="inline ml-1"/></th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                         {pagedStockReport.map((item, idx) => (
                             <tr key={item.id} className={`hover:bg-slate-50/80 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'}`}>
-                                <td className="px-6 py-4">
-                                    <button 
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
+                                    <button
                                         onClick={() => {
                                           const product = products.find(p => p.id === item.id);
                                           if (product) handleProductHistory(product);
                                         }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-indigo-600 rounded-lg text-[10px] font-bold hover:bg-indigo-50 hover:border-indigo-200 shadow-sm whitespace-nowrap transition-all"
+                                        className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 bg-white border border-slate-200 text-indigo-600 rounded-lg text-[10px] font-bold hover:bg-indigo-50 hover:border-indigo-200 shadow-sm whitespace-nowrap transition-all"
                                     >
-                                        <History size={10} /> Product stock history
+                                        <History size={10} /> <span className="hidden sm:inline">Product stock</span> history
                                     </button>
                                 </td>
-                                <td className="px-6 py-4 font-mono font-bold text-slate-500">{item.sku}</td>
-                                <td className="px-6 py-4 font-bold text-slate-700">{item.product}</td>
-                                <td className="px-6 py-4 text-slate-500 italic">{item.variation || '-'}</td>
-                                <td className="px-6 py-4 text-slate-600">{item.category}</td>
-                                <td className="px-6 py-4 text-slate-500 truncate max-w-[120px]" title={item.location}>{item.location}</td>
-                                <td className="px-6 py-4 text-right font-medium text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap">
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 font-mono font-bold text-slate-500 hidden sm:table-cell">{item.sku}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 font-bold text-slate-700">{item.product}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-500 italic hidden lg:table-cell">{item.variation || '-'}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-600 hidden md:table-cell">{item.category}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-500 truncate max-w-[120px] hidden md:table-cell" title={item.location}>{item.location}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right font-medium text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap">
                                     <span className="font-bold text-slate-800">{item.currentStock.toFixed(3)}</span> <span className="text-[10px] text-slate-400">{item.unit}</span>
                                 </td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatCurrency(item.stockValuePurchase)}</td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">{formatCurrency(item.stockValueSale)}</td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap">
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden lg:table-cell">{formatCurrency(item.stockValuePurchase)}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden lg:table-cell">{formatCurrency(item.stockValueSale)}</td>
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap hidden lg:table-cell">
                                     <span className={`font-bold ${item.potentialProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                                         {formatCurrency(item.potentialProfit)}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap">
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap hidden xl:table-cell">
                                     <span className="font-medium text-slate-700">{item.totalUnitSold.toFixed(3)}</span>
                                 </td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden xl:table-cell">
                                     {item.totalUnitTransferred.toFixed(3)}
                                 </td>
-                                <td className="px-6 py-4 text-right whitespace-nowrap text-slate-500">
+                                <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden xl:table-cell">
                                     {item.totalUnitAdjusted.toFixed(3)}
                                 </td>
                             </tr>
@@ -1313,7 +1313,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       {activeActionId && createPortal(
         <div 
             ref={dropdownRef}
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
+            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 ${dropdownPosition.transformOrigin}`}
             style={{ top: dropdownPosition.top, left: dropdownPosition.left, bottom: dropdownPosition.bottom }}
         >
             <div className="px-4 py-2 border-b border-slate-50 mb-1">

@@ -1979,7 +1979,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                                           {activeActionId === `pay-${pay.id}` && createPortal(
                                               <div 
                                                   ref={dropdownRef}
-                                                  className="fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 animate-in fade-in zoom-in-95"
+                                                  className="fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 py-2 w-48 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95"
                                                   style={{ 
                                                       top: dropdownPosition.top, 
                                                       bottom: dropdownPosition.bottom,
@@ -2228,7 +2228,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
        {activeActionId && !activeActionId.startsWith('pay-') && createPortal(
         <div 
             ref={dropdownRef}
-            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-64 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`}
+            className={`fixed z-[9999] bg-white rounded-xl shadow-2xl border border-slate-100 w-64 max-w-[calc(100vw-2rem)] animate-in fade-in zoom-in-95 duration-200 overflow-y-auto ${dropdownPosition.transformOrigin}`}
             style={{ 
                 top: dropdownPosition.top, 
                 left: dropdownPosition.left, 
