@@ -77,6 +77,10 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
   const [documentDataUrl, setDocumentDataUrl] = useState<string>('');
   const [confirmingBreakdown, setConfirmingBreakdown] = useState<InvoiceBreakdown[] | null>(null);
   const [rebateEnabled, setRebateEnabled] = useState(false);
+  const [chequeDate, setChequeDate] = useState('');
+  const [chequeNo, setChequeNo] = useState('');
+  const [chequeBankName, setChequeBankName] = useState('');
+  const [chequeDrawerName, setChequeDrawerName] = useState('');
 
   useEffect(() => {
     if (locations.length === 0) {
@@ -311,6 +315,12 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
       rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
       rebateAmount: rebateEnabled && rebateAmount > 0 ? rebateAmount : undefined,
       rebateApplied: rebateEnabled && rebateAmount > 0,
+      ...(method === 'Cheque' && chequeDate ? {
+        chequeDate,
+        chequeNo: chequeNo || undefined,
+        bankName: chequeBankName || undefined,
+        drawerName: chequeDrawerName || undefined,
+      } : {}),
     });
 
     const activeRegister = getActiveRegisterSession();
@@ -340,6 +350,10 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     setSearchQuery('');
     setAccount(defaultAccountFromMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash') || 'Cash Account');
     setMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash');
+    setChequeDate('');
+    setChequeNo('');
+    setChequeBankName('');
+    setChequeDrawerName('');
   };
 
   const needsAttachment = requiresAttachment(method);
@@ -443,6 +457,53 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
                   className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${rebateEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
                   <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${rebateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                 </button>
+              </div>
+            )}
+
+            {method === 'Cheque' && (
+              <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+                <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Cheque Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Cheque Date *</label>
+                    <input
+                      type="date"
+                      value={chequeDate}
+                      onChange={e => setChequeDate(e.target.value)}
+                      className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Cheque No.</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 001234"
+                      value={chequeNo}
+                      onChange={e => setChequeNo(e.target.value)}
+                      className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Bank</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Bank Muscat"
+                      value={chequeBankName}
+                      onChange={e => setChequeBankName(e.target.value)}
+                      className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Drawer Name</label>
+                    <input
+                      type="text"
+                      placeholder="Name on cheque"
+                      value={chequeDrawerName}
+                      onChange={e => setChequeDrawerName(e.target.value)}
+                      className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none"
+                    />
+                  </div>
+                </div>
               </div>
             )}
 

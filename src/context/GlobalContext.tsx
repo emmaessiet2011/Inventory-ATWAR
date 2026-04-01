@@ -574,6 +574,12 @@ export interface Payment {
   rebatePercent?: number;   // % at time of payment (snapshot from customer profile)
   rebateAmount?: number;    // Amount written off as rebate
   rebateApplied?: boolean;  // Whether rebate was applied for this payment
+  // Cheque-specific fields (only set when method === 'Cheque')
+  chequeDate?: string;      // Post-dated cheque date (YYYY-MM-DD)
+  chequeNo?: string;        // Cheque number printed on the cheque
+  bankName?: string;        // Bank the cheque is drawn on
+  drawerName?: string;      // Name written on the cheque
+  chequeCleared?: boolean;  // true once cheque has been deposited/cleared
 }
 
 export interface Expense {

@@ -119,6 +119,18 @@ const ViewPaymentModal: React.FC<ViewPaymentModalProps> = ({ isOpen, onClose, pa
           </div>
         </div>
 
+        {payment.method === 'Cheque' && (payment.chequeDate || payment.chequeNo) && (
+          <div className="px-6 pb-4">
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-1.5">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Cheque Details</p>
+              {payment.chequeDate && <p className="text-sm text-slate-700">Date: <strong>{payment.chequeDate}</strong></p>}
+              {payment.chequeNo   && <p className="text-sm text-slate-700">Cheque No: <strong>#{payment.chequeNo}</strong></p>}
+              {payment.bankName   && <p className="text-sm text-slate-700">Bank: <strong>{payment.bankName}</strong></p>}
+              {payment.drawerName && <p className="text-sm text-slate-700">Drawer: <strong>{payment.drawerName}</strong></p>}
+            </div>
+          </div>
+        )}
+
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 shrink-0">
           <button
             onClick={handlePrint}

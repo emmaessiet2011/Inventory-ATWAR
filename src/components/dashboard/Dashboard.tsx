@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertCircle,
   AlertTriangle,
+  Bell,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
@@ -191,6 +193,30 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [savedViews, setSavedViews] = useState<SavedDashboardView[]>(readViews);
   const [selectedViewId, setSelectedViewId] = useState('');
   const [viewName, setViewName] = useState('');
+
+  // Cheque reminders
+  const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const tomorrowMidnight = useMemo(() => { const d = new Date(todayMidnight); d.setDate(d.getDate() + 1); return d; }, [todayMidnight]);
+  const pendingCheques = useMemo(() => {
+    return payments
+      .filter(p => {
+        if (p.method !== 'Cheque' || !p.chequeDate || p.chequeCleared) return false;
+        const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
+        return d <= tomorrowMidnight;
+      })
+      .sort((a, b) => new Date(a.chequeDate!).getTime() - new Date(b.chequeDate!).getTime());
+  }, [payments, tomorrowMidnight]);
+  const CHEQUE_REMINDER_KEY = 'app_cheque_reminder_date';
+  const [showChequePopup, setShowChequePopup] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const lastShown = localStorage.getItem(CHEQUE_REMINDER_KEY);
+    const todayStr = new Date().toISOString().split('T')[0];
+    return lastShown !== todayStr;
+  });
+  const dismissChequePopup = () => {
+    localStorage.setItem(CHEQUE_REMINDER_KEY, new Date().toISOString().split('T')[0]);
+    setShowChequePopup(false);
+  };
 
   useEffect(() => {
     try {
@@ -1221,6 +1247,39 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-6 animate-fade-in pb-10">
+      {pendingCheques.length > 0 && (
+        <div className="rounded-[2rem] bg-amber-50 border border-amber-200 p-5 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-orange-400 rounded-t-[2rem]" />
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 bg-amber-100 rounded-xl"><AlertCircle size={18} className="text-amber-700" /></div>
+            <h3 className="font-black text-amber-900">Cheque Reminders</h3>
+            <span className="ml-auto px-2.5 py-1 rounded-full bg-amber-200 text-amber-800 text-xs font-bold">
+              {pendingCheques.length} cheque{pendingCheques.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {pendingCheques.map(p => {
+              const d = new Date(p.chequeDate!); d.setHours(0,0,0,0);
+              const isToday = d.getTime() === todayMidnight.getTime();
+              const isOverdue = d < todayMidnight;
+              return (
+                <div key={p.id} className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-amber-100">
+                  <div>
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold mr-2 ${isOverdue ? 'bg-rose-100 text-rose-700' : isToday ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {isOverdue ? 'Overdue' : isToday ? 'Due Today' : 'Due Tomorrow'}
+                    </span>
+                    <span className="text-sm font-bold text-slate-800">{p.contactName}</span>
+                    {p.chequeNo && <span className="text-xs text-slate-500 ml-2">#{p.chequeNo}</span>}
+                    {p.bankName && <span className="text-xs text-slate-500 ml-1">· {p.bankName}</span>}
+                  </div>
+                  <span className="font-black text-slate-900">{formatCurrency(p.amount)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-blue-600 rounded-2xl shadow-md shrink-0">
@@ -1940,6 +1999,49 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>
       )}
 
+      {showChequePopup && pendingCheques.length > 0 && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-400" />
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-amber-100 rounded-2xl"><Bell size={22} className="text-amber-700" /></div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900">Cheque Reminders</h2>
+                  <p className="text-xs text-slate-500 mt-0.5">Cheques due soon — don't miss the deposit</p>
+                </div>
+              </div>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {pendingCheques.map(p => {
+                  const d = new Date(p.chequeDate!); d.setHours(0,0,0,0);
+                  const isToday = d.getTime() === todayMidnight.getTime();
+                  const isOverdue = d < todayMidnight;
+                  return (
+                    <div key={p.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-100">
+                      <div>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold mr-2 ${isOverdue ? 'bg-rose-100 text-rose-700' : isToday ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {isOverdue ? 'Overdue' : isToday ? 'Due Today' : 'Due Tomorrow'}
+                        </span>
+                        <span className="text-sm font-bold text-slate-800">{p.contactName}</span>
+                        {p.chequeNo && <span className="text-xs text-slate-500 ml-2">#{p.chequeNo}</span>}
+                        {p.bankName && <span className="text-xs text-slate-500 ml-1">· {p.bankName}</span>}
+                      </div>
+                      <span className="font-black text-slate-900 text-sm">{formatCurrency(p.amount)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                onClick={dismissChequePopup}
+                className="mt-5 w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-700 transition"
+              >
+                Dismiss for today
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

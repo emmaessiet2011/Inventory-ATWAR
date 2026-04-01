@@ -61,6 +61,10 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const [note, setNote] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
   const [rebateEnabled, setRebateEnabled] = useState(false);
+  const [chequeDate, setChequeDate] = useState('');
+  const [chequeNo, setChequeNo] = useState('');
+  const [chequeBankName, setChequeBankName] = useState('');
+  const [chequeDrawerName, setChequeDrawerName] = useState('');
   const defaultAccountFromMethod = (methodName: string) =>
     resolveDefaultAccountFromMethod(methodName, activeLocation);
   const paymentAccountOptions = useMemo(() => (
@@ -91,6 +95,10 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     setNote('');
     setAttachmentName('');
     setRebateEnabled(customerRebatePercent > 0);
+    setChequeDate('');
+    setChequeNo('');
+    setChequeBankName('');
+    setChequeDrawerName('');
   }, [isOpen, sale, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision, customerRebatePercent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -169,6 +177,12 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
       rebateAmount: rebateEnabled && rebateAmount > 0 ? rebateAmount : undefined,
       rebateApplied: rebateEnabled && rebateAmount > 0,
+      ...(method === 'Cheque' && chequeDate ? {
+        chequeDate,
+        chequeNo: chequeNo || undefined,
+        bankName: chequeBankName || undefined,
+        drawerName: chequeDrawerName || undefined,
+      } : {}),
     });
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(sale.location);
@@ -302,6 +316,35 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
                   rebateEnabled ? 'translate-x-6' : 'translate-x-1'
                 }`} />
               </button>
+            </div>
+          )}
+
+          {/* Cheque details — only shown when method is Cheque */}
+          {method === 'Cheque' && (
+            <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Cheque Details</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cheque Date *</label>
+                  <input type="date" value={chequeDate} onChange={e => setChequeDate(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2.5 text-sm focus:ring-4 focus:ring-amber-500/10 focus:border-amber-400 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cheque No.</label>
+                  <input type="text" placeholder="e.g. 001234" value={chequeNo} onChange={e => setChequeNo(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2.5 text-sm focus:ring-4 focus:ring-amber-500/10 focus:border-amber-400 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Bank</label>
+                  <input type="text" placeholder="e.g. Bank Muscat" value={chequeBankName} onChange={e => setChequeBankName(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2.5 text-sm focus:ring-4 focus:ring-amber-500/10 focus:border-amber-400 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Drawer Name</label>
+                  <input type="text" placeholder="Name on cheque" value={chequeDrawerName} onChange={e => setChequeDrawerName(e.target.value)}
+                    className="w-full rounded-xl bg-white border border-amber-200 px-3 py-2.5 text-sm focus:ring-4 focus:ring-amber-500/10 focus:border-amber-400 outline-none" />
+                </div>
+              </div>
             </div>
           )}
 

@@ -112,6 +112,10 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const [paymentNote, setPaymentNote] = useState('');
   const [paymentFileName, setPaymentFileName] = useState('');
   const [payRebateEnabled, setPayRebateEnabled] = useState(false);
+  const [payChequeDate, setPayChequeDate] = useState('');
+  const [payChequeNo, setPayChequeNo] = useState('');
+  const [payChequeBankName, setPayChequeBankName] = useState('');
+  const [payChequeDrawerName, setPayChequeDrawerName] = useState('');
 
   // Ledger filters
   const [locationFilter, setLocationFilter] = useState('all');
@@ -714,6 +718,12 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
         rebatePercent: payRebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
         rebateAmount: payRebateEnabled && payRebateAmount > 0 ? payRebateAmount : undefined,
         rebateApplied: payRebateEnabled && payRebateAmount > 0,
+        ...(paymentMethod === 'Cheque' && payChequeDate ? {
+          chequeDate: payChequeDate,
+          chequeNo: payChequeNo || undefined,
+          bankName: payChequeBankName || undefined,
+          drawerName: payChequeDrawerName || undefined,
+        } : {}),
     });
 
     setIsPaymentModalOpen(false);
@@ -721,6 +731,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
     setPaymentNote('');
     setPaymentFileName('');
     setPayRebateEnabled(false);
+    setPayChequeDate(''); setPayChequeNo(''); setPayChequeBankName(''); setPayChequeDrawerName('');
   };
 
   const invoiceLocationByNo = useMemo(() => {
@@ -2122,6 +2133,34 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                       className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none ${payRebateEnabled ? 'bg-amber-500' : 'bg-slate-300'}`}>
                       <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${payRebateEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
+                  </div>
+                )}
+
+                {paymentMethod === 'Cheque' && (
+                  <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+                    <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Cheque Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Cheque Date *</label>
+                        <input type="date" value={payChequeDate} onChange={e => setPayChequeDate(e.target.value)}
+                          className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Cheque No.</label>
+                        <input type="text" placeholder="e.g. 001234" value={payChequeNo} onChange={e => setPayChequeNo(e.target.value)}
+                          className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Bank</label>
+                        <input type="text" placeholder="e.g. Bank Muscat" value={payChequeBankName} onChange={e => setPayChequeBankName(e.target.value)}
+                          className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Drawer Name</label>
+                        <input type="text" placeholder="Name on cheque" value={payChequeDrawerName} onChange={e => setPayChequeDrawerName(e.target.value)}
+                          className="w-full rounded-xl bg-slate-50 border-transparent px-3 py-3 text-sm focus:ring-4 focus:ring-emerald-500/10 outline-none" />
+                      </div>
+                    </div>
                   </div>
                 )}
 
