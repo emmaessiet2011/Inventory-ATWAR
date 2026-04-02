@@ -33,13 +33,7 @@ const csvEscape = (value: string): string => {
   return /["\n,]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
 };
 
-const escapeHtml = (value: string): string =>
-  String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+
 
 const toLocalDateTimeInput = (value?: string): string => {
   const src = value ? new Date(value) : new Date();

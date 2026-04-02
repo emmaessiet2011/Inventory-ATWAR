@@ -10,7 +10,7 @@ import {
   PurchaseOrderItem,
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { printDocument, statusBadge, paymentBadge } from '@/utils/printUtils';
+import { printDocument, statusBadge } from '@/utils/printUtils';
 
 interface PurchaseOrderProps {
   onNavigate?: (page: string) => void;
@@ -48,13 +48,7 @@ const csvEscape = (value: string): string => {
   return /["\n,]/.test(normalized) ? `"${normalized.replace(/"/g, '""')}"` : normalized;
 };
 
-const escapeHtml = (value: string): string =>
-  String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+
 
 const toLocalDateTimeInput = (value?: string): string => {
   const src = value ? new Date(value) : new Date();

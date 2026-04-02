@@ -52,12 +52,7 @@ const matchesShortcut = (e: KeyboardEvent, shortcut: string): boolean => {
 };
 
 const displayShortcut = (s: string) => s.toUpperCase();
-const escapeHtml = (value: string) => value
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+
 
 const POS: React.FC<POSProps> = ({ onNavigate }) => {
   const {
