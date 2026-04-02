@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { ensureDir, getLine, listFilesRecursive, readText, relPath, repoRoot, writeText } from './fs-utils.mjs';
 
-const appPath = path.join(repoRoot, 'App.tsx');
+const appPath = path.join(repoRoot, 'src', 'App.tsx');
 const appText = readText(appPath);
 
 const routeMatches = [...appText.matchAll(/case\s+'([^']+)'\s*:/g)];
@@ -11,8 +11,8 @@ const dynamicPrefixMatches = [...appText.matchAll(/currentPage\.startsWith\('([^
 const dynamicPrefixes = dynamicPrefixMatches.map((match) => match[1]);
 
 const sourceFiles = [
-  path.join(repoRoot, 'App.tsx'),
-  ...listFilesRecursive(path.join(repoRoot, 'components'), (filePath) => filePath.endsWith('.tsx')),
+  path.join(repoRoot, 'src', 'App.tsx'),
+  ...listFilesRecursive(path.join(repoRoot, 'src', 'components'), (filePath) => filePath.endsWith('.tsx')),
 ];
 
 const unknownNavigationTargets = [];

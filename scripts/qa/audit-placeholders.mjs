@@ -2,7 +2,6 @@ import path from 'node:path';
 import { ensureDir, getLine, listFilesRecursive, readText, relPath, repoRoot, writeText } from './fs-utils.mjs';
 
 const files = [
-  ...listFilesRecursive(path.join(repoRoot, 'components'), (filePath) => filePath.endsWith('.tsx')),
   ...listFilesRecursive(path.join(repoRoot, 'src'), (filePath) => filePath.endsWith('.ts') || filePath.endsWith('.tsx')),
 ];
 
@@ -17,9 +16,11 @@ const patterns = [
 
 const allowList = [
   // Import sample rows are expected in import templates.
-  { path: 'components/ImportContacts.tsx', pattern: 'dummy_data_label' },
+  { path: 'src/components/ImportContacts.tsx', pattern: 'dummy_data_label' },
   // HelpCenter references stale/mock data as guidance text.
-  { path: 'components/HelpCenter.tsx', pattern: 'mock_data_label' },
+  { path: 'src/components/settings/HelpCenter.tsx', pattern: 'mock_data_label' },
+  // App.tsx fallback route shows "under construction" for unimplemented pages.
+  { path: 'src/App.tsx', pattern: 'under_construction' },
 ];
 
 const findings = [];
