@@ -156,6 +156,7 @@ const Sales: React.FC<SalesProps> = ({
   const [addPaymentModalOpen, setAddPaymentModalOpen] = useState(false);
   const [viewPaymentsModalOpen, setViewPaymentsModalOpen] = useState(false);
   const [invoiceURLModalOpen, setInvoiceURLModalOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
   
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [invoiceAutoPrintRequestId, setInvoiceAutoPrintRequestId] = useState<string | null>(null);
@@ -499,15 +500,17 @@ const Sales: React.FC<SalesProps> = ({
       return;
     }
     const documentLabel = getDocumentLabel(sale);
-    if (window.confirm(`Are you sure you want to delete ${documentLabel.toLowerCase()} ${sale?.invoiceNo}? This will restore stock for Final sales only.`)) {
-        globalDeleteSale(saleId); // Deletes from GlobalContext + restores stock
-        addNotification({
-            title: `${documentLabel} Deleted`,
-            message: `${documentLabel} ${sale?.invoiceNo} has been removed.`,
-        type: 'success'
-      });
-    }
     setActiveActionId(null);
+    setConfirmModal({
+      isOpen: true,
+      title: `Delete ${documentLabel}`,
+      message: `Are you sure you want to delete ${documentLabel.toLowerCase()} ${sale?.invoiceNo}? This will restore stock for Final sales only.`,
+      onConfirm: () => {
+        globalDeleteSale(saleId);
+        addNotification({ title: `${documentLabel} Deleted`, message: `${documentLabel} ${sale?.invoiceNo} has been removed.`, type: 'success' });
+        setConfirmModal(null);
+      },
+    });
   };
 
   const handleSellReturn = (saleId: string) => {
@@ -1372,6 +1375,23 @@ const Sales: React.FC<SalesProps> = ({
             invoiceNo={selectedSaleId ? sales.find(s => s.id === selectedSaleId)?.invoiceNo : undefined}
             saleId={selectedSaleId || undefined}
           />
+      )}
+
+      {/* Confirm Modal */}
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-rose-50 text-rose-500 mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-rose-600 hover:bg-rose-700 transition-colors">Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

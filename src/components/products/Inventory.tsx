@@ -153,6 +153,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
 
   const typeOptions = useMemo(
     () => Array.from(new Set(['Single', 'Variable', 'Combo', ...products.map(p => p.type)])).sort(),
@@ -332,7 +333,15 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
 
   const handleBulkDelete = () => {
     if (selectedProducts.length === 0) return;
-    if (!window.confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Products',
+      message: `Are you sure you want to delete ${selectedProducts.length} product${selectedProducts.length > 1 ? 's' : ''}? This cannot be undone.`,
+      onConfirm: () => { setConfirmModal(null); executeBulkDelete(); },
+    });
+  };
+
+  const executeBulkDelete = () => {
     const blockedIds = selectedProducts.filter(id => {
       const pid = String(id);
       return (
@@ -1479,6 +1488,21 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           </div>
       )}
 
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-rose-50 text-rose-500 mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-rose-600 hover:bg-rose-700 transition-colors">Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

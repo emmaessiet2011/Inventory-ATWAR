@@ -4,7 +4,7 @@ import {
     ArrowLeft, User,
     Edit, FileText, ChevronDown,
     Paperclip, Plus, FileSpreadsheet,
-    Printer, Columns, FileDown, UserCheck
+    Printer, Columns, FileDown, UserCheck, Trash2
 } from 'lucide-react';
 
 import { ContactDocument, useGlobalContext } from '@/context/GlobalContext';
@@ -61,6 +61,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
     const [activityEntries, setActivityEntries] = useState(25);
     const [activityPage, setActivityPage] = useState(1);
     const [showActivityMetaColumns, setShowActivityMetaColumns] = useState(true);
+    const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
 
     const user = users.find(u => u.id === selectedUserId) || users.find(u => u.id === userId);
 
@@ -164,9 +165,16 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
     };
 
     const handleDeleteDocument = (documentId: string) => {
-        if (!window.confirm('Delete this document?')) return;
-        const nextDocuments = documentsData.filter((doc) => doc.id !== documentId);
-        persistDocuments(nextDocuments);
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete Document',
+            message: 'Are you sure you want to delete this document? This cannot be undone.',
+            onConfirm: () => {
+                const nextDocuments = documentsData.filter((doc) => doc.id !== documentId);
+                persistDocuments(nextDocuments);
+                setConfirmModal(null);
+            },
+        });
     };
 
     const exportDocumentsCsv = () => {
@@ -734,7 +742,22 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
                     </div>
                 </div>
             </div>
+          {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-rose-50 text-rose-500 mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-rose-600 hover:bg-rose-700 transition-colors">Confirm</button>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+    </div>
     );
 };
 

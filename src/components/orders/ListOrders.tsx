@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Search, FileText, FileSpreadsheet, Printer,
   Eye, MoreVertical, Filter, ChevronDown, Truck, Phone,
-  Edit, FileCheck, User, XCircle, Check,
+  Edit, FileCheck, User, XCircle, Check, Trash2,
 } from 'lucide-react';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import MultiSelect from '@/components/shared/MultiSelect';
@@ -105,6 +105,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
   const [entriesPerPage, setEntriesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [range, setRange] = useState<DateRangeValue>(getCurrentYearRange);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
   const [filters, setFilters] = useState({
     deliveryStatus: [] as string[],
     paymentStatus: [] as string[],
@@ -351,10 +352,17 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       addNotification({ title: 'Already Cancelled', message: `${order.orderNumber} is already cancelled.`, type: 'warning' });
       return;
     }
-    if (!window.confirm(`Cancel order ${order.orderNumber}?`)) return;
-    globalUpdateOrder({ ...order, status: 'Cancelled' });
     setActiveActionId(null);
-    addNotification({ title: 'Order Cancelled', message: `${order.orderNumber} marked as cancelled.`, type: 'success' });
+    setConfirmModal({
+      isOpen: true,
+      title: 'Cancel Order',
+      message: `Are you sure you want to cancel order ${order.orderNumber}?`,
+      onConfirm: () => {
+        globalUpdateOrder({ ...order, status: 'Cancelled' });
+        addNotification({ title: 'Order Cancelled', message: `${order.orderNumber} marked as cancelled.`, type: 'success' });
+        setConfirmModal(null);
+      },
+    });
   };
 
   const handleApproveOrder = (order: GlobalOrder) => {
@@ -367,15 +375,17 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       addNotification({ title: 'Cannot Approve', message: 'Cancelled orders cannot be approved.', type: 'warning' });
       return;
     }
-    if (!window.confirm(`Approve order ${order.orderNumber} for invoicing?`)) return;
-    globalUpdateOrder({
-      ...order,
-      isApproved: true,
-      approvedBy: currentUser?.name || 'Admin',
-      approvedAt: new Date().toISOString(),
-    });
     setActiveActionId(null);
-    addNotification({ title: 'Order Approved', message: `${order.orderNumber} approved and ready for invoicing.`, type: 'success' });
+    setConfirmModal({
+      isOpen: true,
+      title: 'Approve Order',
+      message: `Approve order ${order.orderNumber} for invoicing?`,
+      onConfirm: () => {
+        globalUpdateOrder({ ...order, isApproved: true, approvedBy: currentUser?.name || 'Admin', approvedAt: new Date().toISOString() });
+        addNotification({ title: 'Order Approved', message: `${order.orderNumber} approved and ready for invoicing.`, type: 'success' });
+        setConfirmModal(null);
+      },
+    });
   };
 
   return (
@@ -705,6 +715,21 @@ const ListOrders: React.FC<ListOrdersProps> = ({
           </div>
         </div>
       </div>
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-rose-50 text-rose-500 mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-rose-600 hover:bg-rose-700 transition-colors">Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

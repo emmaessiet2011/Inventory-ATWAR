@@ -123,7 +123,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
 
   const paymentAmountPreview = Math.max(0, Number(amount) || 0);
   const rebateAmount = (rebateEnabled && customerRebatePercent > 0)
-    ? Number((paymentAmountPreview * customerRebatePercent / 100).toFixed(3))
+    ? Number((paymentAmountPreview * customerRebatePercent / 100).toFixed(currencyPrecision))
     : 0;
 
   const handleSave = () => {

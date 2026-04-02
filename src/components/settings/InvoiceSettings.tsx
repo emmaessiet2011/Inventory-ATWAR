@@ -28,6 +28,7 @@ const InvoiceSettings: React.FC = () => {
   const [isLayoutModalOpen, setIsLayoutModalOpen] = useState(false);
   const [editingSchemeId, setEditingSchemeId] = useState<string | null>(null);
   const [editingLayoutId, setEditingLayoutId] = useState<string | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
 
   const [schemeForm, setSchemeForm] = useState({
     name: '',
@@ -116,16 +117,16 @@ const InvoiceSettings: React.FC = () => {
   };
 
   const handleDeleteScheme = (scheme: InvoiceScheme) => {
-    if (window.confirm(`Delete invoice scheme "${scheme.name}"?`)) {
-      const result = deleteInvoiceScheme(scheme.id);
-      if (!result.success) {
-        addNotification({
-          title: 'Blocked',
-          message: result.message || 'Unable to delete invoice scheme.',
-          type: 'error',
-        });
-      }
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Invoice Scheme',
+      message: `Delete invoice scheme "${scheme.name}"?`,
+      onConfirm: () => {
+        const result = deleteInvoiceScheme(scheme.id);
+        if (!result.success) addNotification({ title: 'Blocked', message: result.message || 'Unable to delete invoice scheme.', type: 'error' });
+        setConfirmModal(null);
+      },
+    });
   };
 
   const setDefaultScheme = (scheme: InvoiceScheme) => {
@@ -185,16 +186,16 @@ const InvoiceSettings: React.FC = () => {
   };
 
   const handleDeleteLayout = (layout: InvoiceLayout) => {
-    if (window.confirm(`Delete invoice layout "${layout.name}"?`)) {
-      const result = deleteInvoiceLayout(layout.id);
-      if (!result.success) {
-        addNotification({
-          title: 'Blocked',
-          message: result.message || 'Unable to delete invoice layout.',
-          type: 'error',
-        });
-      }
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Invoice Layout',
+      message: `Delete invoice layout "${layout.name}"?`,
+      onConfirm: () => {
+        const result = deleteInvoiceLayout(layout.id);
+        if (!result.success) addNotification({ title: 'Blocked', message: result.message || 'Unable to delete invoice layout.', type: 'error' });
+        setConfirmModal(null);
+      },
+    });
   };
 
   const setDefaultLayout = (layout: InvoiceLayout) => {
@@ -426,6 +427,21 @@ const InvoiceSettings: React.FC = () => {
             <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
               <button onClick={handleSaveLayout} className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition">Save</button>
               <button onClick={() => setIsLayoutModalOpen(false)} className="bg-slate-700 text-white px-6 py-2 rounded font-bold hover:bg-slate-800 transition">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-rose-50 text-rose-500 mb-4"><Trash2 size={32} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-rose-600 hover:bg-rose-700 transition-colors">Confirm</button>
+              </div>
             </div>
           </div>
         </div>

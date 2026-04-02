@@ -150,6 +150,8 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const [editPaymentModalOpen, setEditPaymentModalOpen] = useState(false);
   const [deletePaymentModalOpen, setDeletePaymentModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
+  const [deleteDocModalOpen, setDeleteDocModalOpen] = useState(false);
+  const [pendingDeleteDocId, setPendingDeleteDocId] = useState<string | null>(null);
 
   // Pull all data from GlobalContext — single source of truth
   const {
@@ -403,9 +405,17 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   };
 
   const handleDeleteDoc = (docId: string) => {
-      if (!customer || !window.confirm('Delete this document?')) return;
-      const updatedDocs = documentsData.filter(d => d.id !== docId);
+      if (!customer) return;
+      setPendingDeleteDocId(docId);
+      setDeleteDocModalOpen(true);
+  };
+
+  const confirmDeleteDoc = () => {
+      if (!customer || !pendingDeleteDocId) return;
+      const updatedDocs = documentsData.filter(d => d.id !== pendingDeleteDocId);
       globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      setDeleteDocModalOpen(false);
+      setPendingDeleteDocId(null);
   };
 
   // Load Data
@@ -2423,12 +2433,23 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
           onSave={handleSaveEditedPayment}
       />
 
-      <ConfirmationModal 
+      <ConfirmationModal
           isOpen={deletePaymentModalOpen}
           onClose={() => setDeletePaymentModalOpen(false)}
           onConfirm={handleDeletePaymentConfirm}
           title="Delete Payment"
           message={`Are you sure you want to delete payment ${selectedPayment?.refNo || selectedPayment?.referenceNo || '--'}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          confirmVariant="danger"
+          icon={<Trash2 size={32} />}
+      />
+
+      <ConfirmationModal
+          isOpen={deleteDocModalOpen}
+          onClose={() => { setDeleteDocModalOpen(false); setPendingDeleteDocId(null); }}
+          onConfirm={confirmDeleteDoc}
+          title="Delete Document"
+          message="Are you sure you want to delete this document? This action cannot be undone."
           confirmLabel="Delete"
           confirmVariant="danger"
           icon={<Trash2 size={32} />}

@@ -280,7 +280,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
 
     const paymentAmount = parseFloat(formatToPrecision(amount));
     const rebateAmount = (rebateEnabled && customerRebatePercent > 0)
-      ? Number((paymentAmount * customerRebatePercent / 100).toFixed(3))
+      ? Number((paymentAmount * customerRebatePercent / 100).toFixed(currencyPrecision))
       : 0;
     const resolvedAccount = resolvePaymentAccount();
     if (!resolvedAccount) {

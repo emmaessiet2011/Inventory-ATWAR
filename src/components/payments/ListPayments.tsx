@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import {
   Search, Filter, Download, Printer, Eye, Edit, Trash2, MoreHorizontal,
-  ArrowUpDown, Paperclip, CreditCard
+  ArrowUpDown, Paperclip, CreditCard, CheckCircle2
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useGlobalContext } from '@/context/GlobalContext';
@@ -585,7 +585,15 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                   <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <span className="font-black text-emerald-600 text-sm">{formatCurrency(payment.amount)}</span>
                   </td>
-                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-sm text-slate-700">{payment.method}</td>
+                  <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-sm text-slate-700">
+                    <span>{payment.method}</span>
+                    {payment.raw.method === 'Cheque' && payment.raw.chequeCleared && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Cleared</span>
+                    )}
+                    {payment.raw.method === 'Cheque' && !payment.raw.chequeCleared && payment.raw.chequeDate && (
+                      <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">Pending</span>
+                    )}
+                  </td>
                   <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     {payment.attachmentName ? (
                       <span className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
@@ -644,6 +652,18 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                         <button onClick={() => { setViewingPayment(payment.raw); setActiveActionId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Eye size={16} className="text-blue-500" /> View Details</button>
                         {canEditPayment && (
                           <button onClick={() => { setEditingPayment(payment.raw); setActiveActionId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Edit size={16} className="text-amber-500" /> Edit Payment</button>
+                        )}
+                        {payment.raw.method === 'Cheque' && !payment.raw.chequeCleared && (
+                          <button
+                            onClick={() => {
+                              globalUpdatePayment({ ...payment.raw, chequeCleared: true });
+                              setActiveActionId(null);
+                              addNotification({ title: 'Cheque Cleared', message: `Payment marked as deposited/cleared.`, type: 'success' });
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50 flex items-center gap-3 transition-colors"
+                          >
+                            <CheckCircle2 size={16} className="text-emerald-500" /> Mark as Cleared
+                          </button>
                         )}
                         <button onClick={() => { handlePrintPayment(payment); setActiveActionId(null); }} className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Printer size={16} className="text-slate-500" /> Print Receipt</button>
                         {canDeletePayment && (
