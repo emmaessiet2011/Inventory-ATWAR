@@ -394,7 +394,44 @@ const AddExpense: React.FC<AddExpenseProps> = ({
       if (expensePaymentAmount > 0) {
         addPayment(expensePayment);
       }
-      addNotification({ title: 'Expense Added', message: `Expense ${expense.refNo} for ${formatCurrency(totalAmount)} has been saved.`, type: 'success' });
+
+      // Generate recurring instances (skip the first which was just saved above)
+      if (isRecurring && parsedRecurringRepetitions > 1) {
+        const advanceDate = (d: Date): void => {
+          const n = parsedRecurringInterval;
+          if (recurringUnit === 'Days') d.setDate(d.getDate() + n);
+          else if (recurringUnit === 'Weeks') d.setDate(d.getDate() + n * 7);
+          else if (recurringUnit === 'Months') d.setMonth(d.getMonth() + n);
+          else if (recurringUnit === 'Years') d.setFullYear(d.getFullYear() + n);
+        };
+        const cursor = new Date(expense.date);
+        for (let i = 1; i < parsedRecurringRepetitions; i++) {
+          advanceDate(cursor);
+          const childId = generateId('EXP');
+          const childRefNo = `${expense.refNo}-R${i + 1}`;
+          addExpense({
+            ...expense,
+            id: childId,
+            refNo: childRefNo,
+            date: cursor.toISOString(),
+            paymentStatus: 'Due',
+            paymentDue: totalAmount,
+            paidAmount: 0,
+            paidOn: '',
+            isRecurring: false,
+            recurringInterval: '',
+            recurringUnit: '',
+            recurringRepetitions: '',
+          });
+        }
+        addNotification({
+          title: 'Recurring Expenses Created',
+          message: `${parsedRecurringRepetitions} expense instances created (${recurringInterval} ${recurringUnit} apart).`,
+          type: 'success',
+        });
+      } else {
+        addNotification({ title: 'Expense Added', message: `Expense ${expense.refNo} for ${formatCurrency(totalAmount)} has been saved.`, type: 'success' });
+      }
     }
 
     if (expensePaymentAmount > 0) {
