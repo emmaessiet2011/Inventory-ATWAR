@@ -2916,7 +2916,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteSettings && remoteSettings.length > 0) {
           const s = remoteSettings[0];
-          if (s && Object.keys(s).length > 0) setSettings(normalizeAppSettings(s));
+          // Only apply settings from DB if it has more than the 3 bootstrap fields,
+          // indicating it was previously synced with the full settings object.
+          // A sparse object (id, businessName, currency, currencySymbol only) would
+          // silently wipe out timezone, VAT, invoice config, etc.
+          const richEnough = s && Object.keys(s).filter(k => !['id', 'businessName', 'currency', 'currencySymbol', 'createdAt', 'updatedAt'].includes(k)).length > 0;
+          if (richEnough) setSettings(normalizeAppSettings(s));
         }
 
         setSyncStatus('synced');
@@ -4148,7 +4153,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setProducts(prevProducts => prevProducts.map(p => {
       const delta = (deltaByProduct[p.id] || 0) + (deltaByProduct[p.sku] || 0);
       if (!delta) return p;
-      return { ...p, stock: p.stock + delta };
+      const updated = { ...p, stock: p.stock + delta };
+      // Sync each product whose stock changed so other employees see accurate inventory
+      syncRecord('products', updated);
+      return updated;
     }));
   };
 
@@ -4170,11 +4178,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const dueToAdd = saleDueAmount(saleWithSnapshot);
         setCustomers(prev => prev.map(c => {
           if (!isSaleCustomerMatch(c, saleWithSnapshot)) return c;
-          return {
-            ...c,
-            lastSellDate: getBusinessDateString(),
-            totalSellDue: c.totalSellDue + dueToAdd,
-          };
+          const updated = { ...c, lastSellDate: getBusinessDateString(), totalSellDue: c.totalSellDue + dueToAdd };
+          syncRecord('customers', updated);
+          return updated;
         }));
       }
 
@@ -4229,19 +4235,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           next = { ...next, totalSellDue: Math.max(0, next.totalSellDue - oldDue) };
         }
         if (newDue > 0 && matchesNewSale) {
-          next = {
-            ...next,
-            totalSellDue: next.totalSellDue + newDue,
-          };
+          next = { ...next, totalSellDue: next.totalSellDue + newDue };
         }
         // Refresh customer last sell date only when the sale newly becomes final
         // or ownership moves to a different customer.
         if (newIsFinalized && matchesNewSale && (!oldWasFinalized || !matchesOldSale)) {
-          next = {
-            ...next,
-            lastSellDate: getBusinessDateString(),
-          };
+          next = { ...next, lastSellDate: getBusinessDateString() };
         }
+        if (next !== c) syncRecord('customers', next);
         return next;
       }));
 
@@ -4307,7 +4308,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (dueToRemove > 0) {
           setCustomers(prevCustomers => prevCustomers.map(c => {
             if (!isSaleCustomerMatch(c, saleToDelete)) return c;
-            return { ...c, totalSellDue: Math.max(0, c.totalSellDue - dueToRemove) };
+            const updated = { ...c, totalSellDue: Math.max(0, c.totalSellDue - dueToRemove) };
+            syncRecord('customers', updated);
+            return updated;
           }));
         }
       }
