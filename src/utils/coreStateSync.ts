@@ -17,6 +17,11 @@ const getApiBaseUrl = (): string => {
   return base.replace(/\/+$/, '');
 };
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('atwar_auth_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 export const isCoreSyncEnabled = (): boolean =>
   String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase() === 'true';
 
@@ -58,7 +63,7 @@ const fetchCoreSnapshotOnce = async (): Promise<{ snapshot: CoreSyncSnapshot | n
     const timeoutId = setTimeout(() => controller.abort(), 20_000);
     const response = await fetch(`${getApiBaseUrl()}/api/sync/core`, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', ...getAuthHeaders() },
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -91,19 +96,11 @@ export const pushCoreSnapshot = async (snapshot: CoreSyncSnapshot): Promise<bool
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
+        ...getAuthHeaders()
       },
       body: JSON.stringify(snapshot),
     });
     if (!response.ok) return false;
-    // Keep relational tables up to date while frontend still uses snapshot sync.
-    try {
-      await fetch(`${getApiBaseUrl()}/api/sync/core/materialize`, {
-        method: 'POST',
-        headers: { Accept: 'application/json' },
-      });
-    } catch {
-      // non-blocking
-    }
     return true;
   } catch {
     return false;
@@ -115,7 +112,7 @@ export const pingBackend = async (): Promise<void> => {
   try {
     await fetch(`${getApiBaseUrl()}/api/sync/core`, {
       method: 'HEAD',
-      headers: { Accept: 'application/json' },
+      headers: { Accept: 'application/json', ...getAuthHeaders() },
     });
   } catch {
     // non-blocking — best effort only

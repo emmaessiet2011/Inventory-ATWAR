@@ -35,14 +35,15 @@ import {
   writeHardenedState,
 } from '../utils/hardenedStorage';
 import {
-  fetchCoreSnapshot,
-  hasCoreSnapshotData,
   isCoreSyncEnabled,
   pingBackend,
-  pushCoreSnapshot,
-  pushCoreSnapshotWithRetry,
-  type CoreSyncSnapshot,
 } from '../utils/coreStateSync';
+import {
+  apiFetchAllWithRetry,
+  isLiveSyncEnabled,
+  syncRecord,
+  deleteRecord,
+} from '../utils/apiClient';
 import {
   fetchDropdownCollections,
   isDropdownSyncEnabled,
@@ -2765,10 +2766,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return null;
     }
   });
-  const coreSyncEnabled = isCoreSyncEnabled();
   const coreSyncReadyRef = useRef(false);
-  const coreSyncApplyingRemoteRef = useRef(false);
-  const coreSyncPushTimerRef = useRef<number | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'synced'>('idle');
   const dropdownSyncEnabled = isDropdownSyncEnabled();
   const dropdownSyncReadyRef = useRef(false);
@@ -2873,99 +2871,73 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, [sales, payments]);
 
+  // ─── ATOMIC BOOTSTRAP ────────────────────────────────────────────────────
+  // On startup, load each core resource individually from the DB.
+  // This replaces the old "fetch entire snapshot blob" approach and eliminates
+  // the concurrency data-loss issue: no more whole-state overwrites.
   useEffect(() => {
-    if (!coreSyncEnabled) {
+    if (!isLiveSyncEnabled()) {
       coreSyncReadyRef.current = true;
       return;
     }
 
     let cancelled = false;
 
-    const localSnapshot: CoreSyncSnapshot = {
-      products,
-      customers,
-      suppliers,
-      sales,
-      payments,
-      users,
-      settings,
-      syncedAt: new Date().toISOString(),
-    };
-
     const bootstrap = async () => {
-      const remoteSnapshot = await fetchCoreSnapshot();
-      if (cancelled) return;
+      setSyncStatus('syncing');
+      try {
+        const [
+          remoteProducts,
+          remoteCustomers,
+          remoteSuppliers,
+          remoteSales,
+          remotePayments,
+          remoteUsers,
+          remoteSettings,
+        ] = await Promise.all([
+          apiFetchAllWithRetry<Product>('products'),
+          apiFetchAllWithRetry<Customer>('customers'),
+          apiFetchAllWithRetry<Supplier>('suppliers'),
+          apiFetchAllWithRetry<Sale>('sales'),
+          apiFetchAllWithRetry<Payment>('payments'),
+          apiFetchAllWithRetry<AppUser>('users'),
+          apiFetchAllWithRetry<AppSettings>('settings'),
+        ]);
 
-      if (remoteSnapshot && hasCoreSnapshotData(remoteSnapshot)) {
-        coreSyncApplyingRemoteRef.current = true;
-        setProducts(remoteSnapshot.products as Product[]);
-        setCustomers(remoteSnapshot.customers as Customer[]);
-        setSuppliers(remoteSnapshot.suppliers as Supplier[]);
-        setSales(remoteSnapshot.sales as Sale[]);
-        setPayments(remoteSnapshot.payments as Payment[]);
-        setUsers((remoteSnapshot.users as AppUser[]).map(normalizeUserRecord));
-        if (Object.keys(remoteSnapshot.settings || {}).length > 0) {
-          setSettings(normalizeAppSettings(remoteSnapshot.settings as AppSettings));
+        if (cancelled) return;
+
+        // Only overwrite local state when the server actually returned data.
+        // If a fetch returned null (all retries failed) we keep local state.
+        if (remoteProducts && remoteProducts.length > 0) setProducts(remoteProducts);
+        if (remoteCustomers && remoteCustomers.length > 0) setCustomers(remoteCustomers);
+        if (remoteSuppliers && remoteSuppliers.length > 0) setSuppliers(remoteSuppliers);
+        if (remoteSales && remoteSales.length > 0) setSales(remoteSales);
+        if (remotePayments && remotePayments.length > 0) setPayments(remotePayments);
+        if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers.map(normalizeUserRecord));
+        if (remoteSettings && remoteSettings.length > 0) {
+          const s = remoteSettings[0];
+          if (s && Object.keys(s).length > 0) setSettings(normalizeAppSettings(s));
         }
-        queueMicrotask(() => {
-          coreSyncApplyingRemoteRef.current = false;
-          coreSyncReadyRef.current = true;
-        });
-        return;
-      }
 
-      // Only push local data when the server responded successfully but had nothing stored.
-      // If remoteSnapshot is null the fetch itself failed — never overwrite DB with stale local data.
-      if (remoteSnapshot !== null && hasCoreSnapshotData(localSnapshot)) {
-        await pushCoreSnapshot(localSnapshot);
-      }
-      if (!cancelled) {
-        coreSyncReadyRef.current = true;
+        setSyncStatus('synced');
+      } catch {
+        if (!cancelled) setSyncStatus('error');
+      } finally {
+        if (!cancelled) coreSyncReadyRef.current = true;
       }
     };
 
     void bootstrap();
-    return () => {
-      cancelled = true;
-    };
-  }, [coreSyncEnabled]);
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Keep Render free-tier server warm — ping every 10 minutes so it never sleeps.
   useEffect(() => {
-    if (!coreSyncEnabled) return;
+    if (!isCoreSyncEnabled()) return;
     const id = window.setInterval(() => { void pingBackend(); }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [coreSyncEnabled]);
-
-  useEffect(() => {
-    if (!coreSyncEnabled || !coreSyncReadyRef.current || coreSyncApplyingRemoteRef.current) return;
-
-    const snapshot: CoreSyncSnapshot = {
-      products,
-      customers,
-      suppliers,
-      sales,
-      payments,
-      users,
-      settings,
-      syncedAt: new Date().toISOString(),
-    };
-
-    if (coreSyncPushTimerRef.current !== null) {
-      window.clearTimeout(coreSyncPushTimerRef.current);
-    }
-
-    coreSyncPushTimerRef.current = window.setTimeout(() => {
-      void pushCoreSnapshotWithRetry(snapshot, setSyncStatus);
-    }, 800);
-
-    return () => {
-      if (coreSyncPushTimerRef.current !== null) {
-        window.clearTimeout(coreSyncPushTimerRef.current);
-        coreSyncPushTimerRef.current = null;
-      }
-    };
-  }, [coreSyncEnabled, products, customers, suppliers, sales, payments, users, settings]);
+  }, []);
 
   useEffect(() => {
     if (!dropdownSyncEnabled) {
@@ -3968,6 +3940,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addProduct = (product: Product) => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
     setProducts(prev => [...prev, normalized]);
+    syncRecord('products', normalized);
     recordActivity({
       action: 'Created',
       module: 'Products',
@@ -3977,6 +3950,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateProduct = (product: Product) => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
     setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
+    syncRecord('products', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Products',
@@ -3986,6 +3960,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteProduct = (id: string) => {
     const existing = products.find(p => p.id === id);
     setProducts(prev => prev.filter(p => p.id !== id));
+    deleteRecord('products', id);
     recordActivity({
       action: 'Deleted',
       module: 'Products',
@@ -4000,6 +3975,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addCustomer = (customer: Customer) => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
     setCustomers(prev => [...prev, normalized]);
+    syncRecord('customers', normalized);
     recordActivity({
       action: 'Created',
       module: 'Customers',
@@ -4009,6 +3985,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateCustomer = (customer: Customer) => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
     setCustomers(prev => prev.map(c => c.id === customer.id ? normalized : c));
+    syncRecord('customers', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Customers',
@@ -4030,6 +4007,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteCustomer = (id: string) => {
     const existing = customers.find(c => c.id === id);
     setCustomers(prev => prev.filter(c => c.id !== id));
+    deleteRecord('customers', id);
     recordActivity({
       action: 'Deleted',
       module: 'Customers',
@@ -4043,6 +4021,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addSupplier = (supplier: Supplier) => {
     setSuppliers(prev => [...prev, supplier]);
+    syncRecord('suppliers', supplier);
     recordActivity({
       action: 'Created',
       module: 'Suppliers',
@@ -4051,6 +4030,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updateSupplier = (supplier: Supplier) => {
     setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
+    syncRecord('suppliers', supplier);
     recordActivity({
       action: 'Updated',
       module: 'Suppliers',
@@ -4060,6 +4040,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteSupplier = (id: string) => {
     const existing = suppliers.find(s => s.id === id);
     setSuppliers(prev => prev.filter(s => s.id !== id));
+    deleteRecord('suppliers', id);
     recordActivity({
       action: 'Deleted',
       module: 'Suppliers',
@@ -4175,6 +4156,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return;
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(sale);
     setSales(prev => [...prev, saleWithSnapshot]);
+    syncRecord('sales', saleWithSnapshot);
     recordActivity({
       action: 'Created',
       module: 'Sales',
@@ -4265,6 +4247,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       return prev.map(s => s.id === saleWithSnapshot.id ? saleWithSnapshot : s);
     });
+    syncRecord('sales', saleWithSnapshot);
     recordActivity({
       action: 'Updated',
       module: 'Sales',
@@ -4333,6 +4316,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
     // Remove the auto-generated payment record for this sale
     setPayments(prev => prev.filter(p => p.id !== `pay-${id}`));
+    deleteRecord('sales', id);
+    deleteRecord('payments', `pay-${id}`);
     if (!sellReturns.some(ret => ret.parentSaleId === id)) {
       recordActivity({
         action: 'Deleted',
@@ -5037,6 +5022,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
     setPayments(prev => [...prev, paymentToStore]);
+    syncRecord('payments', paymentToStore);
     const appliedPayment = paymentToStore;
 
     if (appliedPayment.contactType === 'Customer') {
@@ -5214,6 +5200,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (!hasFinancialImpact) {
       setPayments(prev => prev.map(p => p.id === normalizedPayment.id ? normalizedPayment : p));
+      syncRecord('payments', normalizedPayment);
       recordActivity({
         action: 'Updated',
         module: 'Payments',
@@ -5236,6 +5223,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) return;
     const payment = payments.find(p => p.id === id);
     setPayments(prev => prev.filter(p => p.id !== id));
+    deleteRecord('payments', id);
     if (!payment) return;
 
     if (payment.contactType === 'Customer') {
@@ -5450,6 +5438,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalized = normalizeUserRecord(user);
     setUsers(prev => [...prev, normalized]);
     setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    syncRecord('users', normalized);
     recordActivity({
       action: 'Created',
       module: 'Users',
@@ -5461,6 +5450,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalized = normalizeUserRecord(user);
     setUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
     setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    syncRecord('users', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Users',
@@ -5474,6 +5464,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setCommissionAgents(prev =>
       prev.filter(agent => String(agent.linkedUserId || '').trim() !== String(id || '').trim())
     );
+    deleteRecord('users', id);
     recordActivity({
       action: 'Deleted',
       module: 'Users',
@@ -6903,7 +6894,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateSettings = (newSettings: AppSettings) => {
     if (!enforcePermissionBoundary('Settings', 'Access business settings', 'Update settings')) return;
-    setSettings(normalizeAppSettings(newSettings));
+    const normalized = normalizeAppSettings(newSettings);
+    setSettings(normalized);
+    syncRecord('settings', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Settings',

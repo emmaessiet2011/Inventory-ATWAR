@@ -1,50 +1,44 @@
 import React, { useState } from 'react';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
-import { verifyUserPassword } from '@/utils/authSecurity';
 
 interface LoginProps {
   onLogin: () => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const { users, setCurrentUser, updateUser, settings } = useGlobalContext();
+  const { setCurrentUser, updateUser, settings } = useGlobalContext();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Try to find matching active user by email + password
-    const matchedUser = users.find(
-      u => u.email.toLowerCase() === email.toLowerCase() &&
-           verifyUserPassword(u, password) &&
-           u.status === 'Active' &&
-           u.allowLogin !== false
-    );
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
 
-    if (matchedUser) {
-      // Stamp lastLogin timestamp
-      const now = new Date();
-      const loginTime = now.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-      const updatedUser = { ...matchedUser, lastLogin: loginTime };
-      updateUser(updatedUser);
-      setCurrentUser(updatedUser);
-      onLogin();
-    } else {
-      // Check if user exists but is inactive
-      const blockedUser = users.find(
-        u => u.email.toLowerCase() === email.toLowerCase() && (u.status !== 'Active' || u.allowLogin === false)
-      );
-      if (blockedUser && blockedUser.status !== 'Active') {
-        setError('Your account is inactive. Please contact Admin.');
-      } else if (blockedUser && blockedUser.allowLogin === false) {
-        setError('Login access is disabled for your account. Please contact Admin.');
-      } else {
-        setError('Invalid email or password. Please try again.');
+      const payload = await response.json();
+
+      if (!response.ok || !payload.ok) {
+        setError(payload.error || 'Invalid email or password. Please try again.');
+        return;
       }
+
+      // Save token
+      localStorage.setItem('atwar_auth_token', payload.token);
+      
+      // Update global context with real user
+      updateUser(payload.user);
+      setCurrentUser(payload.user);
+      onLogin();
+    } catch (err) {
+      setError('Unable to reach the server. Please check your connection.');
     }
   };
 

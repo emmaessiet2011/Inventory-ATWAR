@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { generateToken, verifyPassword, requireAuth, hashPassword } from './auth.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,6 +141,61 @@ app.get('/api/health', async (_req, res) => {
     res.status(500).json({ ok: false, db: 'disconnected', error: error instanceof Error ? error.message : 'Unknown database error' });
   }
 });
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, error: 'Email and password are required' });
+    }
+
+    const user = await prisma.appUser.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+
+    if (!user || user.status !== 'ACTIVE' || user.allowLogin === false) {
+      return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
+    }
+
+    const { isValid, needsMigration } = await verifyPassword(password, user);
+    
+    if (!isValid) {
+      return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
+    }
+
+    // Migrate password to secure bcrypt hash seamlessly
+    if (needsMigration) {
+      const newHash = await hashPassword(password);
+      await prisma.appUser.update({
+        where: { id: user.id },
+        data: { passwordHash: newHash, passwordSalt: null, password: null }
+      });
+    }
+
+    // Update lastLogin
+    await prisma.appUser.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() }
+    });
+
+    const token = generateToken(user);
+
+    // Send minimal user details, NEVER send passwordHash back
+    delete user.passwordHash;
+    delete user.passwordSalt;
+    delete user.password;
+    
+    return res.json({ ok: true, token, user });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: 'Login failed' });
+  }
+});
+
+// Protected routes
+app.use('/api/data', requireAuth);
+app.use('/api/sync', requireAuth);
+app.use('/api/options', requireAuth);
+app.use('/api/bootstrap', requireAuth);
 
 app.get('/api/data/resources', (_req, res) => {
   const resources = Object.entries(RESOURCE_CONFIG).map(([key, cfg]) => ({
@@ -339,6 +395,187 @@ app.delete('/api/data/:resource/:id', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  ROLE ENFORCEMENT
+//  requireCanDelete(resource) → allows only Admin/Manager/CEO to delete
+//  critical records. Other roles get 403 Forbidden.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ROLE_NAMES_ALLOWED_DELETE = ['admin', 'ceo', 'manager'];
+
+const requireCanDelete = async (req, res, next) => {
+  try {
+    const roleId = req.user?.roleId;
+    if (!roleId) return res.status(403).json({ ok: false, error: 'Role not assigned' });
+    const role = await prisma.role.findUnique({ where: { id: roleId } });
+    const roleName = String(role?.name || '').trim().toLowerCase();
+    if (ROLE_NAMES_ALLOWED_DELETE.some(n => roleName.includes(n))) return next();
+    return res.status(403).json({ ok: false, error: 'Insufficient permissions to delete this record' });
+  } catch {
+    return res.status(500).json({ ok: false, error: 'Permission check failed' });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ATOMIC RECORD SYNC  (replaces the giant snapshot overwrite)
+//  PUT  /api/sync/record/:resource   → upsert one record with field mapping
+//  DELETE /api/sync/record/:resource/:id → delete one record
+// ─────────────────────────────────────────────────────────────────────────────
+
+const normDate = (v) => { const d = new Date(String(v || '')); return Number.isNaN(d.getTime()) ? new Date() : d; };
+const normStatus = (v, allowed, fallback) => { const s = String(v || '').trim().toUpperCase(); return allowed.includes(s) ? s : fallback; };
+
+app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
+  const resource = String(req.params.resource || '').trim();
+  const raw = toObject(req.body);
+  const id = String(raw.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+
+  try {
+    switch (resource) {
+      case 'products': {
+        const d = {
+          name: String(raw.name || `Product-${id}`),
+          sku: String(raw.sku || raw.name || id),
+          type: normStatus(raw.type, ['SINGLE', 'VARIABLE', 'COMBO'], 'SINGLE'),
+          packagingType: normStatus(raw.packagingType, ['PIECE', 'PACK', 'CARTON'], 'PIECE'),
+          unitsPerPackage: Number(raw.unitsPerPackage || 0) > 0 ? Math.trunc(Number(raw.unitsPerPackage)) : null,
+          unitPurchasePrice: Number(raw.unitPurchasePrice || 0),
+          sellingPrice: Number(raw.sellingPrice || 0),
+          stock: Number(raw.stock || 0),
+          meta: raw,
+        };
+        await prisma.product.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'customers': {
+        const d = {
+          businessName: String(raw.businessName || raw.name || `Customer-${id}`),
+          name: String(raw.name || raw.businessName || `Customer-${id}`),
+          email: raw.email ? String(raw.email) : null,
+          mobile: raw.mobile ? String(raw.mobile) : null,
+          status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
+          creditLimit: Number(raw.creditLimit || 0),
+          openingBalance: Number(raw.openingBalance || 0),
+          advanceBalance: Number(raw.advanceBalance || 0),
+          totalSellDue: Number(raw.totalSellDue || 0),
+          totalSellReturnDue: Number(raw.totalSellReturnDue || 0),
+          meta: raw,
+        };
+        await prisma.customer.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'suppliers': {
+        const d = {
+          businessName: String(raw.businessName || raw.name || `Supplier-${id}`),
+          name: String(raw.name || raw.businessName || `Supplier-${id}`),
+          email: raw.email ? String(raw.email) : null,
+          mobile: raw.mobile ? String(raw.mobile) : null,
+          status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
+          openingBalance: Number(raw.openingBalance || 0),
+          advanceBalance: Number(raw.advanceBalance || 0),
+          totalPurchaseDue: Number(raw.totalPurchaseDue || 0),
+          totalReturnDue: Number(raw.totalReturnDue || 0),
+          meta: raw,
+        };
+        await prisma.supplier.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'sales': {
+        const d = {
+          invoiceNo: String(raw.invoiceNo || `INV-${id}`),
+          date: normDate(raw.date),
+          status: normStatus(raw.status || raw.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          shippingStatus: normStatus(raw.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
+          subTotal: Number(raw.subTotal || 0),
+          discountAmount: Number(raw.discountAmount || 0),
+          taxAmount: Number(raw.taxAmount || raw.tax || 0),
+          shippingCharges: Number(raw.shippingCharges || 0),
+          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
+          totalPaid: Number(raw.totalPaid || 0),
+          sellDue: Number(raw.sellDue || 0),
+          sellReturnDue: Number(raw.sellReturnDue || 0),
+          meta: raw,
+        };
+        await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'payments': {
+        const d = {
+          date: normDate(raw.date),
+          contactType: normStatus(raw.contactType, ['CUSTOMER', 'SUPPLIER', 'EXPENSE'], 'CUSTOMER'),
+          direction: normStatus(raw.direction || raw.type, ['RECEIVED', 'SENT'], 'RECEIVED'),
+          referenceNo: String(raw.referenceNo || raw.refNo || `PAY-${id}`),
+          method: String(raw.method || raw.paymentMethod || 'Cash'),
+          amount: Number(raw.amount || 0),
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.payment.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'users': {
+        const d = {
+          username: String(raw.username || raw.email || `user-${id}`),
+          name: String(raw.name || raw.username || `User-${id}`),
+          email: String(raw.email || `user-${id}@local.atwar`),
+          mobile: raw.mobile ? String(raw.mobile) : null,
+          status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
+          commissionPercent: Number(raw.commissionPercent || 0),
+          maxDiscountPercent: Number(raw.maxDiscountPercent || 0),
+          allowLogin: raw.allowLogin !== false,
+          meta: raw,
+        };
+        await prisma.appUser.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'settings': {
+        const d = {
+          businessName: String(raw.businessName || 'ATWAR BSS'),
+          currency: String(raw.currency || 'OMR'),
+          currencySymbol: String(raw.currencySymbol || 'OMR'),
+          meta: raw,
+        };
+        await prisma.appSetting.upsert({ where: { id: 'SETTINGS' }, update: d, create: { id: 'SETTINGS', ...d } });
+        break;
+      }
+      default:
+        return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
+    }
+    return res.json({ ok: true, id, resource });
+  } catch (error) {
+    return sendPrismaError(res, error, `Failed to sync ${resource} record`);
+  }
+});
+
+app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const resource = String(req.params.resource || '').trim();
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+
+  try {
+    switch (resource) {
+      case 'products':  await prisma.product.deleteMany({ where: { id } }); break;
+      case 'customers': await prisma.customer.deleteMany({ where: { id } }); break;
+      case 'suppliers': await prisma.supplier.deleteMany({ where: { id } }); break;
+      case 'sales':     await prisma.sale.deleteMany({ where: { id } }); break;
+      case 'payments':  await prisma.payment.deleteMany({ where: { id } }); break;
+      case 'users':     await prisma.appUser.deleteMany({ where: { id } }); break;
+      default:
+        return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
+    }
+    return res.json({ ok: true, deleted: true, id, resource });
+  } catch (error) {
+    return sendPrismaError(res, error, `Failed to delete ${resource} record`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  LEGACY SNAPSHOT ENDPOINTS (kept for backward-compat; no longer the primary
+//  sync path — atomic /api/sync/record endpoints are used instead)
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.get('/api/sync/core', async (_req, res) => {
   try {
     const row = await prisma.appStateSnapshot.findUnique({ where: { id: 'core' } });
@@ -397,238 +634,15 @@ app.get('/api/sync/core/status', async (_req, res) => {
   }
 });
 
-app.post('/api/sync/core/materialize', async (req, res) => {
-  try {
-    let snapshot = sanitizeCoreSnapshot(toObject(req.body?.snapshot));
-    if (!hasSnapshotData(snapshot)) {
-      const row = await prisma.appStateSnapshot.findUnique({ where: { id: 'core' } });
-      snapshot = sanitizeCoreSnapshot(row?.payload);
-    }
-    if (!hasSnapshotData(snapshot)) {
-      return res.status(400).json({ ok: false, error: 'No snapshot data found to materialize' });
-    }
-
-    const counts = { users: 0, customers: 0, suppliers: 0, products: 0, sales: 0, payments: 0 };
-    const normalizeDate = (v) => {
-      const d = new Date(String(v || ''));
-      return Number.isNaN(d.getTime()) ? new Date() : d;
-    };
-    const normalizeStatus = (value, allowed, fallback) => {
-      const raw = String(value || '').trim().toUpperCase();
-      return allowed.includes(raw) ? raw : fallback;
-    };
-
-    for (const rawUser of snapshot.users) {
-      const user = toObject(rawUser);
-      const id = String(user.id || randomUUID());
-      await prisma.appUser.upsert({
-        where: { id },
-        update: {
-          username: String(user.username || user.email || `user-${id}`),
-          name: String(user.name || user.username || `User-${id}`),
-          email: String(user.email || `user-${id}@local.atwar`),
-          mobile: user.mobile ? String(user.mobile) : null,
-          status: normalizeStatus(user.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          commissionPercent: Number(user.commissionPercent || 0),
-          maxDiscountPercent: Number(user.maxDiscountPercent || 0),
-          allowLogin: user.allowLogin !== false,
-          meta: user,
-        },
-        create: {
-          id,
-          username: String(user.username || user.email || `user-${id}`),
-          name: String(user.name || user.username || `User-${id}`),
-          email: String(user.email || `user-${id}@local.atwar`),
-          mobile: user.mobile ? String(user.mobile) : null,
-          status: normalizeStatus(user.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          commissionPercent: Number(user.commissionPercent || 0),
-          maxDiscountPercent: Number(user.maxDiscountPercent || 0),
-          allowLogin: user.allowLogin !== false,
-          meta: user,
-        },
-      });
-      counts.users += 1;
-    }
-
-    for (const rawCustomer of snapshot.customers) {
-      const c = toObject(rawCustomer);
-      const id = String(c.id || c.contactId || randomUUID());
-      await prisma.customer.upsert({
-        where: { id },
-        update: {
-          businessName: String(c.businessName || c.name || `Customer-${id}`),
-          name: String(c.name || c.businessName || `Customer-${id}`),
-          email: c.email ? String(c.email) : null,
-          mobile: c.mobile ? String(c.mobile) : null,
-          status: normalizeStatus(c.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          creditLimit: Number(c.creditLimit || 0),
-          openingBalance: Number(c.openingBalance || 0),
-          advanceBalance: Number(c.advanceBalance || 0),
-          totalSellDue: Number(c.totalSellDue || 0),
-          totalSellReturnDue: Number(c.totalSellReturnDue || 0),
-          meta: c,
-        },
-        create: {
-          id,
-          businessName: String(c.businessName || c.name || `Customer-${id}`),
-          name: String(c.name || c.businessName || `Customer-${id}`),
-          email: c.email ? String(c.email) : null,
-          mobile: c.mobile ? String(c.mobile) : null,
-          status: normalizeStatus(c.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          creditLimit: Number(c.creditLimit || 0),
-          openingBalance: Number(c.openingBalance || 0),
-          advanceBalance: Number(c.advanceBalance || 0),
-          totalSellDue: Number(c.totalSellDue || 0),
-          totalSellReturnDue: Number(c.totalSellReturnDue || 0),
-          meta: c,
-        },
-      });
-      counts.customers += 1;
-    }
-
-    for (const rawSupplier of snapshot.suppliers) {
-      const s = toObject(rawSupplier);
-      const id = String(s.id || s.contactId || randomUUID());
-      await prisma.supplier.upsert({
-        where: { id },
-        update: {
-          businessName: String(s.businessName || s.name || `Supplier-${id}`),
-          name: String(s.name || s.businessName || `Supplier-${id}`),
-          email: s.email ? String(s.email) : null,
-          mobile: s.mobile ? String(s.mobile) : null,
-          status: normalizeStatus(s.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          openingBalance: Number(s.openingBalance || 0),
-          advanceBalance: Number(s.advanceBalance || 0),
-          totalPurchaseDue: Number(s.totalPurchaseDue || 0),
-          totalReturnDue: Number(s.totalReturnDue || 0),
-          meta: s,
-        },
-        create: {
-          id,
-          businessName: String(s.businessName || s.name || `Supplier-${id}`),
-          name: String(s.name || s.businessName || `Supplier-${id}`),
-          email: s.email ? String(s.email) : null,
-          mobile: s.mobile ? String(s.mobile) : null,
-          status: normalizeStatus(s.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          openingBalance: Number(s.openingBalance || 0),
-          advanceBalance: Number(s.advanceBalance || 0),
-          totalPurchaseDue: Number(s.totalPurchaseDue || 0),
-          totalReturnDue: Number(s.totalReturnDue || 0),
-          meta: s,
-        },
-      });
-      counts.suppliers += 1;
-    }
-
-    for (const rawProduct of snapshot.products) {
-      const p = toObject(rawProduct);
-      const id = String(p.id || randomUUID());
-      await prisma.product.upsert({
-        where: { id },
-        update: {
-          name: String(p.name || `Product-${id}`),
-          sku: String(p.sku || p.name || id),
-          type: normalizeStatus(p.type, ['SINGLE', 'VARIABLE', 'COMBO'], 'SINGLE'),
-          packagingType: normalizeStatus(p.packagingType, ['PIECE', 'PACK', 'CARTON'], 'PIECE'),
-          unitsPerPackage: Number(p.unitsPerPackage || 0) > 0 ? Math.trunc(Number(p.unitsPerPackage || 0)) : null,
-          unitPurchasePrice: Number(p.unitPurchasePrice || 0),
-          sellingPrice: Number(p.sellingPrice || 0),
-          stock: Number(p.stock || 0),
-          meta: p,
-        },
-        create: {
-          id,
-          name: String(p.name || `Product-${id}`),
-          sku: String(p.sku || p.name || id),
-          type: normalizeStatus(p.type, ['SINGLE', 'VARIABLE', 'COMBO'], 'SINGLE'),
-          packagingType: normalizeStatus(p.packagingType, ['PIECE', 'PACK', 'CARTON'], 'PIECE'),
-          unitsPerPackage: Number(p.unitsPerPackage || 0) > 0 ? Math.trunc(Number(p.unitsPerPackage || 0)) : null,
-          unitPurchasePrice: Number(p.unitPurchasePrice || 0),
-          sellingPrice: Number(p.sellingPrice || 0),
-          stock: Number(p.stock || 0),
-          meta: p,
-        },
-      });
-      counts.products += 1;
-    }
-
-    for (const rawSale of snapshot.sales) {
-      const s = toObject(rawSale);
-      const id = String(s.id || randomUUID());
-      await prisma.sale.upsert({
-        where: { id },
-        update: {
-          invoiceNo: String(s.invoiceNo || `INV-${id}`),
-          date: normalizeDate(s.date),
-          status: normalizeStatus(s.status || s.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
-          paymentStatus: normalizeStatus(s.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          shippingStatus: normalizeStatus(s.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
-          subTotal: Number(s.subTotal || 0),
-          discountAmount: Number(s.discountAmount || 0),
-          taxAmount: Number(s.taxAmount || s.tax || 0),
-          shippingCharges: Number(s.shippingCharges || 0),
-          grandTotal: Number(s.grandTotal || s.totalAmount || 0),
-          totalPaid: Number(s.totalPaid || 0),
-          sellDue: Number(s.sellDue || 0),
-          sellReturnDue: Number(s.sellReturnDue || 0),
-          meta: s,
-        },
-        create: {
-          id,
-          invoiceNo: String(s.invoiceNo || `INV-${id}`),
-          date: normalizeDate(s.date),
-          status: normalizeStatus(s.status || s.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
-          paymentStatus: normalizeStatus(s.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          shippingStatus: normalizeStatus(s.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
-          subTotal: Number(s.subTotal || 0),
-          discountAmount: Number(s.discountAmount || 0),
-          taxAmount: Number(s.taxAmount || s.tax || 0),
-          shippingCharges: Number(s.shippingCharges || 0),
-          grandTotal: Number(s.grandTotal || s.totalAmount || 0),
-          totalPaid: Number(s.totalPaid || 0),
-          sellDue: Number(s.sellDue || 0),
-          sellReturnDue: Number(s.sellReturnDue || 0),
-          meta: s,
-        },
-      });
-      counts.sales += 1;
-    }
-
-    for (const rawPayment of snapshot.payments) {
-      const p = toObject(rawPayment);
-      const id = String(p.id || randomUUID());
-      await prisma.payment.upsert({
-        where: { id },
-        update: {
-          date: normalizeDate(p.date),
-          contactType: normalizeStatus(p.contactType, ['CUSTOMER', 'SUPPLIER', 'EXPENSE'], 'CUSTOMER'),
-          direction: normalizeStatus(p.direction, ['RECEIVED', 'SENT'], 'RECEIVED'),
-          referenceNo: String(p.referenceNo || `PAY-${id}`),
-          method: String(p.method || p.paymentMethod || 'Cash'),
-          amount: Number(p.amount || 0),
-          note: p.note ? String(p.note) : null,
-          meta: p,
-        },
-        create: {
-          id,
-          date: normalizeDate(p.date),
-          contactType: normalizeStatus(p.contactType, ['CUSTOMER', 'SUPPLIER', 'EXPENSE'], 'CUSTOMER'),
-          direction: normalizeStatus(p.direction, ['RECEIVED', 'SENT'], 'RECEIVED'),
-          referenceNo: String(p.referenceNo || `PAY-${id}`),
-          method: String(p.method || p.paymentMethod || 'Cash'),
-          amount: Number(p.amount || 0),
-          note: p.note ? String(p.note) : null,
-          meta: p,
-        },
-      });
-      counts.payments += 1;
-    }
-
-    return res.json({ ok: true, message: 'Snapshot materialized into relational tables', counts });
-  } catch (error) {
-    return sendPrismaError(res, error, 'Failed to materialize snapshot');
-  }
+// NOTE: /api/sync/core/materialize has been removed.
+// Atomic /api/sync/record/:resource endpoints replaced it — each CRUD
+// operation now writes directly to the relational table with no bottleneck.
+// The route is kept as a 410 Gone so old clients get a clear error instead
+// of a silent hang.
+app.post('/api/sync/core/materialize', (_req, res) => {
+  res.status(410).json({ ok: false, error: 'materialize endpoint removed — use /api/sync/record/:resource' });
 });
+
 
 app.get('/api/options/bulk', async (req, res) => {
   try {
