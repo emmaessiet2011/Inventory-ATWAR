@@ -18,6 +18,7 @@ import {
   PAYMENT_ACCOUNTS_UPDATED_EVENT,
   resolveDefaultAccountFromMethod,
 } from '@/utils/paymentAccounts';
+import { fetchDedicated, syncDedicated, deleteDedicated } from '@/utils/apiClient';
 
 type FieldPaymentStatus = 'Pending' | 'Approved';
 
@@ -52,7 +53,7 @@ interface FieldPaymentRecord {
   rebateApplied?: boolean;
 }
 
-const STORAGE_KEY = 'app_field_payments';
+const FIELD_PAYMENTS_UPDATED_EVENT = 'app:field-payments-updated';
 
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
@@ -166,28 +167,34 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   const [attachmentName, setAttachmentName] = useState('');
   const [rebateEnabled, setRebateEnabled] = useState(false);
 
-  const persistRecords = (next: FieldPaymentRecord[]) => {
+  const publishFieldPaymentCache = (rows: FieldPaymentRecord[]) => {
+    window.dispatchEvent(new CustomEvent(FIELD_PAYMENTS_UPDATED_EVENT, { detail: rows }));
+  };
+
+  const persistRecords = (next: FieldPaymentRecord[], changedRecord?: FieldPaymentRecord, deleted?: string) => {
     const sorted = sortByDateDesc(next);
     setRecords(sorted);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
-    } catch {
-      // localStorage write failure should not block UI
-    }
+    publishFieldPaymentCache(sorted);
+    // Sync changed/deleted record to database
+    if (changedRecord) syncDedicated('/api/sync/field-payments', changedRecord.id, changedRecord);
+    if (deleted) deleteDedicated('/api/sync/field-payments', deleted);
   };
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(parsed)) {
+    // Bootstrap: load from DB only (Postgres is source of truth)
+    fetchDedicated<FieldPaymentRecord>('/api/sync/field-payments').then(remote => {
+      if (!remote) {
         setRecords([]);
         return;
       }
-      setRecords(sortByDateDesc(parsed.map((row, index) => normalizeFieldPaymentRecord(row, index))));
-    } catch {
+      const normalized = remote.map((row, i) => normalizeFieldPaymentRecord(row, i));
+      const sorted = sortByDateDesc(normalized);
+      setRecords(sorted);
+      publishFieldPaymentCache(sorted);
+    }).catch(() => {
       setRecords([]);
-    }
+      publishFieldPaymentCache([]);
+    });
   }, []);
 
   useEffect(() => {
@@ -275,11 +282,10 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       });
 
       if (changed) {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-        } catch {
-          // ignore localStorage failures
-        }
+        publishFieldPaymentCache(next);
+        next.forEach((r, idx) => {
+          if (r !== prev[idx]) syncDedicated('/api/sync/field-payments', r.id, r);
+        });
         return next;
       }
       return prev;
@@ -454,25 +460,24 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     if (editingId) {
       const current = records.find(record => record.id === editingId);
       if (!current) return;
-      persistRecords(records.map(record => record.id === editingId
-        ? {
-            ...record,
-            customerId: selectedCustomer.id,
-            customerName: selectedCustomer.businessName || selectedCustomer.name,
-            amount: paymentAmount,
-            date: dateInput || toDateTimeLocalInput(new Date().toISOString()),
-            location: locationInput,
-            method: methodInput || 'Cash',
-            account: resolvedAccount,
-            note: noteInput.trim(),
-            attachmentName: attachmentName || undefined,
-            linkedInvoices,
-            linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
-            rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
-            rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
-            rebateApplied: rebateEnabled && rebateAmt > 0,
-          }
-        : record));
+      const updated = {
+        ...current,
+        customerId: selectedCustomer.id,
+        customerName: selectedCustomer.businessName || selectedCustomer.name,
+        amount: paymentAmount,
+        date: dateInput || toDateTimeLocalInput(new Date().toISOString()),
+        location: locationInput,
+        method: methodInput || 'Cash',
+        account: resolvedAccount,
+        note: noteInput.trim(),
+        attachmentName: attachmentName || undefined,
+        linkedInvoices,
+        linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
+        rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
+        rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
+        rebateApplied: rebateEnabled && rebateAmt > 0,
+      };
+      persistRecords(records.map(record => record.id === editingId ? updated : record), updated);
       addNotification({ title: 'Field Payment Updated', message: `${current.referenceNo} was updated.`, type: 'success' });
       closeModal();
       return;
@@ -500,7 +505,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
       rebateApplied: rebateEnabled && rebateAmt > 0,
     };
-    persistRecords([newRecord, ...records]);
+    persistRecords([newRecord, ...records], newRecord);
     addNotification({ title: 'Field Payment Added', message: `${referenceNo} created and pending approval.`, type: 'success' });
     closeModal();
   };
@@ -559,15 +564,14 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       });
     }
 
-    persistRecords(records.map(row => row.id === record.id
-      ? {
-          ...row,
-          status: 'Approved',
-          postedPaymentId: paymentId,
-          approvedBy: currentUser?.name || 'Admin',
-          approvedAt: toDateTimeLocalInput(new Date().toISOString()),
-        }
-      : row));
+    const approvedRecord = {
+      ...record,
+      status: 'Approved' as FieldPaymentStatus,
+      postedPaymentId: paymentId,
+      approvedBy: currentUser?.name || 'Admin',
+      approvedAt: toDateTimeLocalInput(new Date().toISOString()),
+    };
+    persistRecords(records.map(row => row.id === record.id ? approvedRecord : row), approvedRecord);
     addNotification({ title: 'Field Payment Approved', message: `${record.referenceNo} posted to payment ledger.`, type: 'success' });
   };
 
@@ -587,7 +591,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     );
     const linkedPaymentId = deletingRecord.postedPaymentId || fallbackPayment?.id || '';
     if (linkedPaymentId) globalDeletePayment(linkedPaymentId);
-    persistRecords(records.filter(record => record.id !== deletingRecord.id));
+    persistRecords(records.filter(record => record.id !== deletingRecord.id), undefined, deletingRecord.id);
     addNotification({ title: 'Field Payment Deleted', message: `${deletingRecord.referenceNo} was deleted.`, type: 'success' });
     setDeletingRecord(null);
   };

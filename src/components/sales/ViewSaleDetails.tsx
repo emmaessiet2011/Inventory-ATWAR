@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, X, Printer, Package, Paperclip } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { findLocationByIdOrName, resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
+import { fetchDedicated } from '@/utils/apiClient';
 
 interface ViewSaleDetailsProps {
   isOpen: boolean;
@@ -35,6 +36,22 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
     () => resolveInvoiceLayoutRenderConfig(sale?.invoiceLayout, invoiceLayouts),
     [sale?.invoiceLayout, invoiceLayouts]
   );
+  const [fieldPaymentRecords, setFieldPaymentRecords] = useState<any[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchDedicated<any>('/api/sync/field-payments')
+      .then((rows) => {
+        if (cancelled) return;
+        setFieldPaymentRecords(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => {
+        if (!cancelled) setFieldPaymentRecords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const customerRecord = useMemo(() => {
     if (!sale) return undefined;
     const customerIdRef = String(sale.customerId || '').trim();
@@ -85,23 +102,15 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
 
   const fieldPaymentAttachmentMap = useMemo(() => {
     const map = new Map<string, { name: string; data: string }>();
-    try {
-      const raw = localStorage.getItem('app_field_payments');
-      if (raw) {
-        const records = JSON.parse(raw);
-        if (Array.isArray(records)) {
-          records.forEach((r: any) => {
-            if (r.referenceNo && r.attachmentName && r.attachmentData) {
-              map.set(r.referenceNo, { name: r.attachmentName, data: r.attachmentData });
-            }
-          });
-        }
-      }
-    } catch {
-      // ignore malformed data
-    }
+    fieldPaymentRecords.forEach((record: any) => {
+      if (!record?.referenceNo || !record?.attachmentName || !record?.attachmentData) return;
+      map.set(String(record.referenceNo), {
+        name: String(record.attachmentName),
+        data: String(record.attachmentData),
+      });
+    });
     return map;
-  }, []);
+  }, [fieldPaymentRecords]);
 
   const subtotal = Number(
     sale?.subTotal ??

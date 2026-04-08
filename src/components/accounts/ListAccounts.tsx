@@ -13,11 +13,12 @@ import {
   getStoredPaymentAccountTypes,
   inferPaymentAccountName,
   normalizeAccountKey,
-  PAYMENT_ACCOUNTS_STORAGE_KEY,
-  PAYMENT_ACCOUNT_TYPES_STORAGE_KEY,
+  setStoredPaymentAccounts,
+  setStoredPaymentAccountTypes,
 } from '@/utils/paymentAccounts';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { buildPaginationItems } from '@/utils/pagination';
+import { fetchDedicated, fetchCollection, syncDedicated, deleteDedicated, syncCollection } from '@/utils/apiClient';
 
 interface ListAccountsProps {
   onNavigate?: (page: string) => void;
@@ -98,13 +99,31 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     status: 'Active' as 'Active' | 'Inactive',
   });
 
+  // Bootstrap: load from DB (Postgres source of truth)
   useEffect(() => {
-    localStorage.setItem(PAYMENT_ACCOUNTS_STORAGE_KEY, JSON.stringify(customAccounts));
+    fetchDedicated<PaymentAccountRow>('/api/sync/payment-accounts').then(remote => {
+      if (!remote) return;
+      setCustomAccounts(remote);
+      setStoredPaymentAccounts(remote);
+      dispatchPaymentAccountsUpdated();
+    }).catch(() => {});
+    // Account types are small — stored as a collection snapshot
+    fetchCollection<string>('paymentAccountTypes').then(remote => {
+      if (!remote) return;
+      setAccountTypes(remote);
+      setStoredPaymentAccountTypes(remote);
+      dispatchPaymentAccountsUpdated();
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setStoredPaymentAccounts(customAccounts);
     dispatchPaymentAccountsUpdated();
   }, [customAccounts]);
 
   useEffect(() => {
-    localStorage.setItem(PAYMENT_ACCOUNT_TYPES_STORAGE_KEY, JSON.stringify(accountTypes));
+    setStoredPaymentAccountTypes(accountTypes);
+    syncCollection('paymentAccountTypes', accountTypes);
     dispatchPaymentAccountsUpdated();
   }, [accountTypes]);
 
@@ -299,24 +318,28 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     }
 
     if (editingId) {
-      setCustomAccounts(prev => prev.map(a => a.id === editingId ? {
-        ...a,
-        ...form,
-        name,
-      } : a));
+      setCustomAccounts(prev => prev.map(a => {
+        if (a.id !== editingId) return a;
+        const updated = { ...a, ...form, name };
+        syncDedicated('/api/sync/payment-accounts', editingId, updated);
+        return updated;
+      }));
       addNotification({
         title: 'Account Updated',
         message: `${name} has been updated successfully.`,
         type: 'success',
       });
     } else {
-      setCustomAccounts(prev => [...prev, {
-        id: `ACC-${Date.now()}`,
+      const newId = `ACC-${Date.now()}`;
+      const newAccount: PaymentAccountRow = {
+        id: newId,
         ...form,
         name,
         balance: 0,
         addedBy: currentUser?.name || 'Admin',
-      }]);
+      };
+      setCustomAccounts(prev => [...prev, newAccount]);
+      syncDedicated('/api/sync/payment-accounts', newId, newAccount);
       addNotification({
         title: 'Account Added',
         message: `${name} has been created successfully.`,
@@ -353,15 +376,11 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
   };
 
   const handleAccountBook = (account: PaymentAccountRow) => {
-    try {
-      localStorage.setItem('app_payment_account_report_focus', JSON.stringify({
-        account: account.name,
-        location: account.location || '',
-      }));
-    } catch {
-      // do not block navigation for localStorage write errors
+    if (onNavigate) {
+      const encodedAccount = encodeURIComponent(String(account.name || '').trim());
+      const encodedLocation = encodeURIComponent(String(account.location || '').trim());
+      onNavigate(`payment-account-report/${encodedAccount}:${encodedLocation}`);
     }
-    if (onNavigate) onNavigate('payment-account-report');
     setActiveDropdown(null);
   };
 
@@ -414,6 +433,7 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     }
 
     setCustomAccounts(prev => prev.filter(acc => acc.id !== pendingDeleteId));
+    deleteDedicated('/api/sync/payment-accounts', pendingDeleteId);
     setPendingDeleteId(null);
     addNotification({
       title: 'Account Deleted',

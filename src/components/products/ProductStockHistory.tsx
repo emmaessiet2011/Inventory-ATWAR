@@ -11,25 +11,13 @@ import {
 } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { printDocument } from '@/utils/printUtils';
+import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
 interface ProductStockHistoryProps {
   isOpen?: boolean;
   onClose?: () => void;
   product: Product | null;
   pageMode?: boolean;
-}
-
-interface StockLedgerEntry {
-  id: string;
-  productId: string;
-  type: string;
-  change: number;
-  newQty: number;
-  date: string;
-  ref: string;
-  party: string;
-  location?: string;
-  note?: string;
 }
 
 interface HistoryRow {
@@ -46,18 +34,7 @@ interface HistoryRow {
 
 type ColKey = 'type' | 'change' | 'newQty' | 'date' | 'ref' | 'party' | 'location' | 'note';
 
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
-
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
-
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
 
 const toCsvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
@@ -89,10 +66,27 @@ const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen = true
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>(['location', 'note']);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
+  const [ledgerVersion, setLedgerVersion] = useState(0);
   const productId = String(product?.id || '').trim();
   const productSku = String(product?.sku || 'product').trim() || 'product';
   const productName = String(product?.name || '').trim();
   const productLocation = String(product?.businessLocation || '').trim();
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshLedger = async () => {
+      await bootstrapStockTransfersFromDB().catch(() => {});
+      if (cancelled) return;
+      setLedgerVersion((prev) => prev + 1);
+    };
+    void refreshLedger();
+    const onFocus = () => { void refreshLedger(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
 
   const rows = useMemo<HistoryRow[]>(() => {
     if (!product) return [];
@@ -193,7 +187,7 @@ const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen = true
 
     return [...ledgerRows, ...purchaseRows, ...purchaseReturnRows, ...saleRows, ...sellReturnRows]
       .sort((a, b) => toTimestamp(b.date) - toTimestamp(a.date));
-  }, [product, productId, productSku, productName, productLocation, sales, sellReturns, purchases, purchaseReturns]);
+  }, [product, productId, productSku, productName, productLocation, sales, sellReturns, purchases, purchaseReturns, ledgerVersion]);
 
   const filteredRows = useMemo(() => {
     const q = normalize(searchTerm);

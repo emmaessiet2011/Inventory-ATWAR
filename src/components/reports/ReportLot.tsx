@@ -8,7 +8,8 @@ import { useGlobalContext } from '@/context/GlobalContext';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
-import { getStockLotsStorageKey, readStockLotBalances } from '@/utils/stockLots';
+import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances } from '@/utils/stockLots';
+import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
 interface LotReportItem {
   id: string;
@@ -26,13 +27,6 @@ interface LotReportItem {
   subCategory: string;
   brand: string;
   isFallback: boolean;
-}
-
-interface StockLedgerEntry {
-  productId: string;
-  type: string;
-  change: number;
-  note?: string;
 }
 
 const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
@@ -85,15 +79,6 @@ const formatExpiryDate = (value: string | undefined): string => {
   return parsed.toLocaleDateString('en-GB');
 };
 
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
 const ReportLot: React.FC = () => {
   const { products, sales, locations, settings } = useGlobalContext();
 
@@ -137,14 +122,27 @@ const ReportLot: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const refreshLots = () => setLotVersion((prev) => prev + 1);
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === stockLotsStorageKey) refreshLots();
+    let cancelled = false;
+    const refreshLots = async () => {
+      await Promise.all([
+        bootstrapStockLotsFromDB().catch(() => {}),
+        bootstrapStockTransfersFromDB().catch(() => {}),
+      ]);
+      if (cancelled) return;
+      setLotVersion((prev) => prev + 1);
     };
-    window.addEventListener('focus', refreshLots);
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === stockLotsStorageKey || event.key === STOCK_LEDGER_KEY) {
+        void refreshLots();
+      }
+    };
+    void refreshLots();
+    const onFocus = () => { void refreshLots(); };
+    window.addEventListener('focus', onFocus);
     window.addEventListener('storage', onStorage);
     return () => {
-      window.removeEventListener('focus', refreshLots);
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
       window.removeEventListener('storage', onStorage);
     };
   }, [stockLotsStorageKey]);

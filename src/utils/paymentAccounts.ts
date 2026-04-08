@@ -1,6 +1,8 @@
 export const PAYMENT_ACCOUNTS_STORAGE_KEY = 'app_payment_accounts';
 export const PAYMENT_ACCOUNT_TYPES_STORAGE_KEY = 'app_payment_account_types';
 export const PAYMENT_ACCOUNTS_UPDATED_EVENT = 'app:payment-accounts-updated';
+let paymentAccountsCache: StoredPaymentAccount[] = [];
+let paymentAccountTypesCache: string[] = ['Cash', 'Bank'];
 
 type PaymentMethodLike = {
   name?: string;
@@ -101,29 +103,26 @@ const parseStoredPaymentAccounts = (raw: unknown): StoredPaymentAccount[] => {
     .filter((record): record is StoredPaymentAccount => !!record);
 };
 
+const parseStoredPaymentAccountTypes = (raw: unknown): string[] => {
+  if (!Array.isArray(raw)) return ['Cash', 'Bank'];
+  const normalized = raw.map(type => String(type || '').trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized : ['Cash', 'Bank'];
+};
+
+export const setStoredPaymentAccounts = (rows: unknown): void => {
+  paymentAccountsCache = parseStoredPaymentAccounts(rows);
+};
+
+export const setStoredPaymentAccountTypes = (rows: unknown): void => {
+  paymentAccountTypesCache = parseStoredPaymentAccountTypes(rows);
+};
+
 export const getStoredPaymentAccounts = (): StoredPaymentAccount[] => {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PAYMENT_ACCOUNTS_STORAGE_KEY);
-    if (!raw) return [];
-    return parseStoredPaymentAccounts(JSON.parse(raw));
-  } catch {
-    return [];
-  }
+  return paymentAccountsCache;
 };
 
 export const getStoredPaymentAccountTypes = (): string[] => {
-  if (typeof window === 'undefined') return ['Cash', 'Bank'];
-  try {
-    const raw = localStorage.getItem(PAYMENT_ACCOUNT_TYPES_STORAGE_KEY);
-    if (!raw) return ['Cash', 'Bank'];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return ['Cash', 'Bank'];
-    const normalized = parsed.map(type => String(type || '').trim()).filter(Boolean);
-    return normalized.length > 0 ? normalized : ['Cash', 'Bank'];
-  } catch {
-    return ['Cash', 'Bank'];
-  }
+  return paymentAccountTypesCache;
 };
 
 export const dispatchPaymentAccountsUpdated = (): void => {

@@ -18,8 +18,10 @@ import {
 } from '../utils/productPackaging';
 import {
   dispatchPaymentAccountsUpdated,
-  PAYMENT_ACCOUNTS_STORAGE_KEY,
+  getStoredPaymentAccounts,
   resolveDefaultAccountFromMethod,
+  setStoredPaymentAccounts,
+  setStoredPaymentAccountTypes,
 } from '../utils/paymentAccounts';
 import {
   generatePasswordSalt,
@@ -39,10 +41,16 @@ import {
   pingBackend,
 } from '../utils/coreStateSync';
 import {
+  apiFetchAll,
   apiFetchAllWithRetry,
   isLiveSyncEnabled,
   syncRecord,
   deleteRecord,
+  syncStockDelta,
+  fetchCollection,
+  syncCollection,
+  syncDedicated,
+  fetchDedicated,
 } from '../utils/apiClient';
 import {
   fetchDropdownCollections,
@@ -1641,8 +1649,6 @@ const initialRoles: Role[] = [
 
 const initialCommissionAgents: CommissionAgent[] = [];
 
-const FIELD_PAYMENTS_STORAGE_KEY = 'app_field_payments';
-
 // Legacy contacts array (minimal — kept so any component using contacts doesn't break)
 const initialContacts: Contact[] = [];
 
@@ -2329,28 +2335,36 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
+  // Treat DB sync mode as source-of-truth mode for initial hydration.
+  const dbSourceOfTruth = isLiveSyncEnabled();
+
   // ---- Products ----
   const [products, setProducts] = useState<Product[]>(() => {
+    if (dbSourceOfTruth) return initialProducts;
     try { const s = localStorage.getItem('app_products_v2'); return s ? JSON.parse(s) : initialProducts; } catch { return initialProducts; }
   });
 
   // ---- Customers ----
   const [customers, setCustomers] = useState<Customer[]>(() => {
+    if (dbSourceOfTruth) return initialCustomers;
     try { const s = localStorage.getItem('app_customers_v2'); return s ? JSON.parse(s) : initialCustomers; } catch { return initialCustomers; }
   });
 
   // ---- Suppliers ----
   const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
+    if (dbSourceOfTruth) return initialSuppliers;
     try { const s = localStorage.getItem('app_suppliers_v2'); return s ? JSON.parse(s) : initialSuppliers; } catch { return initialSuppliers; }
   });
 
   // ---- Legacy contacts ----
   const [contacts, setContacts] = useState<Contact[]>(() => {
+    if (dbSourceOfTruth) return initialContacts;
     try { const s = localStorage.getItem('app_contacts'); return s ? JSON.parse(s) : initialContacts; } catch { return initialContacts; }
   });
 
   // ---- Sales ----
   const [sales, setSales] = useState<Sale[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const parsed = readHardenedState<Sale[]>(
         localStorage,
@@ -2364,6 +2378,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Sell Returns ----
   const [sellReturns, setSellReturns] = useState<SellReturn[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const stored = localStorage.getItem('app_sell_returns');
       const parsed = stored ? JSON.parse(stored) : null;
@@ -2435,11 +2450,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Purchases ----
   const [purchases, setPurchases] = useState<Purchase[]>(() => {
+    if (dbSourceOfTruth) return [];
     try { const s = localStorage.getItem('app_purchases'); return s ? JSON.parse(s) : initialPurchases; } catch { return initialPurchases; }
   });
 
   // ---- Purchase Requisitions ----
   const [purchaseRequisitions, setPurchaseRequisitions] = useState<PurchaseRequisition[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const s = localStorage.getItem('app_purchase_requisitions');
       return s ? JSON.parse(s) : initialPurchaseRequisitions;
@@ -2450,6 +2467,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Purchase Orders ----
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const s = localStorage.getItem('app_purchase_orders');
       return s ? JSON.parse(s) : initialPurchaseOrders;
@@ -2460,6 +2478,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Purchase Returns ----
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const s = localStorage.getItem('app_purchase_returns');
       return s ? JSON.parse(s) : initialPurchaseReturns;
@@ -2470,11 +2489,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Orders ----
   const [orders, setOrders] = useState<GlobalOrder[]>(() => {
+    if (dbSourceOfTruth) return [];
     try { const s = localStorage.getItem('app_orders'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
 
   // ---- Payments ----
   const [payments, setPayments] = useState<Payment[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const parsed = readHardenedState<Payment[]>(
         localStorage,
@@ -2489,16 +2510,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Expenses ----
   const [expenses, setExpenses] = useState<Expense[]>(() => {
+    if (dbSourceOfTruth) return [];
     try { const s = localStorage.getItem('app_expenses'); return s ? JSON.parse(s) : []; } catch { return []; }
   });
 
   // ---- Expense Categories ----
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(() => {
+    if (dbSourceOfTruth) return initialExpenseCategories;
     try { const s = localStorage.getItem('app_expense_categories'); return s ? JSON.parse(s) : initialExpenseCategories; } catch { return initialExpenseCategories; }
   });
 
   // ---- Users ----
   const [users, setUsers] = useState<AppUser[]>(() => {
+    if (dbSourceOfTruth) return initialUsers.map(normalizeUserRecord);
     try {
       const parsed = readHardenedState<AppUser[]>(
         localStorage,
@@ -2514,6 +2538,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Roles ----
   const [roles, setRoles] = useState<Role[]>(() => {
+    if (dbSourceOfTruth) return initialRoles.map(normalizeRoleRecord);
     try {
       const s = localStorage.getItem('app_roles');
       if (!s) return initialRoles.map(normalizeRoleRecord);
@@ -2526,6 +2551,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Commission Agents ----
   const [commissionAgents, setCommissionAgents] = useState<CommissionAgent[]>(() => {
+    if (dbSourceOfTruth) return initialCommissionAgents.map(normalizeCommissionAgentRecord);
     try {
       const s = localStorage.getItem('app_commission_agents');
       if (!s) return initialCommissionAgents.map(normalizeCommissionAgentRecord);
@@ -2573,6 +2599,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalizedFallback = initialLocations.map((location) =>
       normalizeLocationRecord(location, location)
     );
+    if (dbSourceOfTruth) return normalizedFallback;
     const normalizeRows = (rows: any[]): Location[] =>
       rows
         .map((row, index) =>
@@ -2600,6 +2627,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Receipt Printers ----
   const [printers, setPrinters] = useState<ReceiptPrinter[]>(() => {
+    if (dbSourceOfTruth) {
+      return initialPrinters.map(row => normalizePrinterRecord(row, row));
+    }
     try {
       const s = localStorage.getItem('app_receipt_printers');
       if (s) {
@@ -2618,6 +2648,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Invoice Schemes ----
   const [invoiceSchemes, setInvoiceSchemes] = useState<InvoiceScheme[]>(() => {
+    if (dbSourceOfTruth) return initialInvoiceSchemes;
     try {
       const s = localStorage.getItem('app_invoice_schemes');
       if (s) {
@@ -2632,6 +2663,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Invoice Layouts ----
   const [invoiceLayouts, setInvoiceLayouts] = useState<InvoiceLayout[]>(() => {
+    if (dbSourceOfTruth) return initialInvoiceLayouts;
     try {
       const s = localStorage.getItem('app_invoice_layouts');
       if (s) {
@@ -2646,6 +2678,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Barcode Settings ----
   const [barcodeSettings, setBarcodeSettings] = useState<BarcodeStickerSetting[]>(() => {
+    if (dbSourceOfTruth) {
+      return normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)));
+    }
     try {
       const s = localStorage.getItem('app_barcode_settings');
       if (s) {
@@ -2667,6 +2702,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Tax Rates ----
   const [taxRates, setTaxRates] = useState<TaxRate[]>(() => {
+    if (dbSourceOfTruth) return normalizeTaxRates(initialTaxRates);
     try {
       const s = localStorage.getItem('app_tax_rates');
       return normalizeTaxRates(s ? JSON.parse(s) : initialTaxRates);
@@ -2677,41 +2713,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Customer Groups ----
   const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(() => {
+    if (dbSourceOfTruth) return initialCustomerGroups;
     try { const s = localStorage.getItem('app_customer_groups'); return s ? JSON.parse(s) : initialCustomerGroups; } catch { return initialCustomerGroups; }
   });
 
   // ---- Product Categories ----
   const [productCategories, setProductCategories] = useState<ProductCategory[]>(() => {
+    if (dbSourceOfTruth) return initialProductCategories;
     try { const s = localStorage.getItem('app_product_categories'); return s ? JSON.parse(s) : initialProductCategories; } catch { return initialProductCategories; }
   });
 
   // ---- Product Brands ----
   const [productBrands, setProductBrands] = useState<ProductBrand[]>(() => {
+    if (dbSourceOfTruth) return initialProductBrands;
     try { const s = localStorage.getItem('app_product_brands'); return s ? JSON.parse(s) : initialProductBrands; } catch { return initialProductBrands; }
   });
 
   // ---- Product Units ----
   const [productUnits, setProductUnits] = useState<ProductUnit[]>(() => {
+    if (dbSourceOfTruth) return initialProductUnits;
     try { const s = localStorage.getItem('app_product_units'); return s ? JSON.parse(s) : initialProductUnits; } catch { return initialProductUnits; }
   });
 
   // ---- Product Warranties ----
   const [warranties, setWarranties] = useState<ProductWarranty[]>(() => {
+    if (dbSourceOfTruth) return initialWarranties;
     try { const s = localStorage.getItem('app_warranties'); return s ? JSON.parse(s) : initialWarranties; } catch { return initialWarranties; }
   });
 
   // ---- Product Variations ----
   const [productVariations, setProductVariations] = useState<ProductVariation[]>(() => {
+    if (dbSourceOfTruth) return initialProductVariations;
     try { const s = localStorage.getItem('app_product_variations'); return s ? JSON.parse(s) : initialProductVariations; } catch { return initialProductVariations; }
   });
 
   // ---- Selling Price Groups ----
   const [sellingPriceGroups, setSellingPriceGroups] = useState<SellingPriceGroup[]>(() => {
+    if (dbSourceOfTruth) return initialSellingPriceGroups;
     try { const s = localStorage.getItem('app_selling_price_groups'); return s ? JSON.parse(s) : initialSellingPriceGroups; } catch { return initialSellingPriceGroups; }
   });
 
   // ---- Discounts ----
   const [discounts, setDiscounts] = useState<Discount[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const s = localStorage.getItem('app_discounts');
       if (!s) return [];
@@ -2724,6 +2768,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Activity Logs ----
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(() => {
+    if (dbSourceOfTruth) return [];
     try {
       const s = localStorage.getItem('app_activity_logs');
       if (!s) return [];
@@ -2736,6 +2781,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Settings ----
   const [settings, setSettings] = useState<AppSettings>(() => {
+    if (dbSourceOfTruth) return { ...defaultSettings };
     try {
       const s = localStorage.getItem('app_settings');
       return s ? normalizeAppSettings(JSON.parse(s)) : { ...defaultSettings };
@@ -2757,6 +2803,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // fall through to legacy migration
     }
 
+    if (dbSourceOfTruth) return null;
     try {
       const legacyRaw = localStorage.getItem('app_current_user');
       if (!legacyRaw) return null;
@@ -2773,6 +2820,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const dropdownSyncApplyingRemoteRef = useRef(false);
   const dropdownSyncPushTimerRef = useRef<number | null>(null);
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
+  const fieldPaymentsCacheRef = useRef<any[]>([]);
 
   useEffect(() => {
     const dueBySale: Record<string, number> = {};
@@ -2894,6 +2942,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remotePayments,
           remoteUsers,
           remoteSettings,
+          remoteExpenses,
+          remotePurchases,
+          remoteSellReturns,
+          remotePurchaseReturns,
+          remoteOrders,
+          remoteActivityLogs,
+          remotePurchaseReqs,
+          remotePurchaseOrders,
+          remoteContacts,
         ] = await Promise.all([
           apiFetchAllWithRetry<Product>('products'),
           apiFetchAllWithRetry<Customer>('customers'),
@@ -2902,18 +2959,47 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<Payment>('payments'),
           apiFetchAllWithRetry<AppUser>('users'),
           apiFetchAllWithRetry<AppSettings>('settings'),
+          apiFetchAllWithRetry<Expense>('expenses'),
+          apiFetchAllWithRetry<Purchase>('purchases'),
+          apiFetchAllWithRetry<SellReturn>('sellReturns'),
+          apiFetchAllWithRetry<PurchaseReturn>('purchaseReturns'),
+          apiFetchAllWithRetry<GlobalOrder>('orders'),
+          apiFetchAllWithRetry<ActivityLogEntry>('activityLogs'),
+          fetchCollection<PurchaseRequisition>('purchaseRequisitions'),
+          fetchCollection<PurchaseOrder>('purchaseOrders'),
+          fetchCollection<Contact>('contacts'),
         ]);
 
         if (cancelled) return;
 
-        // Only overwrite local state when the server actually returned data.
-        // If a fetch returned null (all retries failed) we keep local state.
-        if (remoteProducts && remoteProducts.length > 0) setProducts(remoteProducts);
-        if (remoteCustomers && remoteCustomers.length > 0) setCustomers(remoteCustomers);
-        if (remoteSuppliers && remoteSuppliers.length > 0) setSuppliers(remoteSuppliers);
-        if (remoteSales && remoteSales.length > 0) setSales(remoteSales);
-        if (remotePayments && remotePayments.length > 0) setPayments(remotePayments);
-        if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers.map(normalizeUserRecord));
+        const bootResults = [
+          remoteProducts,
+          remoteCustomers,
+          remoteSuppliers,
+          remoteSales,
+          remotePayments,
+          remoteUsers,
+          remoteSettings,
+          remoteExpenses,
+          remotePurchases,
+          remoteSellReturns,
+          remotePurchaseReturns,
+          remoteOrders,
+          remoteActivityLogs,
+          remotePurchaseReqs,
+          remotePurchaseOrders,
+          remoteContacts,
+        ];
+        const hadFetchFailure = bootResults.some((result) => result === null);
+
+        // In DB sync mode, apply successful fetches even when arrays are empty
+        // so stale browser cache cannot survive a refresh.
+        if (remoteProducts) setProducts(remoteProducts);
+        if (remoteCustomers) setCustomers(remoteCustomers);
+        if (remoteSuppliers) setSuppliers(remoteSuppliers);
+        if (remoteSales) setSales(remoteSales);
+        if (remotePayments) setPayments(remotePayments);
+        if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteSettings && remoteSettings.length > 0) {
           const s = remoteSettings[0];
           // Only apply settings from DB if it has more than the 3 bootstrap fields,
@@ -2923,8 +3009,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const richEnough = s && Object.keys(s).filter(k => !['id', 'businessName', 'currency', 'currencySymbol', 'createdAt', 'updatedAt'].includes(k)).length > 0;
           if (richEnough) setSettings(normalizeAppSettings(s));
         }
+        if (remoteExpenses) setExpenses(remoteExpenses);
+        if (remotePurchases) setPurchases(remotePurchases);
+        if (remoteSellReturns) setSellReturns(remoteSellReturns);
+        if (remotePurchaseReturns) setPurchaseReturns(remotePurchaseReturns);
+        if (remoteOrders) setOrders(remoteOrders);
+        if (remoteActivityLogs) setActivityLogs(remoteActivityLogs);
+        if (remotePurchaseReqs) setPurchaseRequisitions(remotePurchaseReqs);
+        if (remotePurchaseOrders) setPurchaseOrders(remotePurchaseOrders);
+        if (remoteContacts) setContacts(remoteContacts);
 
-        setSyncStatus('synced');
+        setSyncStatus(hadFetchFailure ? 'error' : 'synced');
       } catch {
         if (!cancelled) setSyncStatus('error');
       } finally {
@@ -2942,6 +3037,91 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!isCoreSyncEnabled()) return;
     const id = window.setInterval(() => { void pingBackend(); }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!isLiveSyncEnabled()) return;
+    let cancelled = false;
+    const bootstrapPaymentAccountCaches = async () => {
+      const [remoteAccounts, remoteAccountTypes] = await Promise.all([
+        fetchDedicated<any>('/api/sync/payment-accounts').catch(() => null),
+        fetchCollection<string>('paymentAccountTypes').catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (remoteAccounts) setStoredPaymentAccounts(remoteAccounts);
+      if (remoteAccountTypes) setStoredPaymentAccountTypes(remoteAccountTypes);
+      dispatchPaymentAccountsUpdated();
+    };
+    void bootstrapPaymentAccountCaches();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isLiveSyncEnabled()) return;
+    let cancelled = false;
+    const refreshFieldPaymentsCache = async () => {
+      const rows = await fetchDedicated<any>('/api/sync/field-payments').catch(() => null);
+      if (cancelled || !rows) return;
+      fieldPaymentsCacheRef.current = Array.isArray(rows) ? rows : [];
+    };
+    void refreshFieldPaymentsCache();
+    const onFieldPaymentsUpdated = (event: Event) => {
+      const custom = event as CustomEvent<any[]>;
+      if (!Array.isArray(custom.detail)) return;
+      fieldPaymentsCacheRef.current = custom.detail;
+    };
+    const onFocus = () => { void refreshFieldPaymentsCache(); };
+    window.addEventListener('app:field-payments-updated', onFieldPaymentsUpdated as EventListener);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('app:field-payments-updated', onFieldPaymentsUpdated as EventListener);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
+  // ─── BACKGROUND POLLING ──────────────────────────────────────────────────
+  // Every 60 seconds, re-fetch the four most dynamic resources so employees
+  // at different locations see each other's sales, payments, and stock
+  // changes without having to manually refresh the page.
+  useEffect(() => {
+    if (!isLiveSyncEnabled()) return;
+
+    const poll = async () => {
+      try {
+        const [
+          freshProducts, freshSales, freshPayments, freshCustomers,
+          freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders,
+        ] = await Promise.all([
+          apiFetchAll<Product>('products').catch(() => null),
+          apiFetchAll<Sale>('sales').catch(() => null),
+          apiFetchAll<Payment>('payments').catch(() => null),
+          apiFetchAll<Customer>('customers').catch(() => null),
+          apiFetchAll<Expense>('expenses').catch(() => null),
+          apiFetchAll<Purchase>('purchases').catch(() => null),
+          apiFetchAll<SellReturn>('sellReturns').catch(() => null),
+          apiFetchAll<PurchaseReturn>('purchaseReturns').catch(() => null),
+          apiFetchAll<GlobalOrder>('orders').catch(() => null),
+        ]);
+        if (freshProducts) setProducts(freshProducts);
+        if (freshSales) setSales(freshSales);
+        if (freshPayments) setPayments(freshPayments);
+        if (freshCustomers) setCustomers(freshCustomers);
+        if (freshExpenses) setExpenses(freshExpenses);
+        if (freshPurchases) setPurchases(freshPurchases);
+        if (freshSellReturns) setSellReturns(freshSellReturns);
+        if (freshPurchaseReturns) setPurchaseReturns(freshPurchaseReturns);
+        if (freshOrders) setOrders(freshOrders);
+      } catch {
+        // polling failure is non-fatal — the user keeps their current data
+      }
+    };
+
+    const id = window.setInterval(poll, 60_000);
+    return () => window.clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -2976,6 +3156,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (cancelled) return;
 
       let hasRemoteData = false;
+      const hasRemoteSnapshot = Object.keys(remote).length > 0;
 
       const getRows = (key: string) => (Array.isArray(remote[key]) ? remote[key] : []);
 
@@ -3107,6 +3288,35 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
       }
 
+      if (dbSourceOfTruth && hasRemoteSnapshot) {
+        dropdownSyncApplyingRemoteRef.current = true;
+        setRoles((remoteRoles as Role[]).map(normalizeRoleRecord));
+        setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
+        setLocations((remoteLocations as Location[])
+          .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+          .filter((row) => row.id && row.name));
+        setPrinters((remotePrinters as ReceiptPrinter[])
+          .map((row, index) => normalizePrinterRecord(row, initialPrinters[index] || initialPrinters[0]))
+          .filter((row) => row.id && row.name));
+        setInvoiceSchemes(remoteInvoiceSchemes as InvoiceScheme[]);
+        setInvoiceLayouts(remoteInvoiceLayouts as InvoiceLayout[]);
+        setBarcodeSettings(normalizeBarcodeSettings(
+          (remoteBarcodeSettings as BarcodeStickerSetting[])
+            .map((row, index) => normalizeBarcodeSettingRecord(row, initialBarcodeSettings[index] || initialBarcodeSettings[0]))
+            .filter((row) => row.id && row.name)
+        ));
+        setTaxRates(normalizeTaxRates(remoteTaxRates as TaxRate[]));
+        setCustomerGroups(remoteCustomerGroups as CustomerGroup[]);
+        setProductCategories(remoteProductCategories as ProductCategory[]);
+        setProductBrands(remoteProductBrands as ProductBrand[]);
+        setProductUnits(remoteProductUnits as ProductUnit[]);
+        setWarranties(remoteWarranties as ProductWarranty[]);
+        setProductVariations(remoteProductVariations as ProductVariation[]);
+        setSellingPriceGroups(remoteSellingPriceGroups as SellingPriceGroup[]);
+        setDiscounts((remoteDiscounts as Discount[]).map((row) => normalizeDiscountRecord(row)));
+        setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
+      }
+
       const seedCollections = {
         roles: remoteRoles.length > 0 ? remoteRoles : roles,
         commissionAgents: remoteAgents.length > 0 ? remoteAgents : commissionAgents,
@@ -3142,7 +3352,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       cancelled = true;
     };
-  }, [dropdownSyncEnabled]);
+  }, [dropdownSyncEnabled, dbSourceOfTruth]);
 
   useEffect(() => {
     if (!dropdownSyncEnabled || !dropdownSyncReadyRef.current || dropdownSyncApplyingRemoteRef.current) return;
@@ -3182,6 +3392,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     };
   }, [
+    dbSourceOfTruth,
     dropdownSyncEnabled,
     roles,
     commissionAgents,
@@ -3429,6 +3640,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ipAddress: entry.ipAddress || '',
     };
     setActivityLogs(prev => [next, ...prev].slice(0, 5000));
+    syncRecord('activityLogs', next);
 
     // Broadcast bell notifications for key business activities
     const module = next.module;
@@ -4057,9 +4269,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: CONTACTS (legacy)
   // ============================================================
 
-  const addContact = (contact: Contact) => setContacts(prev => [...prev, contact]);
-  const updateContact = (contact: Contact) => setContacts(prev => prev.map(c => c.id === contact.id ? contact : c));
-  const deleteContact = (id: number) => setContacts(prev => prev.filter(c => c.id !== id));
+  const addContact = (contact: Contact) => {
+    let next: Contact[] = [];
+    setContacts(prev => { next = [...prev, contact]; return next; });
+    syncCollection('contacts', next);
+  };
+  const updateContact = (contact: Contact) => {
+    let next: Contact[] = [];
+    setContacts(prev => { next = prev.map(c => c.id === contact.id ? contact : c); return next; });
+    syncCollection('contacts', next);
+  };
+  const deleteContact = (id: number) => {
+    let next: Contact[] = [];
+    setContacts(prev => { next = prev.filter(c => c.id !== id); return next; });
+    syncCollection('contacts', next);
+  };
 
   // ============================================================
   //  CRUD: SALES
@@ -4154,8 +4378,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const delta = (deltaByProduct[p.id] || 0) + (deltaByProduct[p.sku] || 0);
       if (!delta) return p;
       const updated = { ...p, stock: p.stock + delta };
-      // Sync each product whose stock changed so other employees see accurate inventory
-      syncRecord('products', updated);
+      // Use atomic stock delta so concurrent sales from different users/locations
+      // both apply correctly instead of the last write overwriting the other.
+      syncStockDelta(p.id, delta);
       return updated;
     }));
   };
@@ -4458,6 +4683,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } else {
       removeAutoRefundPaymentForSellReturn(normalized);
     }
+    syncRecord('sellReturns', normalized);
     recordActivity({
       action: 'Created',
       module: 'Sell Returns',
@@ -4498,6 +4724,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return [...prev, normalized];
     });
+    syncRecord('sellReturns', normalizedDraft);
     recordActivity({
       action: 'Updated',
       module: 'Sell Returns',
@@ -4516,6 +4743,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return prev.filter(record => record.id !== id);
     });
+    deleteRecord('sellReturns', id);
     recordActivity({
       action: 'Deleted',
       module: 'Sell Returns',
@@ -4788,6 +5016,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addPurchase = (purchase: Purchase) => {
     setPurchases(prev => [...prev, purchase]);
     applyPurchaseEffects(purchase, 1);
+    syncRecord('purchases', purchase);
     recordActivity({
       action: 'Created',
       module: 'Purchases',
@@ -4804,6 +5033,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       applyPurchaseEffects(purchase, 1);
       return prev.map(item => item.id === purchase.id ? purchase : item);
     });
+    syncRecord('purchases', purchase);
     recordActivity({
       action: 'Updated',
       module: 'Purchases',
@@ -4821,6 +5051,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return prev.filter(item => item.id !== id);
     });
     if (!purchaseReturns.some(ret => ret.parentPurchaseId === id)) {
+      deleteRecord('purchases', id);
       recordActivity({
         action: 'Deleted',
         module: 'Purchases',
@@ -4834,7 +5065,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseRequisition = (requisition: PurchaseRequisition) => {
-    setPurchaseRequisitions(prev => [...prev, requisition]);
+    let next: PurchaseRequisition[] = [];
+    setPurchaseRequisitions(prev => { next = [...prev, requisition]; return next; });
+    syncCollection('purchaseRequisitions', next);
     recordActivity({
       action: 'Created',
       module: 'Purchase Requisitions',
@@ -4843,7 +5076,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updatePurchaseRequisition = (requisition: PurchaseRequisition) => {
     if (!canEditTransaction('Purchase Requisitions', String(requisition.referenceNo || requisition.id || '').trim(), requisition.date)) return;
-    setPurchaseRequisitions(prev => prev.map(item => item.id === requisition.id ? requisition : item));
+    let next: PurchaseRequisition[] = [];
+    setPurchaseRequisitions(prev => { next = prev.map(item => item.id === requisition.id ? requisition : item); return next; });
+    syncCollection('purchaseRequisitions', next);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Requisitions',
@@ -4852,11 +5087,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseRequisition = (id: string) => {
     const existing = purchaseRequisitions.find(item => item.id === id);
+    let next: PurchaseRequisition[] = [];
     setPurchaseRequisitions(prev => {
       if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return prev;
-      return prev.filter(item => item.id !== id);
+      next = prev.filter(item => item.id !== id); return next;
     });
     if (!purchaseOrders.some(order => order.purchaseRequisitionId === id)) {
+      syncCollection('purchaseRequisitions', next);
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Requisitions',
@@ -4870,7 +5107,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseOrder = (order: PurchaseOrder) => {
-    setPurchaseOrders(prev => [...prev, order]);
+    let next: PurchaseOrder[] = [];
+    setPurchaseOrders(prev => { next = [...prev, order]; return next; });
+    syncCollection('purchaseOrders', next);
     recordActivity({
       action: 'Created',
       module: 'Purchase Orders',
@@ -4879,7 +5118,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updatePurchaseOrder = (order: PurchaseOrder) => {
     if (!canEditTransaction('Purchase Orders', String(order.referenceNo || order.id || '').trim(), order.orderDate)) return;
-    setPurchaseOrders(prev => prev.map(item => item.id === order.id ? order : item));
+    let next: PurchaseOrder[] = [];
+    setPurchaseOrders(prev => { next = prev.map(item => item.id === order.id ? order : item); return next; });
+    syncCollection('purchaseOrders', next);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Orders',
@@ -4888,11 +5129,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseOrder = (id: string) => {
     const existing = purchaseOrders.find(item => item.id === id);
+    let next: PurchaseOrder[] = [];
     setPurchaseOrders(prev => {
       if (purchases.some(purchase => purchase.purchaseOrderId === id)) return prev;
-      return prev.filter(item => item.id !== id);
+      next = prev.filter(item => item.id !== id); return next;
     });
     if (!purchases.some(purchase => purchase.purchaseOrderId === id)) {
+      syncCollection('purchaseOrders', next);
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Orders',
@@ -4908,6 +5151,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addPurchaseReturn = (purchaseReturn: PurchaseReturn) => {
     setPurchaseReturns(prev => [...prev, purchaseReturn]);
     applyPurchaseReturnEffects(purchaseReturn, 1);
+    syncRecord('purchaseReturns', purchaseReturn);
     recordActivity({
       action: 'Created',
       module: 'Purchase Returns',
@@ -4923,6 +5167,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       applyPurchaseReturnEffects(purchaseReturn, 1);
       return prev.map(item => item.id === purchaseReturn.id ? purchaseReturn : item);
     });
+    syncRecord('purchaseReturns', purchaseReturn);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Returns',
@@ -4937,6 +5182,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (existing) applyPurchaseReturnEffects(existing, -1);
       return prev.filter(item => item.id !== id);
     });
+    deleteRecord('purchaseReturns', id);
     recordActivity({
       action: 'Deleted',
       module: 'Purchase Returns',
@@ -4950,6 +5196,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addOrder = (order: GlobalOrder) => {
     setOrders(prev => [...prev, order]);
+    syncRecord('orders', order);
     recordActivity({
       action: 'Created',
       module: 'Orders',
@@ -4959,6 +5206,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateOrder = (order: GlobalOrder) => {
     if (!canEditTransaction('Orders', String(order.orderNumber || order.id || '').trim(), order.orderDate)) return;
     setOrders(prev => prev.map(o => o.id === order.id ? order : o));
+    syncRecord('orders', order);
     recordActivity({
       action: 'Updated',
       module: 'Orders',
@@ -4968,6 +5216,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteOrder = (id: string) => {
     const existing = orders.find(o => o.id === id);
     setOrders(prev => prev.filter(o => o.id !== id));
+    deleteRecord('orders', id);
     recordActivity({
       action: 'Deleted',
       module: 'Orders',
@@ -5397,6 +5646,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addExpense = (expense: Expense) => {
     setExpenses(prev => [...prev, expense]);
+    syncRecord('expenses', expense);
     recordActivity({
       action: 'Created',
       module: 'Expenses',
@@ -5406,6 +5656,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateExpense = (expense: Expense) => {
     if (!canEditTransaction('Expenses', String(expense.refNo || expense.id || '').trim(), expense.date)) return;
     setExpenses(prev => prev.map(e => e.id === expense.id ? expense : e));
+    syncRecord('expenses', expense);
     recordActivity({
       action: 'Updated',
       module: 'Expenses',
@@ -5421,6 +5672,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         (payment.expenseId === id || payment.contactId === id)
       )
     ));
+    deleteRecord('expenses', id);
     recordActivity({
       action: 'Deleted',
       module: 'Expenses',
@@ -5735,41 +5987,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       try {
-        const raw = localStorage.getItem(FIELD_PAYMENTS_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            let changed = false;
-            const nextRows = parsed.map((row: any) => {
-              if (!matchesOldName(row?.location)) return row;
-              changed = true;
-              return { ...row, location: nextName };
-            });
-            if (changed) {
-              localStorage.setItem(FIELD_PAYMENTS_STORAGE_KEY, JSON.stringify(nextRows));
-            }
-          }
+        const nextRows = fieldPaymentsCacheRef.current.map((row: any) => {
+          if (!matchesOldName(row?.location)) return row;
+          return { ...row, location: nextName };
+        });
+        const changed = nextRows.some((row, index) => row !== fieldPaymentsCacheRef.current[index]);
+        if (changed) {
+          fieldPaymentsCacheRef.current = nextRows;
+          nextRows.forEach((row: any) => {
+            const id = String(row?.id || '').trim();
+            if (!id) return;
+            syncDedicated('/api/sync/field-payments', id, row);
+          });
         }
       } catch {
         // ignore field payments migration errors
       }
 
       try {
-        const raw = localStorage.getItem(PAYMENT_ACCOUNTS_STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            let changed = false;
-            const nextRows = parsed.map((row: any) => {
-              if (!matchesOldName(row?.location)) return row;
-              changed = true;
-              return { ...row, location: nextName };
-            });
-            if (changed) {
-              localStorage.setItem(PAYMENT_ACCOUNTS_STORAGE_KEY, JSON.stringify(nextRows));
-              dispatchPaymentAccountsUpdated();
-            }
-          }
+        const paymentAccountRows = getStoredPaymentAccounts();
+        const nextRows = paymentAccountRows.map((row: any) => {
+          if (!matchesOldName(row?.location)) return row;
+          return { ...row, location: nextName };
+        });
+        const changed = nextRows.some((row, index) => row !== paymentAccountRows[index]);
+        if (changed) {
+          setStoredPaymentAccounts(nextRows);
+          nextRows.forEach((row: any) => {
+            const id = String(row?.id || '').trim();
+            if (!id) return;
+            syncDedicated('/api/sync/payment-accounts', id, row);
+          });
+          dispatchPaymentAccountsUpdated();
         }
       } catch {
         // ignore payment accounts migration errors
@@ -5839,27 +6088,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         usageParts.push('Open Register (1)');
       }
 
-      const rawFieldPayments = localStorage.getItem(FIELD_PAYMENTS_STORAGE_KEY);
-      if (rawFieldPayments) {
-        const parsedFieldPayments = JSON.parse(rawFieldPayments);
-        if (Array.isArray(parsedFieldPayments)) {
-          pushUsage(
-            'Field Payments',
-            parsedFieldPayments.filter((row: any) => matchesLocationName(row?.location)).length
-          );
-        }
-      }
-
-      const rawPaymentAccounts = localStorage.getItem(PAYMENT_ACCOUNTS_STORAGE_KEY);
-      if (rawPaymentAccounts) {
-        const parsedPaymentAccounts = JSON.parse(rawPaymentAccounts);
-        if (Array.isArray(parsedPaymentAccounts)) {
-          pushUsage(
-            'Payment Accounts',
-            parsedPaymentAccounts.filter((row: any) => matchesLocationName(row?.location)).length
-          );
-        }
-      }
+      pushUsage(
+        'Field Payments',
+        fieldPaymentsCacheRef.current.filter((row: any) => matchesLocationName(row?.location)).length
+      );
+      pushUsage(
+        'Payment Accounts',
+        getStoredPaymentAccounts().filter((row: any) => matchesLocationName(row?.location)).length
+      );
     } catch {
       // ignore storage read failures for dependency summary
     }

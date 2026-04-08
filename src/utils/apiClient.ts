@@ -19,9 +19,25 @@ const authHeaders = (): Record<string, string> => {
   };
 };
 
-/** True when DB sync is enabled via env var. */
-export const isLiveSyncEnabled = (): boolean =>
-  String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase() === 'true';
+/**
+ * Called whenever the server returns 401 (token expired or invalid).
+ * Clears the stored token and dispatches a global event so the app
+ * can redirect to the login screen automatically.
+ */
+const handle401 = (): void => {
+  localStorage.removeItem('atwar_auth_token');
+  window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
+};
+
+/**
+ * True unless explicitly disabled.
+ * This keeps Postgres as the default source of truth in production.
+ */
+export const isLiveSyncEnabled = (): boolean => {
+  const flag = String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase();
+  if (flag === 'false' || flag === '0' || flag === 'off') return false;
+  return true;
+};
 
 /**
  * Fetch ALL records for a resource (no pagination).
@@ -33,6 +49,7 @@ export async function apiFetchAll<T>(resource: string): Promise<T[]> {
     `${getApiBase()}/api/data/${encodeURIComponent(resource)}?paginate=false`,
     { headers: authHeaders() },
   );
+  if (res.status === 401) { handle401(); throw new Error('Unauthorized'); }
   if (!res.ok) throw new Error(`apiFetchAll(${resource}): HTTP ${res.status}`);
   const json = await res.json();
   if (!Array.isArray(json.data)) return [];
@@ -54,7 +71,9 @@ export async function apiFetchAllWithRetry<T>(
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await apiFetchAll<T>(resource);
-    } catch {
+    } catch (err) {
+      // Don't retry on auth failure
+      if (err instanceof Error && err.message === 'Unauthorized') return null;
       if (attempt < retries) {
         await new Promise<void>(resolve => setTimeout(resolve, delays[attempt] ?? 15_000));
       }
@@ -67,7 +86,7 @@ export async function apiFetchAllWithRetry<T>(
  * Fire-and-forget upsert of a single record.
  * Sends the full frontend object to PUT /api/sync/record/:resource —
  * the server handles the field mapping into the relational table.
- * Errors are silently swallowed; the local state is already correct.
+ * On 401 the token is cleared and the app is redirected to login.
  */
 export function syncRecord(resource: string, data: object): void {
   if (!isLiveSyncEnabled() || !getToken()) return;
@@ -78,7 +97,9 @@ export function syncRecord(resource: string, data: object): void {
       headers: authHeaders(),
       body: JSON.stringify(data),
     },
-  ).catch(() => {});
+  )
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
 }
 
 /**
@@ -90,5 +111,111 @@ export function deleteRecord(resource: string, id: string): void {
   void fetch(
     `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}/${encodeURIComponent(id)}`,
     { method: 'DELETE', headers: authHeaders() },
-  ).catch(() => {});
+  )
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
+}
+
+/**
+ * Fetch an entire collection stored as a snapshot (used for resources that
+ * don't have a dedicated Prisma model: purchaseRequisitions, purchaseOrders, contacts).
+ * Returns null on failure — caller keeps local state.
+ */
+export async function fetchCollection<T>(key: string): Promise<T[] | null> {
+  if (!isLiveSyncEnabled() || !getToken()) return null;
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/sync/collection/${encodeURIComponent(key)}`,
+      { headers: authHeaders() },
+    );
+    if (res.status === 401) { handle401(); return null; }
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json.data) ? (json.data as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fire-and-forget save of an entire collection array to the database.
+ * Used for resources without a dedicated Prisma model.
+ */
+export function syncCollection(key: string, data: unknown[]): void {
+  if (!isLiveSyncEnabled() || !getToken()) return;
+  void fetch(
+    `${getApiBase()}/api/sync/collection/${encodeURIComponent(key)}`,
+    {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify({ data }),
+    },
+  )
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Generic helpers for the dedicated resource endpoints
+//  (field-payments, payment-accounts, register-sessions, stock-ledger, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fetch all records from a dedicated endpoint like /api/sync/field-payments */
+export async function fetchDedicated<T>(path: string): Promise<T[] | null> {
+  if (!isLiveSyncEnabled() || !getToken()) return null;
+  try {
+    const res = await fetch(`${getApiBase()}${path}`, { headers: authHeaders() });
+    if (res.status === 401) { handle401(); return null; }
+    if (!res.ok) return null;
+    const json = await res.json();
+    return Array.isArray(json.data) ? (json.data as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Fire-and-forget upsert to a dedicated endpoint like /api/sync/field-payments/:id */
+export function syncDedicated(path: string, id: string, data: object): void {
+  if (!isLiveSyncEnabled() || !getToken()) return;
+  void fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  })
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
+}
+
+/** Fire-and-forget delete to a dedicated endpoint like /api/sync/field-payments/:id */
+export function deleteDedicated(path: string, id: string): void {
+  if (!isLiveSyncEnabled() || !getToken()) return;
+  void fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
+}
+
+/**
+ * Fire-and-forget atomic stock increment/decrement.
+ * Uses POST /api/sync/stock-delta so the server applies the change with
+ * a SQL-level atomic increment — concurrent requests from different users
+ * are both applied correctly instead of the last write winning.
+ *
+ * @param productId  The product's ID in the database.
+ * @param delta      Positive = stock added, negative = stock sold/removed.
+ */
+export function syncStockDelta(productId: string, delta: number): void {
+  if (!isLiveSyncEnabled() || !getToken() || delta === 0) return;
+  void fetch(
+    `${getApiBase()}/api/sync/stock-delta`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ productId, delta }),
+    },
+  )
+    .then(res => { if (res.status === 401) handle401(); })
+    .catch(() => {});
 }

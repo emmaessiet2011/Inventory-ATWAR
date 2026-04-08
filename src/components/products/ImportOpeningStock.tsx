@@ -4,6 +4,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import type { Product } from '@/context/GlobalContext';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
+import { appendStockLedgerEntries, bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
 type StockColumnKey = 'sku' | 'location' | 'quantity' | 'unitCost' | 'lotNumber' | 'expiryDate';
 
@@ -42,8 +43,6 @@ interface StockLedgerEntry {
   location?: string;
   note?: string;
 }
-
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
 
 const columns: ColumnDefinition[] = [
   { num: 1, key: 'sku', name: 'SKU', required: true, instruction: 'Product SKU (must match an existing product)' },
@@ -104,19 +103,6 @@ const buildImportDedupKey = (row: Pick<ParsedRow, 'sku' | 'location' | 'quantity
     normalizeText(row.expiryDate),
   ].join('|')
 );
-
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeStockLedger = (rows: StockLedgerEntry[]) => {
-  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(rows));
-};
 
 const normalizeExpiryDate = (raw: string): { value: string; error?: string } => {
   const input = normalizeText(raw);
@@ -289,7 +275,7 @@ const ImportOpeningStock: React.FC = () => {
     reader.readAsText(selectedFile);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     const validRows = parsedRows
       .filter(r => !r.error && r.matchedProductId)
       .sort((a, b) => a.rowNum - b.rowNum);
@@ -298,6 +284,7 @@ const ImportOpeningStock: React.FC = () => {
       return;
     }
 
+    await bootstrapStockTransfersFromDB().catch(() => {});
     const ledger = readStockLedger();
     const existingImportKeys = new Set(
       ledger
@@ -374,13 +361,14 @@ const ImportOpeningStock: React.FC = () => {
     });
 
     const now = Date.now();
+    const newLedgerEntries: StockLedgerEntry[] = [];
     dedupedRows.forEach((row, index) => {
       const productId = row.matchedProductId as string;
       const startQty = runningQtyByProduct.get(productId) ?? 0;
       const nextQty = round3(startQty + row.quantity);
       runningQtyByProduct.set(productId, nextQty);
       const dedupKey = buildImportDedupKey(row);
-      ledger.push({
+      newLedgerEntries.push({
         id: `STK-IMP-${now}-${index}`,
         productId,
         type: 'Opening Stock Import',
@@ -393,7 +381,7 @@ const ImportOpeningStock: React.FC = () => {
         note: `Imported via Opening Stock CSV [IMPKEY:${dedupKey}]`,
       });
     });
-    writeStockLedger(ledger);
+    appendStockLedgerEntries(newLedgerEntries);
 
     applyStockLotAdjustments(
       dedupedRows.map((row) => {

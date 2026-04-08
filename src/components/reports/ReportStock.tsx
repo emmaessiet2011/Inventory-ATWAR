@@ -14,6 +14,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import ProductStockHistory from '@/components/products/ProductStockHistory';
 
 import { printActiveReportTable } from '@/utils/printUtils';
+import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
 interface StockReportItem {
   id: string;
@@ -33,19 +34,6 @@ interface StockReportItem {
   totalUnitAdjusted: number;
   brand: string;
   unit: string;
-}
-
-interface StockLedgerEntry {
-  id: string;
-  productId: string;
-  type: string;
-  change: number;
-  newQty: number;
-  date: string;
-  ref: string;
-  party: string;
-  location?: string;
-  note?: string;
 }
 
 interface ReportStockProps {
@@ -88,15 +76,6 @@ const buildPageItems = (currentPage: number, totalPages: number): Array<number |
   if (right < totalPages - 1) items.push('...');
   items.push(totalPages);
   return items;
-};
-
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
 };
 
 const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true }) => {
@@ -165,14 +144,22 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true })
   }, []);
 
   useEffect(() => {
-    const refreshLedger = () => setLedgerVersion((prev) => prev + 1);
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === STOCK_LEDGER_KEY) refreshLedger();
+    let cancelled = false;
+    const refreshLedger = async () => {
+      await bootstrapStockTransfersFromDB().catch(() => {});
+      if (cancelled) return;
+      setLedgerVersion((prev) => prev + 1);
     };
-    window.addEventListener('focus', refreshLedger);
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === STOCK_LEDGER_KEY) void refreshLedger();
+    };
+    void refreshLedger();
+    const onFocus = () => { void refreshLedger(); };
+    window.addEventListener('focus', onFocus);
     window.addEventListener('storage', onStorage);
     return () => {
-      window.removeEventListener('focus', refreshLedger);
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
       window.removeEventListener('storage', onStorage);
     };
   }, []);

@@ -47,6 +47,7 @@ import {
 import { useGlobalContext } from '@/context/GlobalContext';
 import { parseExpenseDateToMs } from '@/utils/expenses';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
+import { fetchDedicated } from '@/utils/apiClient';
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;
@@ -757,20 +758,26 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     [orders],
   );
 
-  const pendingFieldPaymentsData = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('app_field_payments');
-      if (!raw) return { count: 0, total: 0 };
-      const records = JSON.parse(raw);
-      if (!Array.isArray(records)) return { count: 0, total: 0 };
-      const pending = records.filter((r: any) => String(r.status || '') === 'pending');
-      return {
+  const [pendingFieldPaymentsData, setPendingFieldPaymentsData] = useState({ count: 0, total: 0 });
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshPendingFieldPayments = async () => {
+      const rows = await fetchDedicated<any>('/api/sync/field-payments').catch(() => null);
+      if (cancelled || !rows) return;
+      const pending = rows.filter((row) => toKey(row?.status) === 'pending');
+      setPendingFieldPaymentsData({
         count: pending.length,
-        total: pending.reduce((sum: number, r: any) => sum + toNum(r.amount), 0),
-      };
-    } catch {
-      return { count: 0, total: 0 };
-    }
+        total: pending.reduce((sum, row) => sum + toNum(row?.amount), 0),
+      });
+    };
+    void refreshPendingFieldPayments();
+    const onFocus = () => { void refreshPendingFieldPayments(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const agingReferenceMs = Number.isFinite(endMs) ? endMs : Date.now();
