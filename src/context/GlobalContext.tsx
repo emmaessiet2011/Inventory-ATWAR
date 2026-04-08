@@ -3417,48 +3417,51 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  PERSIST TO LOCALSTORAGE
   // ============================================================
 
-  useEffect(() => { localStorage.setItem('app_products_v2', JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem('app_customers_v2', JSON.stringify(customers)); }, [customers]);
-  useEffect(() => { localStorage.setItem('app_suppliers_v2', JSON.stringify(suppliers)); }, [suppliers]);
-  useEffect(() => { localStorage.setItem('app_contacts', JSON.stringify(contacts)); }, [contacts]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_products_v2', JSON.stringify(products)); }, [dbSourceOfTruth, products]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_customers_v2', JSON.stringify(customers)); }, [dbSourceOfTruth, customers]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_suppliers_v2', JSON.stringify(suppliers)); }, [dbSourceOfTruth, suppliers]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_contacts', JSON.stringify(contacts)); }, [dbSourceOfTruth, contacts]);
   useEffect(() => {
+    if (dbSourceOfTruth) return;
     writeHardenedState(localStorage, CORE_SALES_STORAGE_KEY, sales);
     removeLegacyKeys(localStorage, ['app_sales']);
-  }, [sales]);
-  useEffect(() => { localStorage.setItem('app_sell_returns', JSON.stringify(sellReturns)); }, [sellReturns]);
-  useEffect(() => { localStorage.setItem('app_purchases', JSON.stringify(purchases)); }, [purchases]);
-  useEffect(() => { localStorage.setItem('app_purchase_requisitions', JSON.stringify(purchaseRequisitions)); }, [purchaseRequisitions]);
-  useEffect(() => { localStorage.setItem('app_purchase_orders', JSON.stringify(purchaseOrders)); }, [purchaseOrders]);
-  useEffect(() => { localStorage.setItem('app_purchase_returns', JSON.stringify(purchaseReturns)); }, [purchaseReturns]);
-  useEffect(() => { localStorage.setItem('app_orders', JSON.stringify(orders)); }, [orders]);
+  }, [dbSourceOfTruth, sales]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_sell_returns', JSON.stringify(sellReturns)); }, [dbSourceOfTruth, sellReturns]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchases', JSON.stringify(purchases)); }, [dbSourceOfTruth, purchases]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_requisitions', JSON.stringify(purchaseRequisitions)); }, [dbSourceOfTruth, purchaseRequisitions]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_orders', JSON.stringify(purchaseOrders)); }, [dbSourceOfTruth, purchaseOrders]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_returns', JSON.stringify(purchaseReturns)); }, [dbSourceOfTruth, purchaseReturns]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_orders', JSON.stringify(orders)); }, [dbSourceOfTruth, orders]);
   useEffect(() => {
+    if (dbSourceOfTruth) return;
     writeHardenedState(localStorage, CORE_PAYMENTS_STORAGE_KEY, payments);
     removeLegacyKeys(localStorage, ['app_payments']);
-  }, [payments]);
-  useEffect(() => { localStorage.setItem('app_expenses', JSON.stringify(expenses)); }, [expenses]);
-  useEffect(() => { localStorage.setItem('app_expense_categories', JSON.stringify(expenseCategories)); }, [expenseCategories]);
+  }, [dbSourceOfTruth, payments]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_expenses', JSON.stringify(expenses)); }, [dbSourceOfTruth, expenses]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_expense_categories', JSON.stringify(expenseCategories)); }, [dbSourceOfTruth, expenseCategories]);
   useEffect(() => {
+    if (dbSourceOfTruth) return;
     writeHardenedState(localStorage, CORE_USERS_STORAGE_KEY, users);
     removeLegacyKeys(localStorage, ['app_users']);
-  }, [users]);
-  useEffect(() => { localStorage.setItem('app_roles', JSON.stringify(roles)); }, [roles]);
-  useEffect(() => { localStorage.setItem('app_commission_agents', JSON.stringify(commissionAgents)); }, [commissionAgents]);
-  useEffect(() => { localStorage.setItem('app_locations', JSON.stringify(locations)); }, [locations]);
-  useEffect(() => { localStorage.setItem('app_receipt_printers', JSON.stringify(printers)); }, [printers]);
-  useEffect(() => { localStorage.setItem('app_invoice_schemes', JSON.stringify(invoiceSchemes)); }, [invoiceSchemes]);
-  useEffect(() => { localStorage.setItem('app_invoice_layouts', JSON.stringify(invoiceLayouts)); }, [invoiceLayouts]);
-  useEffect(() => { localStorage.setItem('app_barcode_settings', JSON.stringify(barcodeSettings)); }, [barcodeSettings]);
-  useEffect(() => { localStorage.setItem('app_tax_rates', JSON.stringify(normalizeTaxRates(taxRates))); }, [taxRates]);
-  useEffect(() => { localStorage.setItem('app_customer_groups', JSON.stringify(customerGroups)); }, [customerGroups]);
-  useEffect(() => { localStorage.setItem('app_product_categories', JSON.stringify(productCategories)); }, [productCategories]);
-  useEffect(() => { localStorage.setItem('app_product_brands', JSON.stringify(productBrands)); }, [productBrands]);
-  useEffect(() => { localStorage.setItem('app_product_units', JSON.stringify(productUnits)); }, [productUnits]);
-  useEffect(() => { localStorage.setItem('app_warranties', JSON.stringify(warranties)); }, [warranties]);
-  useEffect(() => { localStorage.setItem('app_product_variations', JSON.stringify(productVariations)); }, [productVariations]);
-  useEffect(() => { localStorage.setItem('app_selling_price_groups', JSON.stringify(sellingPriceGroups)); }, [sellingPriceGroups]);
-  useEffect(() => { localStorage.setItem('app_discounts', JSON.stringify(discounts)); }, [discounts]);
-  useEffect(() => { localStorage.setItem('app_activity_logs', JSON.stringify(activityLogs)); }, [activityLogs]);
-  useEffect(() => { localStorage.setItem('app_settings', JSON.stringify(settings)); }, [settings]);
+  }, [dbSourceOfTruth, users]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_roles', JSON.stringify(roles)); }, [dbSourceOfTruth, roles]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_commission_agents', JSON.stringify(commissionAgents)); }, [dbSourceOfTruth, commissionAgents]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_locations', JSON.stringify(locations)); }, [dbSourceOfTruth, locations]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_receipt_printers', JSON.stringify(printers)); }, [dbSourceOfTruth, printers]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_invoice_schemes', JSON.stringify(invoiceSchemes)); }, [dbSourceOfTruth, invoiceSchemes]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_invoice_layouts', JSON.stringify(invoiceLayouts)); }, [dbSourceOfTruth, invoiceLayouts]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_barcode_settings', JSON.stringify(barcodeSettings)); }, [dbSourceOfTruth, barcodeSettings]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_tax_rates', JSON.stringify(normalizeTaxRates(taxRates))); }, [dbSourceOfTruth, taxRates]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_customer_groups', JSON.stringify(customerGroups)); }, [dbSourceOfTruth, customerGroups]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_categories', JSON.stringify(productCategories)); }, [dbSourceOfTruth, productCategories]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_brands', JSON.stringify(productBrands)); }, [dbSourceOfTruth, productBrands]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_units', JSON.stringify(productUnits)); }, [dbSourceOfTruth, productUnits]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_warranties', JSON.stringify(warranties)); }, [dbSourceOfTruth, warranties]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_variations', JSON.stringify(productVariations)); }, [dbSourceOfTruth, productVariations]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_selling_price_groups', JSON.stringify(sellingPriceGroups)); }, [dbSourceOfTruth, sellingPriceGroups]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_discounts', JSON.stringify(discounts)); }, [dbSourceOfTruth, discounts]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_activity_logs', JSON.stringify(activityLogs)); }, [dbSourceOfTruth, activityLogs]);
+  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_settings', JSON.stringify(settings)); }, [dbSourceOfTruth, settings]);
   useEffect(() => {
     if (currentUser) {
       writeHardenedState(sessionStorage, AUTH_SESSION_STORAGE_KEY, currentUser);
