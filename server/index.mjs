@@ -207,7 +207,7 @@ app.post('/api/auth/login', async (req, res) => {
       const newHash = await hashPassword(normalizedPassword);
       await prisma.appUser.update({
         where: { id: user.id },
-        data: { passwordHash: newHash, passwordSalt: null, password: null }
+        data: { passwordHash: newHash, passwordSalt: null }
       });
     }
 
@@ -555,7 +555,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'users': {
-        const d = {
+        const updatePayload = {
           username: String(raw.username || raw.email || `user-${id}`),
           name: String(raw.name || raw.username || `User-${id}`),
           email: String(raw.email || `user-${id}@local.atwar`),
@@ -566,7 +566,22 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           allowLogin: raw.allowLogin !== false,
           meta: raw,
         };
-        await prisma.appUser.upsert({ where: { id }, update: d, create: { id, ...d } });
+        // Keep credentials in dedicated columns used by /api/auth/login.
+        // Only override when frontend explicitly sends a value.
+        if (Object.prototype.hasOwnProperty.call(raw, 'passwordHash')) {
+          const normalizedHash = String(raw.passwordHash || '').trim();
+          updatePayload.passwordHash = normalizedHash || null;
+        }
+        if (Object.prototype.hasOwnProperty.call(raw, 'passwordSalt')) {
+          const normalizedSalt = String(raw.passwordSalt || '').trim();
+          updatePayload.passwordSalt = normalizedSalt || null;
+        }
+
+        await prisma.appUser.upsert({
+          where: { id },
+          update: updatePayload,
+          create: { id, ...updatePayload },
+        });
         break;
       }
       case 'settings': {
