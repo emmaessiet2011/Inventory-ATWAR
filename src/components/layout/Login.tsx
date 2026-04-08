@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
+import { isLiveSyncEnabled } from '@/utils/apiClient';
 
 interface LoginProps {
   onLogin: () => void;
@@ -44,7 +45,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       onLogin();
       return;
     } catch {
-      // Server unreachable (offline / E2E / no backend) — fall through to local auth
+      // In production DB-sync mode, do not silently fall back to local auth.
+      // A successful local fallback without token causes protected API 401s.
+      if (isLiveSyncEnabled()) {
+        setError('Unable to reach the server. Please check connection/backend and try again.');
+        return;
+      }
+      // Offline/dev fallback only when live DB sync is disabled.
     }
 
     // --- Offline fallback: verify against localStorage users ---

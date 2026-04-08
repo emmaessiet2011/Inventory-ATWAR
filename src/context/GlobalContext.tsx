@@ -2928,10 +2928,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       coreSyncReadyRef.current = true;
       return;
     }
+    const hasToken = (() => {
+      try {
+        return !!localStorage.getItem('atwar_auth_token');
+      } catch {
+        return false;
+      }
+    })();
+    if (!hasToken) {
+      // Before login there is no token, so avoid protected API calls that would
+      // spam 401 errors in console and falsely set sync status to error.
+      setSyncStatus('idle');
+      coreSyncReadyRef.current = true;
+      return;
+    }
 
     let cancelled = false;
 
     const bootstrap = async () => {
+      coreSyncReadyRef.current = false;
       setSyncStatus('syncing');
       try {
         const [
@@ -3029,8 +3044,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     void bootstrap();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentUser?.id]);
 
   // Keep Render free-tier server warm — ping every 10 minutes so it never sleeps.
   useEffect(() => {
@@ -3090,6 +3104,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!isLiveSyncEnabled()) return;
 
     const poll = async () => {
+      try {
+        if (!localStorage.getItem('atwar_auth_token')) return;
+      } catch {
+        return;
+      }
       try {
         const [
           freshProducts, freshSales, freshPayments, freshCustomers,
