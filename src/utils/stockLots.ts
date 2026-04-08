@@ -1,3 +1,5 @@
+import { syncDedicated, deleteDedicated, fetchDedicated } from '@/utils/apiClient';
+
 export interface StockLotBalance {
   id: string;
   productId: string;
@@ -109,8 +111,29 @@ export const readStockLotBalances = (): StockLotBalance[] => {
   }
 };
 
-export const writeStockLotBalances = (rows: StockLotBalance[]) => {
+export const writeStockLotBalances = (rows: StockLotBalance[], prevRows?: StockLotBalance[]) => {
   localStorage.setItem(STOCK_LOTS_KEY, JSON.stringify(rows));
+  // Sync changed/added rows
+  const prevIds = new Set((prevRows || []).map(r => r.id));
+  rows.forEach(r => syncDedicated('/api/sync/stock-lots', r.id, r));
+  // Delete rows that were removed
+  if (prevRows) {
+    const nextIds = new Set(rows.map(r => r.id));
+    prevRows.forEach(r => { if (!nextIds.has(r.id)) deleteDedicated('/api/sync/stock-lots', r.id); });
+  }
+  // Suppress unused variable lint warning
+  void prevIds;
+};
+
+/**
+ * Bootstrap stock lot balances from DB.
+ * Empty DB responses clear local cache so DB remains the source of truth.
+ */
+export const bootstrapStockLotsFromDB = async (): Promise<void> => {
+  const remoteLots = await fetchDedicated<StockLotBalance>('/api/sync/stock-lots');
+  if (remoteLots) {
+    localStorage.setItem(STOCK_LOTS_KEY, JSON.stringify(remoteLots));
+  }
 };
 
 const compareExpiryAsc = (left: string, right: string): number => {
@@ -200,5 +223,5 @@ export const applyStockLotAdjustments = (adjustments: StockLotAdjustment[]) => {
       if (byExpiry !== 0) return byExpiry;
       return normalize(a.lotNumber).localeCompare(normalize(b.lotNumber));
     });
-  writeStockLotBalances(nextRows);
+  writeStockLotBalances(nextRows, existing);
 };

@@ -1,4 +1,5 @@
 import { Product } from '../context/GlobalContext';
+import { syncDedicated, deleteDedicated, fetchDedicated } from '@/utils/apiClient';
 
 export type StockTransferStatus = 'Pending' | 'In Transit' | 'Completed';
 
@@ -102,8 +103,16 @@ export const readStockTransfers = (): StockTransferRecord[] => {
   }
 };
 
-export const writeStockTransfers = (rows: StockTransferRecord[]) => {
+export const writeStockTransfers = (rows: StockTransferRecord[], changedId?: string, deletedId?: string) => {
   localStorage.setItem(STOCK_TRANSFERS_KEY, JSON.stringify(rows));
+  if (deletedId) {
+    deleteDedicated('/api/sync/stock-transfers', deletedId);
+  } else if (changedId) {
+    const record = rows.find(r => r.id === changedId);
+    if (record) syncDedicated('/api/sync/stock-transfers', record.id, record);
+  } else {
+    rows.forEach(r => syncDedicated('/api/sync/stock-transfers', r.id, r));
+  }
 };
 
 export const readStockLedger = (): StockLedgerEntry[] => {
@@ -119,6 +128,24 @@ export const appendStockLedgerEntries = (entries: StockLedgerEntry[]) => {
   if (entries.length === 0) return;
   const existing = readStockLedger();
   localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify([...existing, ...entries]));
+  entries.forEach(e => syncDedicated('/api/sync/stock-ledger', e.id, e));
+};
+
+/**
+ * Bootstrap stock transfer + stock ledger state from DB.
+ * If DB returns empty arrays, local cache is explicitly cleared to avoid stale browser-only data.
+ */
+export const bootstrapStockTransfersFromDB = async (): Promise<void> => {
+  const [remoteTransfers, remoteLedger] = await Promise.all([
+    fetchDedicated<StockTransferRecord>('/api/sync/stock-transfers'),
+    fetchDedicated<StockLedgerEntry>('/api/sync/stock-ledger'),
+  ]);
+  if (remoteTransfers) {
+    localStorage.setItem(STOCK_TRANSFERS_KEY, JSON.stringify(remoteTransfers));
+  }
+  if (remoteLedger) {
+    localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(remoteLedger));
+  }
 };
 
 export const makeNextStockTransferRef = (prefix: string, rows: StockTransferRecord[]) => {
