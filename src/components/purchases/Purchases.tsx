@@ -50,8 +50,6 @@ const formatAppDateTime = (value: string): string => {
   return `${dd}/${mm}/${yyyy} ${h12}:${mins} ${ampm}`;
 };
 
-const PREFILL_PURCHASE_RETURN_KEY = 'app_purchase_return_prefill_purchase_id';
-
 const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
   const {
     purchases,
@@ -262,8 +260,7 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
     setVisibleCols(prev => ({ ...prev, [key]: !prev[key] }));
 
   const handleStartPurchaseReturn = (purchaseId: string) => {
-    localStorage.setItem(PREFILL_PURCHASE_RETURN_KEY, purchaseId);
-    onNavigate?.('purchase-return');
+    onNavigate?.(`purchase-return/${purchaseId}`);
   };
 
   return (

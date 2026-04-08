@@ -9,6 +9,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import {
+  bootstrapStockAdjustmentsFromDB,
   getStockAdjustmentStorageKey,
   readStockAdjustments,
   StockAdjustmentRecord,
@@ -92,6 +93,12 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
   useEffect(() => {
     const storageKey = getStockAdjustmentStorageKey();
     const refresh = () => setAdjustments(readStockAdjustments());
+    let isMounted = true;
+    const bootstrap = async () => {
+      await bootstrapStockAdjustmentsFromDB().catch(() => {});
+      if (isMounted) refresh();
+    };
+    bootstrap();
     const onStorage = (event: StorageEvent) => {
       if (!event.key || event.key === storageKey) refresh();
     };
@@ -99,6 +106,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
     window.addEventListener('focus', refresh);
     window.addEventListener('storage', onStorage);
     return () => {
+      isMounted = false;
       window.removeEventListener('focus', refresh);
       window.removeEventListener('storage', onStorage);
     };

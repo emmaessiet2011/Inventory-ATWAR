@@ -9,9 +9,6 @@ import {
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { isCoreSyncEnabled } from '@/utils/coreStateSync';
-import { getEditStockTransferIdKey } from '@/utils/stockTransfers';
-import { getEditStockAdjustmentIdKey } from '@/utils/stockAdjustments';
-import { getEditExpenseIdKey } from '@/utils/expenses';
 
 interface SidebarProps {
   currentPage: string;
@@ -59,15 +56,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleNavigate = (path: string) => {
-    if (path === 'add-stock-transfer') {
-      localStorage.removeItem(getEditStockTransferIdKey());
-    }
-    if (path === 'add-stock-adjustment') {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
-    }
-    if (path === 'add-expense') {
-      localStorage.removeItem(getEditExpenseIdKey());
-    }
     onNavigate(path);
     onMobileClose(); // Close sidebar on mobile when navigating
   };

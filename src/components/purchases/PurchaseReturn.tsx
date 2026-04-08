@@ -26,7 +26,9 @@ interface PurchaseReturnFormState {
   items: PurchaseReturnItemForm[];
 }
 
-const PREFILL_PURCHASE_RETURN_KEY = 'app_purchase_return_prefill_purchase_id';
+interface PurchaseReturnProps {
+  prefillPurchaseId?: string;
+}
 
 const csvEscape = (value: string): string => {
   const normalized = String(value ?? '');
@@ -66,7 +68,7 @@ const formatAppDateTime = (value: string): string => {
   return `${dd}/${mm}/${yyyy} ${h12}:${mins} ${ampm}`;
 };
 
-const PurchaseReturn: React.FC = () => {
+const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) => {
   const {
     purchaseReturns,
     addPurchaseReturn,
@@ -168,7 +170,7 @@ const PurchaseReturn: React.FC = () => {
   };
 
   useEffect(() => {
-    const purchaseId = localStorage.getItem(PREFILL_PURCHASE_RETURN_KEY);
+    const purchaseId = String(prefillPurchaseId || '').trim();
     if (!purchaseId) return;
     const purchase = purchases.find(item => item.id === purchaseId);
     if (!purchase) return;
@@ -184,9 +186,8 @@ const PurchaseReturn: React.FC = () => {
       items: buildRowsFromPurchase(purchase.id),
     });
     setIsModalOpen(true);
-    localStorage.removeItem(PREFILL_PURCHASE_RETURN_KEY);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchases, supplierOptions, locationOptions]);
+  }, [prefillPurchaseId, purchases, supplierOptions, locationOptions]);
 
   const addItemRow = (product?: { id: string; name: string; unitPurchasePrice: number }) => {
     const row: PurchaseReturnItemForm = {

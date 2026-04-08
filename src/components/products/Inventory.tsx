@@ -10,40 +10,19 @@ import {
 import ViewProduct from './ViewProduct';
 import MultiSelect from '@/components/shared/MultiSelect';
 import { useGlobalContext, Product } from '@/context/GlobalContext';
+import {
+  appendStockLedgerEntries,
+  bootstrapStockTransfersFromDB,
+  getStockLedgerStorageKey,
+  getStockTransferStorageKey,
+  readStockLedger,
+} from '@/utils/stockTransfers';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { formatUnitWithPack } from '@/utils/productPackaging';
 import { buildPaginationItems } from '@/utils/pagination';
 
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
-
-interface StockLedgerEntry {
-  id: string;
-  productId: string;
-  type: string;
-  change: number;
-  newQty: number;
-  date: string;
-  ref: string;
-  party: string;
-  location?: string;
-  note?: string;
-}
-
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeStockLedger = (rows: StockLedgerEntry[]) => {
-  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(rows));
-};
-
 const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
 const downloadFile = (filename: string, content: string, type: string) => {
@@ -154,6 +133,34 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
+  const [stockLedgerVersion, setStockLedgerVersion] = useState(0);
+
+  useEffect(() => {
+    const transferKey = getStockTransferStorageKey();
+    const ledgerKey = getStockLedgerStorageKey();
+    const refreshLedger = () => setStockLedgerVersion((prev) => prev + 1);
+    let isMounted = true;
+
+    const bootstrap = async () => {
+      await bootstrapStockTransfersFromDB().catch(() => {});
+      if (isMounted) refreshLedger();
+    };
+    bootstrap();
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === transferKey || event.key === ledgerKey) {
+        refreshLedger();
+      }
+    };
+
+    window.addEventListener('focus', refreshLedger);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', refreshLedger);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   const typeOptions = useMemo(
     () => Array.from(new Set(['Single', 'Variable', 'Combo', ...products.map(p => p.type)])).sort(),
@@ -237,7 +244,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       });
     });
     return map;
-  }, [products]);
+  }, [products, stockLedgerVersion]);
 
   const stockReport = useMemo<StockReportItem[]>(() => products.map((p) => {
     const currentStock = Number(p.stock) || 0;
@@ -498,8 +505,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         updateProduct({ ...product, sellingPrice: nextValue });
       }
       if (editingCell.field === 'stock' && nextValue !== product.stock) {
-        const ledger = readStockLedger();
-        ledger.push({
+        appendStockLedgerEntries([{
           id: `STK-${Date.now()}-${product.id}`,
           productId: product.id,
           type: 'Stock Adjustment',
@@ -510,8 +516,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           party: currentUser?.name || 'System',
           location: product.businessLocation,
           note: 'Inline update from product list',
-        });
-        writeStockLedger(ledger);
+        }]);
         updateProduct({ ...product, stock: nextValue });
       }
       setEditingCell(null);

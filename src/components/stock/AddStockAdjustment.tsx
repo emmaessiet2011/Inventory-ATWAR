@@ -5,10 +5,10 @@ import { useNotifications } from '@/context/NotificationContext';
 import { appendStockLedgerEntries } from '@/utils/stockTransfers';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
 import {
+  bootstrapStockAdjustmentsFromDB,
   StockAdjustmentItem,
   StockAdjustmentRecord,
   StockAdjustmentType,
-  getEditStockAdjustmentIdKey,
   makeNextStockAdjustmentRef,
   readStockAdjustments,
   simulateStockAdjustment,
@@ -17,6 +17,7 @@ import {
 
 interface AddStockAdjustmentProps {
   onNavigate?: (page: string) => void;
+  editAdjustmentId?: string;
   canAdd?: boolean;
   canEdit?: boolean;
   restrictToAddedById?: string;
@@ -66,6 +67,7 @@ const toIso = (value: string) => {
 
 const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   onNavigate,
+  editAdjustmentId,
   canAdd = true,
   canEdit = true,
   restrictToAddedById = '',
@@ -89,78 +91,84 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   const ownerNameFilter = normalize(restrictToAddedByName);
 
   useEffect(() => {
-    const editId = localStorage.getItem(getEditStockAdjustmentIdKey()) || '';
-    setIsEditMode(!!editId);
-    if (!editId) {
-      if (!canAdd) {
+    let isMounted = true;
+    const loadAdjustment = async () => {
+      await bootstrapStockAdjustmentsFromDB().catch(() => {});
+      if (!isMounted) return;
+
+      const editId = String(editAdjustmentId || '').trim();
+      setIsEditMode(!!editId);
+      if (!editId) {
+        if (!canAdd) {
+          addNotification({
+            title: 'Access Denied',
+            message: 'You do not have permission to add stock adjustments.',
+            type: 'error',
+          });
+          onNavigate?.('list-stock-adjustments');
+        }
+        return;
+      }
+      if (!canEdit) {
         addNotification({
           title: 'Access Denied',
-          message: 'You do not have permission to add stock adjustments.',
+          message: 'You do not have permission to edit stock adjustments.',
           type: 'error',
         });
         onNavigate?.('list-stock-adjustments');
+        return;
       }
-      return;
-    }
-    if (!canEdit) {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
-      addNotification({
-        title: 'Access Denied',
-        message: 'You do not have permission to edit stock adjustments.',
-        type: 'error',
-      });
-      onNavigate?.('list-stock-adjustments');
-      return;
-    }
-    const existing = readStockAdjustments().find((row) => row.id === editId);
-    if (!existing) {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
-      if (!canAdd) {
+      const existing = readStockAdjustments().find((row) => row.id === editId);
+      if (!existing) {
+        if (!canAdd) {
+          addNotification({
+            title: 'Adjustment Not Found',
+            message: 'The stock adjustment you tried to edit no longer exists.',
+            type: 'error',
+          });
+          onNavigate?.('list-stock-adjustments');
+        }
+        return;
+      }
+      if (!isAdjustmentOwnerMatch(existing, ownerIdFilter, ownerNameFilter)) {
         addNotification({
-          title: 'Adjustment Not Found',
-          message: 'The stock adjustment you tried to edit no longer exists.',
+          title: 'Access Denied',
+          message: 'You can edit only your own stock adjustments.',
           type: 'error',
         });
         onNavigate?.('list-stock-adjustments');
+        return;
       }
-      return;
-    }
-    if (!isAdjustmentOwnerMatch(existing, ownerIdFilter, ownerNameFilter)) {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
-      addNotification({
-        title: 'Access Denied',
-        message: 'You can edit only your own stock adjustments.',
-        type: 'error',
-      });
-      onNavigate?.('list-stock-adjustments');
-      return;
-    }
-    setEditingAdjustmentId(existing.id);
-    setDate(toDateTimeInput(existing.date));
-    setReferenceNo(existing.referenceNo || '');
-    setLocation(existing.location || '');
-    setAdjustmentType(existing.adjustmentType);
-    setReason(existing.reason || '');
-    setTotalRecovered(String(existing.totalRecovered ?? 0));
-    setRows(
-      (existing.items || []).map((item) => ({
-        productId: String(item.productId || ''),
-        productName: String(item.productName || ''),
-        sku: String(item.sku || ''),
-        unit: item.unit || '',
-        quantity: round3(Number(item.quantity || 0)),
-        unitCost: round3(Number(item.unitCost || 0)),
-        currentStockBefore: round3(Number(item.currentStockBefore || 0)),
-      })),
-    );
-  }, []);
+      setEditingAdjustmentId(existing.id);
+      setDate(toDateTimeInput(existing.date));
+      setReferenceNo(existing.referenceNo || '');
+      setLocation(existing.location || '');
+      setAdjustmentType(existing.adjustmentType);
+      setReason(existing.reason || '');
+      setTotalRecovered(String(existing.totalRecovered ?? 0));
+      setRows(
+        (existing.items || []).map((item) => ({
+          productId: String(item.productId || ''),
+          productName: String(item.productName || ''),
+          sku: String(item.sku || ''),
+          unit: item.unit || '',
+          quantity: round3(Number(item.quantity || 0)),
+          unitCost: round3(Number(item.unitCost || 0)),
+          currentStockBefore: round3(Number(item.currentStockBefore || 0)),
+        })),
+      );
+    };
+    loadAdjustment();
+    return () => {
+      isMounted = false;
+    };
+  }, [editAdjustmentId, canAdd, canEdit, addNotification, onNavigate, ownerIdFilter, ownerNameFilter]);
 
   useEffect(() => {
     if (permissionRedirectedRef.current) return;
     if (isEditMode) {
       if (canEdit) return;
       permissionRedirectedRef.current = true;
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
       addNotification({
         title: 'Access Denied',
         message: 'Your role no longer allows editing stock adjustments.',
@@ -171,7 +179,6 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     }
     if (!canAdd) {
       permissionRedirectedRef.current = true;
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
       addNotification({
         title: 'Access Denied',
         message: 'Your role no longer allows adding stock adjustments.',
@@ -303,7 +310,6 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   };
 
   const handleCancel = () => {
-    localStorage.removeItem(getEditStockAdjustmentIdKey());
     onNavigate?.('list-stock-adjustments');
   };
 
@@ -408,7 +414,6 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       ? allAdjustments.find((row) => row.id === editContextId)
       : undefined;
     if (editContextId && !editingRecord) {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
       setEditingAdjustmentId(null);
       addNotification({
         title: 'Adjustment Not Found',
@@ -421,7 +426,6 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       return;
     }
     if (editingRecord && !isAdjustmentOwnerMatch(editingRecord, ownerIdFilter, ownerNameFilter)) {
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
       addNotification({
         title: 'Access Denied',
         message: 'You can edit only your own stock adjustments.',
@@ -506,9 +510,8 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       const mergedAdjustments = editingRecord
         ? allAdjustments.map((row) => (row.id === editingRecord.id ? nextRecord : row))
         : [nextRecord, ...allAdjustments];
-      writeStockAdjustments(mergedAdjustments.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)));
+      writeStockAdjustments(mergedAdjustments.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)), nextRecord.id);
 
-      localStorage.removeItem(getEditStockAdjustmentIdKey());
       addNotification({
         title: editingRecord ? 'Adjustment Updated' : 'Adjustment Saved',
         message: `${nextRecord.referenceNo} has been ${editingRecord ? 'updated' : 'created'} successfully.`,

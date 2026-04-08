@@ -567,6 +567,102 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         await prisma.appSetting.upsert({ where: { id: 'SETTINGS' }, update: d, create: { id: 'SETTINGS', ...d } });
         break;
       }
+      case 'expenses': {
+        const d = {
+          refNo: String(raw.refNo || raw.referenceNo || `EXP-${id}`),
+          date: normDate(raw.date),
+          amount: Number(raw.amount || 0),
+          tax: Number(raw.tax || 0),
+          totalAmount: Number(raw.totalAmount || raw.amount || 0),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          paymentDue: Number(raw.paymentDue || raw.totalAmount || raw.amount || 0),
+          isRecurring: raw.isRecurring === true,
+          isRefund: raw.isRefund === true,
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.expense.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'purchases': {
+        const d = {
+          refNo: String(raw.refNo || raw.referenceNo || `PUR-${id}`),
+          date: normDate(raw.date),
+          status: normStatus(raw.status, ['RECEIVED', 'PENDING', 'ORDERED', 'DRAFT'], 'PENDING'),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          subTotal: Number(raw.subTotal || 0),
+          taxAmount: Number(raw.taxAmount || raw.tax || 0),
+          discountAmount: Number(raw.discountAmount || 0),
+          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
+          paymentDue: Number(raw.paymentDue || raw.grandTotal || 0),
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.purchase.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'sellReturns': {
+        const d = {
+          refNo: String(raw.refNo || raw.referenceNo || `SR-${id}`),
+          date: normDate(raw.date),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          subTotal: Number(raw.subTotal || 0),
+          discountAmount: Number(raw.discountAmount || 0),
+          taxAmount: Number(raw.taxAmount || raw.tax || 0),
+          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
+          totalRefunded: Number(raw.totalRefunded || 0),
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.sellReturn.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'purchaseReturns': {
+        const d = {
+          refNo: String(raw.refNo || raw.referenceNo || `PR-${id}`),
+          date: normDate(raw.date),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          subTotal: Number(raw.subTotal || 0),
+          discountAmount: Number(raw.discountAmount || 0),
+          taxAmount: Number(raw.taxAmount || raw.tax || 0),
+          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
+          totalRefunded: Number(raw.totalRefunded || 0),
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.purchaseReturn.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'orders': {
+        const d = {
+          orderNumber: String(raw.orderNumber || raw.refNo || `ORD-${id}`),
+          orderDate: normDate(raw.orderDate || raw.date),
+          status: normStatus(raw.status, ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'ON_HOLD'], 'PENDING'),
+          paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          subTotal: Number(raw.subTotal || 0),
+          taxAmount: Number(raw.taxAmount || raw.tax || 0),
+          discountAmount: Number(raw.discountAmount || 0),
+          total: Number(raw.total || raw.grandTotal || raw.totalAmount || 0),
+          isApproved: raw.isApproved === true,
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.salesOrder.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'activityLogs': {
+        const d = {
+          userName: String(raw.user || raw.userName || 'System'),
+          action: String(raw.action || 'Updated'),
+          module: String(raw.module || 'System'),
+          description: String(raw.description || ''),
+          date: normDate(raw.date),
+          ipAddress: raw.ipAddress ? String(raw.ipAddress) : null,
+          meta: raw,
+        };
+        await prisma.activityLog.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
     }
@@ -583,12 +679,18 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
 
   try {
     switch (resource) {
-      case 'products':  await prisma.product.deleteMany({ where: { id } }); break;
-      case 'customers': await prisma.customer.deleteMany({ where: { id } }); break;
-      case 'suppliers': await prisma.supplier.deleteMany({ where: { id } }); break;
-      case 'sales':     await prisma.sale.deleteMany({ where: { id } }); break;
-      case 'payments':  await prisma.payment.deleteMany({ where: { id } }); break;
-      case 'users':     await prisma.appUser.deleteMany({ where: { id } }); break;
+      case 'products':        await prisma.product.deleteMany({ where: { id } }); break;
+      case 'customers':       await prisma.customer.deleteMany({ where: { id } }); break;
+      case 'suppliers':       await prisma.supplier.deleteMany({ where: { id } }); break;
+      case 'sales':           await prisma.sale.deleteMany({ where: { id } }); break;
+      case 'payments':        await prisma.payment.deleteMany({ where: { id } }); break;
+      case 'users':           await prisma.appUser.deleteMany({ where: { id } }); break;
+      case 'expenses':        await prisma.expense.deleteMany({ where: { id } }); break;
+      case 'purchases':       await prisma.purchase.deleteMany({ where: { id } }); break;
+      case 'sellReturns':     await prisma.sellReturn.deleteMany({ where: { id } }); break;
+      case 'purchaseReturns': await prisma.purchaseReturn.deleteMany({ where: { id } }); break;
+      case 'orders':          await prisma.salesOrder.deleteMany({ where: { id } }); break;
+      case 'activityLogs':    await prisma.activityLog.deleteMany({ where: { id } }); break;
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
     }
@@ -599,9 +701,384 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  ATOMIC STOCK DELTA
+//  POST /api/sync/stock-delta   Body: { productId, delta }
+//  Uses Prisma's atomic increment so concurrent requests from different users
+//  never race and overwrite each other's stock changes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/sync/stock-delta', requireAuth, async (req, res) => {
+  const { productId, delta } = toObject(req.body);
+  const id = String(productId || '').trim();
+  const d = Number(delta);
+  if (!id) return res.status(400).json({ ok: false, error: 'productId is required' });
+  if (!Number.isFinite(d) || d === 0) return res.status(400).json({ ok: false, error: 'delta must be a non-zero finite number' });
+
+  try {
+    // Atomic increment — PostgreSQL serialises concurrent updates on the same row
+    const updated = await prisma.product.update({
+      where: { id },
+      data: { stock: { increment: d } },
+    });
+    // Keep the meta JSON consistent with the new stock value
+    if (updated.meta && typeof updated.meta === 'object') {
+      await prisma.product.update({
+        where: { id },
+        data: { meta: { ...updated.meta, stock: updated.stock } },
+      });
+    }
+    return res.json({ ok: true, id, newStock: updated.stock });
+  } catch (error) {
+    return sendPrismaError(res, error, 'Failed to apply stock delta');
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIELD PAYMENTS  — full CRUD to DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/field-payments', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.fieldPayment.findMany({ orderBy: { date: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch field payments'); }
+});
+
+app.put('/api/sync/field-payments/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const customerId = String(raw.customerId || '').trim();
+  if (!customerId) return res.status(400).json({ ok: false, error: 'customerId is required' });
+  try {
+    const d = {
+      referenceNo: String(raw.referenceNo || id),
+      customerId,
+      date: normDate(raw.date),
+      amount: Number(raw.amount || 0),
+      method: String(raw.method || 'Cash'),
+      status: String(raw.status || 'PENDING').toUpperCase() === 'APPROVED' ? 'APPROVED' : 'PENDING',
+      note: raw.note ? String(raw.note) : null,
+      meta: raw,
+    };
+    await prisma.fieldPayment.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save field payment'); }
+});
+
+app.delete('/api/sync/field-payments/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.fieldPayment.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete field payment'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PAYMENT ACCOUNTS  — full CRUD to DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/payment-accounts', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.paymentAccount.findMany({ orderBy: { name: 'asc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch payment accounts'); }
+});
+
+app.put('/api/sync/payment-accounts/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  try {
+    const d = {
+      name: String(raw.name || `Account-${id}`),
+      accountNumber: raw.accountNumber ? String(raw.accountNumber) : null,
+      balance: Number(raw.balance || 0),
+      status: String(raw.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      isSystem: raw.system === true || raw.isSystem === true,
+      meta: raw,
+    };
+    await prisma.paymentAccount.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save payment account'); }
+});
+
+app.delete('/api/sync/payment-accounts/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.paymentAccount.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete payment account'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  REGISTER SESSIONS + TRANSACTIONS  — full CRUD to DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/register-sessions', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.registerSession.findMany({ orderBy: { openedAt: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch register sessions'); }
+});
+
+app.put('/api/sync/register-sessions/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const locationId = String(raw.locationId || '').trim();
+  if (!locationId) return res.status(400).json({ ok: false, error: 'locationId is required' });
+  try {
+    const d = {
+      locationId,
+      openedAt: normDate(raw.openedAt || raw.openedAt),
+      closedAt: raw.closedAt ? normDate(raw.closedAt) : null,
+      status: String(raw.status || 'OPEN').toUpperCase() === 'CLOSED' ? 'CLOSED' : 'OPEN',
+      cashInHand: Number(raw.cashInHand || 0),
+      closingBalance: raw.closingBalance != null ? Number(raw.closingBalance) : null,
+      meta: raw,
+    };
+    await prisma.registerSession.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save register session'); }
+});
+
+app.get('/api/sync/register-transactions', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.registerTransaction.findMany({ orderBy: { date: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch register transactions'); }
+});
+
+app.put('/api/sync/register-transactions/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const sessionId = String(raw.sessionId || '').trim();
+  if (!sessionId) return res.status(400).json({ ok: false, error: 'sessionId is required' });
+  try {
+    const d = {
+      sessionId,
+      date: normDate(raw.date),
+      transactionType: String(raw.type || raw.transactionType || 'sale'),
+      amount: Number(raw.amount || 0),
+      method: raw.method ? String(raw.method) : null,
+      invoiceNo: raw.invoiceNo ? String(raw.invoiceNo) : null,
+      note: raw.note ? String(raw.note) : null,
+      meta: raw,
+    };
+    await prisma.registerTransaction.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save register transaction'); }
+});
+
+app.delete('/api/sync/register-transactions/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.registerTransaction.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete register transaction'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STOCK LEDGER  — append-only, bulk upsert
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/stock-ledger', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.stockLedger.findMany({ orderBy: { date: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch stock ledger'); }
+});
+
+app.put('/api/sync/stock-ledger/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const productId = String(raw.productId || '').trim();
+  if (!productId) return res.status(400).json({ ok: false, error: 'productId is required' });
+  try {
+    const d = {
+      productId,
+      entryType: String(raw.type || raw.entryType || 'Adjustment'),
+      changeQty: Number(raw.change || raw.changeQty || 0),
+      newQty: Number(raw.newQty || 0),
+      date: normDate(raw.date),
+      ref: String(raw.ref || id),
+      party: String(raw.party || 'System'),
+      note: raw.note ? String(raw.note) : null,
+      meta: raw,
+    };
+    await prisma.stockLedger.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save stock ledger entry'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STOCK ADJUSTMENTS  — full CRUD to DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/stock-adjustments', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.stockAdjustment.findMany({ orderBy: { date: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch stock adjustments'); }
+});
+
+app.put('/api/sync/stock-adjustments/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const locationId = String(raw.locationId || raw.location || '').trim();
+  if (!locationId) return res.status(400).json({ ok: false, error: 'locationId is required' });
+  try {
+    const d = {
+      referenceNo: String(raw.referenceNo || id),
+      date: normDate(raw.date),
+      locationId,
+      adjustmentType: String(raw.adjustmentType || 'NORMAL').toUpperCase() === 'ABNORMAL' ? 'ABNORMAL' : 'NORMAL',
+      reason: raw.reason ? String(raw.reason) : null,
+      totalAmount: Number(raw.totalAmount || 0),
+      totalRecovered: Number(raw.totalRecovered || 0),
+      meta: raw,
+    };
+    await prisma.stockAdjustment.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save stock adjustment'); }
+});
+
+app.delete('/api/sync/stock-adjustments/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.stockAdjustment.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete stock adjustment'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STOCK TRANSFERS  — full CRUD to DB
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/stock-transfers', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.stockTransfer.findMany({ orderBy: { date: 'desc' } });
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch stock transfers'); }
+});
+
+app.put('/api/sync/stock-transfers/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const locationFromId = String(raw.locationFromId || raw.locationFrom || '').trim();
+  const locationToId = String(raw.locationToId || raw.locationTo || '').trim();
+  if (!locationFromId || !locationToId) return res.status(400).json({ ok: false, error: 'locationFromId and locationToId are required' });
+  try {
+    const d = {
+      refNo: String(raw.refNo || id),
+      date: normDate(raw.date),
+      locationFromId,
+      locationToId,
+      status: normStatus(raw.status, ['PENDING', 'IN_TRANSIT', 'COMPLETED'], 'PENDING'),
+      shippingCharges: Number(raw.shippingCharges || 0),
+      totalAmount: Number(raw.totalAmount || 0),
+      note: raw.notes ? String(raw.notes) : (raw.note ? String(raw.note) : null),
+      meta: raw,
+    };
+    await prisma.stockTransfer.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save stock transfer'); }
+});
+
+app.delete('/api/sync/stock-transfers/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.stockTransfer.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete stock transfer'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  STOCK LOTS  — upsert by id
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.get('/api/sync/stock-lots', requireAuth, async (_req, res) => {
+  try {
+    const rows = await prisma.stockLot.findMany();
+    return res.json({ ok: true, data: rows.map(r => r.meta ?? r) });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to fetch stock lots'); }
+});
+
+app.put('/api/sync/stock-lots/:id', requireAuth, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+  const raw = toObject(req.body);
+  const productId = String(raw.productId || '').trim();
+  const locationId = String(raw.locationId || raw.location || '').trim();
+  if (!productId || !locationId) return res.status(400).json({ ok: false, error: 'productId and locationId are required' });
+  try {
+    const d = {
+      productId,
+      locationId,
+      lotNumber: String(raw.lotNumber || '--'),
+      expiryDate: raw.expiryDate ? normDate(raw.expiryDate) : null,
+      unitCost: Number(raw.unitCost || 0),
+      qty: Number(raw.qty || 0),
+      meta: raw,
+    };
+    await prisma.stockLot.upsert({ where: { id }, update: d, create: { id, ...d } });
+    return res.json({ ok: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to save stock lot'); }
+});
+
+app.delete('/api/sync/stock-lots/:id', requireAuth, requireCanDelete, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  try {
+    await prisma.stockLot.deleteMany({ where: { id } });
+    return res.json({ ok: true, deleted: true, id });
+  } catch (error) { return sendPrismaError(res, error, 'Failed to delete stock lot'); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  COLLECTION SNAPSHOT ENDPOINTS
+//  Used for resources that don't have a dedicated Prisma model (purchaseReqs,
+//  purchaseOrders, contacts). Stores/retrieves the entire array under a key.
+//  GET  /api/sync/collection/:key
+//  PUT  /api/sync/collection/:key   Body: { data: [...] }
+// ────────────────────────��─────────────────────────��──────────────────────────
+
+app.get('/api/sync/collection/:key', requireAuth, async (req, res) => {
+  const key = sanitizeCollectionKey(req.params.key);
+  if (!key) return res.status(400).json({ ok: false, error: 'key is required' });
+  try {
+    const record = await prisma.appStateSnapshot.findUnique({ where: { id: `COL_${key}` } });
+    const data = (record?.payload && Array.isArray((record.payload).data)) ? (record.payload).data : [];
+    return res.json({ ok: true, data });
+  } catch (error) {
+    return sendPrismaError(res, error, `Failed to fetch collection ${key}`);
+  }
+});
+
+app.put('/api/sync/collection/:key', requireAuth, async (req, res) => {
+  const key = sanitizeCollectionKey(req.params.key);
+  if (!key) return res.status(400).json({ ok: false, error: 'key is required' });
+  const data = toArray(req.body?.data);
+  try {
+    await prisma.appStateSnapshot.upsert({
+      where: { id: `COL_${key}` },
+      update: { payload: { data } },
+      create: { id: `COL_${key}`, payload: { data } },
+    });
+    return res.json({ ok: true, key, count: data.length });
+  } catch (error) {
+    return sendPrismaError(res, error, `Failed to save collection ${key}`);
+  }
+});
+
+// ────────────────────────────────────────────────────────────────────��────────
 //  LEGACY SNAPSHOT ENDPOINTS (kept for backward-compat; no longer the primary
 //  sync path — atomic /api/sync/record endpoints are used instead)
-// ─────────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────────────────��─────────
 
 app.get('/api/sync/core', async (_req, res) => {
   try {

@@ -5,7 +5,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 import { Expense, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
-import { formatExpenseDateTime, getEditExpenseIdKey, parseExpenseDateToMs } from '@/utils/expenses';
+import { formatExpenseDateTime, parseExpenseDateToMs } from '@/utils/expenses';
 
 interface ListExpensesProps {
   onNavigate: (page: string) => void;
@@ -286,9 +286,8 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
       addNotification({ title: 'Access Denied', message: 'You do not have permission to edit expenses.', type: 'error' });
       return;
     }
-    localStorage.setItem(getEditExpenseIdKey(), expenseId);
     setActiveActionId(null);
-    onNavigate('edit-expense');
+    onNavigate(`edit-expense/${expenseId}`);
   };
 
   const handleDelete = (id: string) => {
@@ -323,7 +322,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
         </div>
         {canAdd && (
           <button
-            onClick={() => { localStorage.removeItem(getEditExpenseIdKey()); onNavigate('add-expense'); }}
+            onClick={() => { onNavigate('add-expense'); }}
             className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95"
           >
             <Plus size={18} /> Add Expense

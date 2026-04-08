@@ -1,4 +1,5 @@
 import { Product } from '../context/GlobalContext';
+import { syncDedicated, fetchDedicated } from '@/utils/apiClient';
 
 import type { StockLotAdjustment } from './stockLots';
 
@@ -106,8 +107,26 @@ export const readStockAdjustments = (): StockAdjustmentRecord[] => {
   }
 };
 
-export const writeStockAdjustments = (rows: StockAdjustmentRecord[]) => {
+export const writeStockAdjustments = (rows: StockAdjustmentRecord[], changedId?: string) => {
   localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(rows));
+  if (changedId) {
+    const record = rows.find(r => r.id === changedId);
+    if (record) syncDedicated('/api/sync/stock-adjustments', record.id, record);
+  } else {
+    // Bulk write: sync all records (used when deleting — sync remaining)
+    rows.forEach(r => syncDedicated('/api/sync/stock-adjustments', r.id, r));
+  }
+};
+
+/**
+ * Bootstrap stock adjustments from DB.
+ * Empty DB responses clear local cache to prevent stale browser-only rows.
+ */
+export const bootstrapStockAdjustmentsFromDB = async (): Promise<void> => {
+  const remoteAdjustments = await fetchDedicated<StockAdjustmentRecord>('/api/sync/stock-adjustments');
+  if (remoteAdjustments) {
+    localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(remoteAdjustments));
+  }
 };
 
 export const makeNextStockAdjustmentRef = (prefix: string, rows: StockAdjustmentRecord[]) => {

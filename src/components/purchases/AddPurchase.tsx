@@ -5,6 +5,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 
 interface AddPurchaseProps {
   onNavigate?: (page: string) => void;
+  prefillOrderId?: string;
 }
 
 interface PurchaseRow {
@@ -21,9 +22,6 @@ interface PurchaseRow {
   lot: string;
   expiryDate: string;
 }
-
-const DRAFT_KEY = 'addPurchaseDraft_v2';
-const PREFILL_ORDER_KEY = 'app_purchase_prefill_order_id';
 
 const toNumber = (value: string | number | undefined): number => {
   const n = Number(value);
@@ -80,7 +78,7 @@ const recalcRow = (row: PurchaseRow): PurchaseRow => {
   };
 };
 
-const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
+const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId }) => {
   const {
     locations,
     suppliers,
@@ -118,7 +116,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [paymentNote, setPaymentNote] = useState('');
   const [formError, setFormError] = useState('');
-  const prefillChecked = useRef(false);
+  const appliedPrefillOrderRef = useRef('');
 
   const linkedOrder = useMemo(() => purchaseOrders.find(order => order.id === linkedPurchaseOrderId) || null, [purchaseOrders, linkedPurchaseOrderId]);
   const activeSuppliers = useMemo(() => suppliers.filter(s => s.status === 'Active'), [suppliers]);
@@ -158,9 +156,9 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
     setFormError('');
   };
 
-  const applyOrderPrefill = (orderId: string) => {
+  const applyOrderPrefill = (orderId: string): boolean => {
     const order = purchaseOrders.find(item => item.id === orderId);
-    if (!order) return;
+    if (!order) return false;
     setLinkedPurchaseOrderId(order.id);
     setSupplierId(order.supplierId || '');
     setLocationName(order.location || locationOptions[0] || '');
@@ -186,6 +184,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
       expiryDate: '',
     }));
     setRows(seededRows);
+    return true;
   };
 
   useEffect(() => {
@@ -194,54 +193,17 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
   }, [locationOptions.length]);
 
   useEffect(() => {
-    if (prefillChecked.current) return;
-    const orderId = localStorage.getItem(PREFILL_ORDER_KEY);
+    const orderId = String(prefillOrderId || '').trim();
     if (!orderId) {
-      prefillChecked.current = true;
+      appliedPrefillOrderRef.current = '';
       return;
     }
     if (purchaseOrders.length === 0) return;
-    applyOrderPrefill(orderId);
-    localStorage.removeItem(PREFILL_ORDER_KEY);
-    prefillChecked.current = true;
-  }, [purchaseOrders, locationOptions]);
-
-  useEffect(() => {
-    const draft = localStorage.getItem(DRAFT_KEY);
-    if (!draft) return;
-    try {
-      const parsed = JSON.parse(draft);
-      setSupplierId(parsed.supplierId || '');
-      setPurchaseStatus(parsed.purchaseStatus || 'Received');
-      setReferenceNo(parsed.referenceNo || buildNextRefNo());
-      setPurchaseDate(parsed.purchaseDate || toInputDateTime());
-      setLocationName(parsed.locationName || locationOptions[0] || '');
-      setAttachDocumentName(parsed.attachDocumentName || '');
-      setLinkedPurchaseOrderId(parsed.linkedPurchaseOrderId || '');
-      setRows((parsed.rows || []).map((r: PurchaseRow) => recalcRow({ ...r, rowId: r.rowId || createRowId(), expiryDate: String((r as any)?.expiryDate || '') })));
-      setDiscountType(parsed.discountType || 'None');
-      setDiscountAmount(parsed.discountAmount || '');
-      setPurchaseTaxId(parsed.purchaseTaxId || '');
-      setShippingDetails(parsed.shippingDetails || '');
-      setShippingCharges(parsed.shippingCharges || '');
-      setAdditionalNotes(parsed.additionalNotes || '');
-      setPaymentAmount(parsed.paymentAmount || '');
-      setPaidOn(parsed.paidOn || toInputDateTime());
-      setPaymentMethod(parsed.paymentMethod || 'Cash');
-      setPaymentNote(parsed.paymentNote || '');
-    } catch {
-      // Ignore invalid draft.
+    if (appliedPrefillOrderRef.current === orderId) return;
+    if (applyOrderPrefill(orderId)) {
+      appliedPrefillOrderRef.current = orderId;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      supplierId, purchaseStatus, referenceNo, purchaseDate, locationName, attachDocumentName, linkedPurchaseOrderId,
-      rows, discountType, discountAmount, purchaseTaxId, shippingDetails, shippingCharges, additionalNotes,
-      paymentAmount, paidOn, paymentMethod, paymentNote,
-    }));
-  }, [supplierId, purchaseStatus, referenceNo, purchaseDate, locationName, attachDocumentName, linkedPurchaseOrderId, rows, discountType, discountAmount, purchaseTaxId, shippingDetails, shippingCharges, additionalNotes, paymentAmount, paidOn, paymentMethod, paymentNote]);
+  }, [prefillOrderId, purchaseOrders, locationOptions]);
 
   const addRow = (product?: { id: string; name: string; unitPurchasePrice: number; sellingPrice: number }) =>
     setRows(prev => [...prev, recalcRow({ rowId: createRowId(), productId: product?.id || '', productName: product?.name || '', qty: 1, unitCost: toNumber(product?.unitPurchasePrice || 0), discountPercent: 0, costBeforeTax: 0, lineTotal: 0, margin: 0, sellingPrice: toNumber(product?.sellingPrice || 0), lot: '', expiryDate: '' })]);
@@ -365,7 +327,6 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate }) => {
       updatePurchaseOrder({ ...linkedOrder, status: 'Received' });
     }
 
-    localStorage.removeItem(DRAFT_KEY);
     addNotification({ title: 'Purchase Saved', message: 'The purchase has been recorded successfully.', type: 'success' });
     resetForm();
     onNavigate?.('purchases');

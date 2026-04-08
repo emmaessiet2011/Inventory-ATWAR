@@ -85,7 +85,6 @@ export const verifyLegacyPassword = (enteredPassword, passwordHash, passwordSalt
   if (hash && salt) {
     return fixedTimeEqual(hash, hashPasswordSecret(normalizedPassword, salt));
   }
-
   const legacyPassword = normalizeSecret(plaintextLegacy);
   if (!legacyPassword) return false;
   return fixedTimeEqual(legacyPassword, normalizedPassword);
@@ -96,15 +95,15 @@ export const verifyLegacyPassword = (enteredPassword, passwordHash, passwordSalt
 export const verifyPassword = async (password, user) => {
   // If the user's passwordHash starts with standard bcrypt identifier ($2a$, $2b$, or $2y$)
   const isBcrypt = user.passwordHash?.startsWith('$2');
-
+  
   if (isBcrypt) {
     const isValid = await bcrypt.compare(password, user.passwordHash);
     return { isValid, needsMigration: false };
+  } else {
+    // Attempt legacy FNV check
+    const isValid = verifyLegacyPassword(password, user.passwordHash, user.passwordSalt, user.password);
+    return { isValid, needsMigration: isValid }; // If valid, we need to migrate it to bcrypt
   }
-
-  // Attempt legacy FNV check
-  const isValid = verifyLegacyPassword(password, user.passwordHash, user.passwordSalt, user.password);
-  return { isValid, needsMigration: isValid }; // If valid, we need to migrate it to bcrypt
 };
 
 // Generate JWT for authenticated user
@@ -117,6 +116,6 @@ export const generateToken = (user) => {
       roleId: user.roleId,
     },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN },
+    { expiresIn: JWT_EXPIRES_IN }
   );
 };

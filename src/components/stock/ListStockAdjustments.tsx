@@ -10,13 +10,14 @@ import { printDocument, statusBadge } from '@/utils/printUtils';
 import { appendStockLedgerEntries } from '@/utils/stockTransfers';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
 import {
+  bootstrapStockAdjustmentsFromDB,
   getStockAdjustmentStorageKey,
   StockAdjustmentRecord,
-  getEditStockAdjustmentIdKey,
   readStockAdjustments,
   simulateStockAdjustment,
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
+import { deleteDedicated } from '@/utils/apiClient';
 
 interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
@@ -117,6 +118,12 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   useEffect(() => {
     const storageKey = getStockAdjustmentStorageKey();
     const refresh = () => setAdjustments(readStockAdjustments());
+    let isMounted = true;
+    const bootstrap = async () => {
+      await bootstrapStockAdjustmentsFromDB().catch(() => {});
+      if (isMounted) refresh();
+    };
+    bootstrap();
     const onStorage = (event: StorageEvent) => {
       if (!event.key || event.key === storageKey) refresh();
     };
@@ -124,6 +131,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
     window.addEventListener('focus', refresh);
     window.addEventListener('storage', onStorage);
     return () => {
+      isMounted = false;
       window.removeEventListener('focus', refresh);
       window.removeEventListener('storage', onStorage);
     };
@@ -323,9 +331,8 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
   const startEdit = (adjustmentId: string) => {
     if (!resolvedCanEdit) return;
-    localStorage.setItem(getEditStockAdjustmentIdKey(), adjustmentId);
     setActiveActionId(null);
-    onNavigate('add-stock-adjustment');
+    onNavigate(`add-stock-adjustment/${adjustmentId}`);
   };
 
   const deleteAdjustment = (adjustment: StockAdjustmentRecord) => {
@@ -359,6 +366,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       const nextAdjustments = adjustments.filter((row) => row.id !== adjustment.id);
       setAdjustments(nextAdjustments);
       writeStockAdjustments(nextAdjustments);
+      deleteDedicated('/api/sync/stock-adjustments', adjustment.id);
       if (viewAdjustmentId === adjustment.id) setViewAdjustmentId(null);
       setActiveActionId(null);
       addNotification({
@@ -395,7 +403,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         {resolvedCanAdd && (
           <button
             onClick={() => {
-              localStorage.removeItem(getEditStockAdjustmentIdKey());
               onNavigate('add-stock-adjustment');
             }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-md active:scale-95 transition"

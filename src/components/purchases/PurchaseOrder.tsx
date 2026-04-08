@@ -14,6 +14,7 @@ import { printDocument, statusBadge } from '@/utils/printUtils';
 
 interface PurchaseOrderProps {
   onNavigate?: (page: string) => void;
+  prefillRequisitionId?: string;
 }
 
 interface PurchaseOrderItemForm extends PurchaseOrderItem {
@@ -89,9 +90,6 @@ const formatAppDateTime = (value: string): string => {
 };
 
 const createRowId = (): string => `po-item-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const PREFILL_REQUISITION_KEY = 'app_purchase_prefill_requisition_id';
-const PREFILL_ORDER_KEY = 'app_purchase_prefill_order_id';
-
 const recalcItem = (item: PurchaseOrderItemForm): PurchaseOrderItemForm => {
   const orderQty = toIntegerQuantity(item.orderQty);
   const unitCostBeforeDiscount = Math.max(0, toNumber(item.unitCostBeforeDiscount));
@@ -108,7 +106,7 @@ const recalcItem = (item: PurchaseOrderItemForm): PurchaseOrderItemForm => {
   };
 };
 
-const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
+const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequisitionId }) => {
   const { addNotification } = useNotifications();
   const {
     purchaseOrders,
@@ -196,13 +194,10 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
   const [form, setForm] = useState<PurchaseOrderFormState>(buildEmptyForm);
 
   useEffect(() => {
-    const requisitionId = localStorage.getItem(PREFILL_REQUISITION_KEY);
+    const requisitionId = String(prefillRequisitionId || '').trim();
     if (!requisitionId) return;
     const req = purchaseRequisitions.find(item => item.id === requisitionId);
-    if (!req) {
-      localStorage.removeItem(PREFILL_REQUISITION_KEY);
-      return;
-    }
+    if (!req) return;
     const seededItems = (req.items || []).map(item => {
       const p = products.find(prod => prod.id === item.productId);
       return recalcItem({
@@ -230,9 +225,8 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
       items: seededItems,
     });
     setIsModalOpen(true);
-    localStorage.removeItem(PREFILL_REQUISITION_KEY);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [purchaseRequisitions, products, supplierOptions]);
+  }, [prefillRequisitionId, purchaseRequisitions, products, supplierOptions]);
 
   const openAddModal = () => {
     setEditingOrder(null);
@@ -494,8 +488,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate }) => {
   };
 
   const handleCreatePurchaseFromOrder = (orderId: string) => {
-    localStorage.setItem(PREFILL_ORDER_KEY, orderId);
-    onNavigate?.('add-purchase');
+    onNavigate?.(`add-purchase/${orderId}`);
   };
 
   const filteredOrders = useMemo(() => {

@@ -59,6 +59,7 @@ const toIsoDate = (value: string): string => {
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
 
 export const getStockTransferStorageKey = () => STOCK_TRANSFERS_KEY;
+export const getStockLedgerStorageKey = () => STOCK_LEDGER_KEY;
 export const getEditStockTransferIdKey = () => EDIT_STOCK_TRANSFER_ID_KEY;
 
 export const readStockTransfers = (): StockTransferRecord[] => {

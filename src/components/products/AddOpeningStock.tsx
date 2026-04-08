@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Save } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
+import { appendStockLedgerEntries } from '@/utils/stockTransfers';
 
 interface AddOpeningStockProps {
   isOpen?: boolean;
@@ -34,20 +35,6 @@ interface StockLedgerEntry {
   note?: string;
 }
 
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
-
-const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeStockLedger = (rows: StockLedgerEntry[]) => {
-  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(rows));
-};
 
 const createDefaultRow = (): StockEntry => ({
   id: Date.now().toString(),
@@ -140,11 +127,11 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
       openingStockLocation: product.businessLocation || product.openingStockLocation,
     });
 
-    const ledger = readStockLedger();
+    const newLedgerEntries: StockLedgerEntry[] = [];
     let runningQty = currentStock;
     validRows.forEach((row, idx) => {
       runningQty = Number((runningQty + (Number(row.quantity) || 0)).toFixed(3));
-      ledger.push({
+      newLedgerEntries.push({
         id: `STK-OPEN-${Date.now()}-${idx}`,
         productId: product.id,
         type: 'Opening Stock',
@@ -157,7 +144,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         note: row.note?.trim() || '',
       });
     });
-    writeStockLedger(ledger);
+    appendStockLedgerEntries(newLedgerEntries);
 
     applyStockLotAdjustments(
       validRows.map((row) => ({

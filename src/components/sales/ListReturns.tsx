@@ -357,9 +357,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
       setActiveActionId(null);
       return;
     }
-    localStorage.setItem('app_edit_sell_return_id', id);
-    localStorage.setItem('app_sell_return_sale_id', record?.parentSaleId || '');
-    onNavigate('add-sell-return');
+    onNavigate(`add-sell-return/edit/${id}`);
     setActiveActionId(null);
   };
   const handleDelete = (id: string) => {

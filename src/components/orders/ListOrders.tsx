@@ -630,8 +630,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                               className="w-full text-left px-4 py-2.5 text-xs font-bold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2"
                               onClick={() => {
                                 onSelectOrder(order.id);
-                                localStorage.setItem('app_convert_order_id', order.id);
-                                onNavigate('convert-order-to-invoice');
+                                onNavigate(`convert-order-to-invoice/${order.id}`);
                                 setActiveActionId(null);
                               }}
                             >

@@ -11,7 +11,8 @@ import { buildPaginationItems } from '@/utils/pagination';
 import {
   StockTransferRecord,
   appendStockLedgerEntries,
-  getEditStockTransferIdKey,
+  bootstrapStockTransfersFromDB,
+  getStockTransferStorageKey,
   readStockTransfers,
   simulateStockTransfer,
   writeStockTransfers,
@@ -57,6 +58,29 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
     locationTo: [] as string[],
     status: [] as string[],
   });
+
+  useEffect(() => {
+    const storageKey = getStockTransferStorageKey();
+    const refresh = () => setTransfers(readStockTransfers());
+    let isMounted = true;
+
+    const bootstrap = async () => {
+      await bootstrapStockTransfersFromDB().catch(() => {});
+      if (isMounted) refresh();
+    };
+
+    bootstrap();
+    window.addEventListener('focus', refresh);
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === storageKey) refresh();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   const visibleTransfers = useMemo(() => {
     const query = normalize(searchTerm);
@@ -210,9 +234,8 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
 
   const startEdit = (transferId: string) => {
     if (!canManage) return;
-    localStorage.setItem(getEditStockTransferIdKey(), transferId);
     setActiveActionId(null);
-    onNavigate('add-stock-transfer');
+    onNavigate(`add-stock-transfer/${transferId}`);
   };
 
   const deleteTransfer = (transfer: StockTransferRecord) => {
@@ -244,7 +267,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
 
       const nextTransfers = transfers.filter(row => row.id !== transfer.id);
       setTransfers(nextTransfers);
-      writeStockTransfers(nextTransfers);
+      writeStockTransfers(nextTransfers, undefined, transfer.id);
       if (viewTransferId === transfer.id) setViewTransferId(null);
       setActiveActionId(null);
       addNotification({
@@ -281,7 +304,6 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         {canManage && (
           <button
             onClick={() => {
-              localStorage.removeItem(getEditStockTransferIdKey());
               onNavigate('add-stock-transfer');
             }}
             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 shadow-md active:scale-95 transition"

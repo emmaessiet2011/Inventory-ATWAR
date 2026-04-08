@@ -23,18 +23,20 @@ import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingS
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
+import { isLiveSyncEnabled } from '@/utils/apiClient';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
     fromOrder?: boolean;
+    sourceOrderId?: string;
     isEdit?: boolean;
     saleId?: string;
     initialStatus?: 'Final' | 'Draft' | 'Quotation' | 'Proforma';
     strictInitialStatus?: boolean;
 }
 
-const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
+const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId: sourceOrderIdParam, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
   const { addNotification } = useNotifications();
   const {
     locations, sales, addSale, updateSale, updateOrder,
@@ -150,6 +152,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
     .replace(/\s+/g, '_');
   const scopedDraftStorageKey = `addSaleDraft:${draftScope}:${draftOwner}`;
   const legacySharedDraftKey = 'addSaleDraft';
+  const shouldUseLocalDraftCache = !isLiveSyncEnabled();
 
   const commissionAgentEnabledInSale = settings.salesCommissionAgent === 'Enable' || settings.enableCommissionAgents;
   const commissionAgentRequiredInSale = commissionAgentEnabledInSale && settings.isCommissionAgentRequired;
@@ -442,13 +445,19 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
 
   // --- Preview State ---
   const [showPreview, setShowPreview] = useState(false);
-  const [sourceOrderId, setSourceOrderId] = useState('');
+  const [sourceOrderId, setSourceOrderId] = useState(() => String(sourceOrderIdParam || '').trim());
   const [sourceOrderNumber, setSourceOrderNumber] = useState('');
 
   // --- Draft State ---
   const [showDraftPrompt, setShowDraftPrompt] = useState(false);
   const [draftData, setDraftData] = useState<any>(null);
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+
+  useEffect(() => {
+    const nextSourceOrderId = String(sourceOrderIdParam || '').trim();
+    if (!nextSourceOrderId || nextSourceOrderId === sourceOrderId) return;
+    setSourceOrderId(nextSourceOrderId);
+  }, [sourceOrderIdParam, sourceOrderId]);
 
   const isMeaningfulRow = (row: any) => {
     const productId = String(row?.productId ?? '').trim();
@@ -539,6 +548,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
   }, [forceInitialStatusLock, initialStatus, status]);
 
   const removeScopedDraft = () => {
+    if (!shouldUseLocalDraftCache) return;
     localStorage.removeItem(scopedDraftStorageKey);
     if (draftScope === 'sale') {
       localStorage.removeItem(legacySharedDraftKey);
@@ -547,6 +557,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
 
   // Load Draft Logic
   useEffect(() => {
+    if (!shouldUseLocalDraftCache) {
+      setIsDraftLoaded(true);
+      return;
+    }
     if (!isEdit && !fromOrder) {
       const savedDraft = localStorage.getItem(scopedDraftStorageKey)
         || (draftScope === 'sale' ? localStorage.getItem(legacySharedDraftKey) : null);
@@ -569,10 +583,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
     } else {
        setIsDraftLoaded(true);
     }
-  }, [isEdit, fromOrder, scopedDraftStorageKey, draftScope]);
+  }, [isEdit, fromOrder, scopedDraftStorageKey, draftScope, legacySharedDraftKey, shouldUseLocalDraftCache]);
 
   // Save Draft Logic
   useEffect(() => {
+    if (!shouldUseLocalDraftCache) return;
     if (isDraftLoaded && !isEdit && !fromOrder && !showDraftPrompt) {
       const draft = {
         saleType, customer, payTermNumber, payTermUnit, saleDate, status, invoiceScheme, invoiceLayout,
@@ -585,7 +600,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
         localStorage.removeItem(legacySharedDraftKey);
       }
     }
-  }, [isDraftLoaded, showDraftPrompt, saleType, customer, payTermNumber, payTermUnit, saleDate, status, invoiceScheme, invoiceLayout, rows, discountType, discountAmount, orderTax, sellNote, shippingDetails, shippingAddress, shippingCharges, shippingStatus, deliveredTo, amount, paymentDate, paymentMethod, paymentAccount, paymentNote, isEdit, fromOrder, location, selectedPriceGroupId, selectedCommissionAgentId, scopedDraftStorageKey, draftScope, attachedFileName]);
+  }, [isDraftLoaded, showDraftPrompt, saleType, customer, payTermNumber, payTermUnit, saleDate, status, invoiceScheme, invoiceLayout, rows, discountType, discountAmount, orderTax, sellNote, shippingDetails, shippingAddress, shippingCharges, shippingStatus, deliveredTo, amount, paymentDate, paymentMethod, paymentAccount, paymentNote, isEdit, fromOrder, location, selectedPriceGroupId, selectedCommissionAgentId, scopedDraftStorageKey, draftScope, legacySharedDraftKey, attachedFileName, shouldUseLocalDraftCache]);
 
   const restoreDraft = () => {
      if (draftData) {
@@ -723,7 +738,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
   // Pre-fill logic
   useEffect(() => {
     if (fromOrder) {
-        const selectedOrderId = localStorage.getItem('app_convert_order_id') || sourceOrderId;
+        const selectedOrderId = String(sourceOrderId || '').trim();
         const sourceOrder = selectedOrderId ? orders.find(o => o.id === selectedOrderId) : undefined;
 
         if (sourceOrder) {
@@ -741,7 +756,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
             if (onNavigate) {
               onNavigate(existingConvertedSale ? `edit-sale/${existingConvertedSale.id}` : 'sales');
             }
-            localStorage.removeItem('app_convert_order_id');
             return;
           }
 
@@ -843,8 +857,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, isEdit, saleId
             setLocation(defaultLocationName);
           }
         }
-
-        localStorage.removeItem('app_convert_order_id');
     } else if (isEdit && saleId) {
         // Pre-fill for editing an existing sale from GlobalContext
         const existingSale = sales.find(s => s.id === saleId);

@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGlobalContext, Expense, Payment } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { Save, Calendar, Upload, Info, CreditCard, DollarSign, RefreshCw, MapPin, Tag, X, ArrowLeft, Receipt } from 'lucide-react';
-import { getEditExpenseIdKey, toExpenseDateTimeInput, toExpenseIsoDateTime } from '@/utils/expenses';
+import { toExpenseDateTimeInput, toExpenseIsoDateTime } from '@/utils/expenses';
 import {
   addRegisterTransaction,
   deleteRegisterTransaction,
@@ -12,6 +12,7 @@ import {
 interface AddExpenseProps {
   onNavigate?: (page: string) => void;
   isEdit?: boolean;
+  editExpenseId?: string;
   canAdd?: boolean;
   canEdit?: boolean;
   restrictToAddedById?: string;
@@ -62,6 +63,7 @@ const isExpenseOwnerMatch = (expense: Expense, ownerIdFilter: string, ownerNameF
 const AddExpense: React.FC<AddExpenseProps> = ({
   onNavigate,
   isEdit = false,
+  editExpenseId,
   canAdd = true,
   canEdit = true,
   restrictToAddedById = '',
@@ -87,6 +89,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
 
   const ownerIdFilter = normalize(restrictToAddedById);
   const ownerNameFilter = normalize(restrictToAddedByName);
+  const bootstrappedEditIdRef = useRef<string | null>(null);
 
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
@@ -152,11 +155,13 @@ const AddExpense: React.FC<AddExpenseProps> = ({
   }, [expenseCategories, category]);
 
   useEffect(() => {
-    const editKey = getEditExpenseIdKey();
-    const editId = localStorage.getItem(editKey) || '';
+    const editId = String(editExpenseId || '').trim();
     const shouldEdit = isEdit || !!editId;
+    const effectContextId = shouldEdit ? editId : '';
+    if (bootstrappedEditIdRef.current === effectContextId) return;
 
     if (!shouldEdit) {
+      bootstrappedEditIdRef.current = '';
       if (!canAdd) {
         addNotification({ title: 'Access Denied', message: 'You do not have permission to add expenses.', type: 'error' });
         onNavigate?.('expenses');
@@ -165,7 +170,6 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     }
 
     if (!canEdit) {
-      localStorage.removeItem(editKey);
       addNotification({ title: 'Access Denied', message: 'You do not have permission to edit expenses.', type: 'error' });
       onNavigate?.('expenses');
       return;
@@ -179,20 +183,19 @@ const AddExpense: React.FC<AddExpenseProps> = ({
 
     const existing = expenses.find((expense) => expense.id === editId);
     if (!existing) {
-      localStorage.removeItem(editKey);
       addNotification({ title: 'Expense Not Found', message: 'The selected expense no longer exists.', type: 'error' });
       onNavigate?.('expenses');
       return;
     }
 
     if (!isExpenseOwnerMatch(existing, ownerIdFilter, ownerNameFilter)) {
-      localStorage.removeItem(editKey);
       addNotification({ title: 'Access Denied', message: 'You can edit only your own expenses.', type: 'error' });
       onNavigate?.('expenses');
       return;
     }
 
     setEditingExpenseId(existing.id);
+    bootstrappedEditIdRef.current = editId;
     setLocation(existing.location || '');
     setCategory(existing.category || '');
     setSubCategory(existing.subCategory || '');
@@ -236,7 +239,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     setPayAccount(linkedPayment?.account || existing.paymentAccount || '');
     setPayNote(linkedPayment?.note || existing.paymentNote || '');
     setAttachmentName(existing.attachmentName || '');
-  }, []);
+  }, [isEdit, editExpenseId, canAdd, canEdit, addNotification, onNavigate, expenses, ownerIdFilter, ownerNameFilter, taxOptions]);
 
   useEffect(() => {
     if (editingExpenseId) return;
@@ -254,7 +257,6 @@ const AddExpense: React.FC<AddExpenseProps> = ({
   }, [settings?.expensesPrefix, editingExpenseId, refNo]);
 
   const handleCancel = () => {
-    localStorage.removeItem(getEditExpenseIdKey());
     onNavigate?.('expenses');
   };
 
@@ -307,14 +309,12 @@ const AddExpense: React.FC<AddExpenseProps> = ({
 
     const existing = editingExpenseId ? expenses.find((expense) => expense.id === editingExpenseId) : undefined;
     if (editingExpenseId && !existing) {
-      localStorage.removeItem(getEditExpenseIdKey());
       addNotification({ title: 'Expense Not Found', message: 'The selected expense no longer exists.', type: 'error' });
       onNavigate?.('expenses');
       return;
     }
 
     if (existing && !isExpenseOwnerMatch(existing, ownerIdFilter, ownerNameFilter)) {
-      localStorage.removeItem(getEditExpenseIdKey());
       addNotification({ title: 'Access Denied', message: 'You can edit only your own expenses.', type: 'error' });
       onNavigate?.('expenses');
       return;
@@ -457,7 +457,6 @@ const AddExpense: React.FC<AddExpenseProps> = ({
       deleteRegisterTransaction(registerTxId);
     }
 
-    localStorage.removeItem(getEditExpenseIdKey());
     onNavigate?.('expenses');
   };
 

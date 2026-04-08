@@ -46,8 +46,6 @@ const toLocalDateTimeInput = (value?: string): string => {
 const toLocalDateInput = (value?: string): string => toLocalDateTimeInput(value).slice(0, 10);
 const normalizeText = (value: string): string => value.trim().toLowerCase();
 
-const PREFILL_REQUISITION_KEY = 'app_purchase_prefill_requisition_id';
-
 const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
   const {
@@ -265,11 +263,10 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   };
 
   const handleCreatePurchaseOrder = (requisition: GlobalPurchaseRequisition) => {
-    localStorage.setItem(PREFILL_REQUISITION_KEY, requisition.id);
     if (requisition.status === 'Pending') {
       updatePurchaseRequisition({ ...requisition, status: 'Approved' });
     }
-    onNavigate?.('purchase-order');
+    onNavigate?.(`purchase-order/${requisition.id}`);
   };
 
   const filteredRequisitions = useMemo(() => {

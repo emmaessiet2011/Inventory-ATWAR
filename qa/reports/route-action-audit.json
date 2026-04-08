@@ -12,7 +12,17 @@
       "print-labels/",
       "product-stock-history/",
       "add-opening-stock/",
-      "edit-user/"
+      "edit-user/",
+      "add-sell-return/sale/",
+      "add-sell-return/edit/",
+      "add-stock-transfer/",
+      "add-stock-adjustment/",
+      "purchase-order/",
+      "add-purchase/",
+      "purchase-return/",
+      "convert-order-to-invoice/",
+      "edit-expense/",
+      "payment-account-report/"
     ],
     "unknownNavigationTargets": 0,
     "deadOnClickHandlers": 0,

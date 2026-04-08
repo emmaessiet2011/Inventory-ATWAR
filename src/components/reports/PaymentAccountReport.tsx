@@ -26,7 +26,6 @@ interface ReportRow {
   location: string;
 }
 
-const ACCOUNT_REPORT_FOCUS_KEY = 'app_payment_account_report_focus';
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 const parseReportDateToMs = (value: unknown): number => {
   const raw = String(value || '').trim();
@@ -36,7 +35,15 @@ const parseReportDateToMs = (value: unknown): number => {
   return parseExpenseDateToMs(raw);
 };
 
-const PaymentAccountReport: React.FC = () => {
+interface PaymentAccountReportProps {
+  initialAccount?: string;
+  initialLocation?: string;
+}
+
+const PaymentAccountReport: React.FC<PaymentAccountReportProps> = ({
+  initialAccount,
+  initialLocation,
+}) => {
   const { locations, payments, sales, expenses, formatCurrency } = useGlobalContext();
   const [filters, setFilters] = useState({
     location: [] as string[],
@@ -47,23 +54,14 @@ const PaymentAccountReport: React.FC = () => {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(ACCOUNT_REPORT_FOCUS_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { account?: string; location?: string };
-      const focusedAccount = String(parsed?.account || '').trim();
-      const focusedLocation = String(parsed?.location || '').trim();
-      if (focusedAccount || focusedLocation) {
-        setFilters({
-          account: focusedAccount ? [focusedAccount] : [],
-          location: focusedLocation ? [focusedLocation] : [],
-        });
-      }
-      localStorage.removeItem(ACCOUNT_REPORT_FOCUS_KEY);
-    } catch {
-      // ignore malformed report focus payloads
-    }
-  }, []);
+    const focusedAccount = String(initialAccount || '').trim();
+    const focusedLocation = String(initialLocation || '').trim();
+    if (!focusedAccount && !focusedLocation) return;
+    setFilters({
+      account: focusedAccount ? [focusedAccount] : [],
+      location: focusedLocation ? [focusedLocation] : [],
+    });
+  }, [initialAccount, initialLocation]);
 
   const salesByInvoice = useMemo(() => {
     const map = new Map<string, string>();

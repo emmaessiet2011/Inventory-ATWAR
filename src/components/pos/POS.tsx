@@ -12,6 +12,7 @@ import { findBestApplicableDiscount, formatDiscountAmount, resolveAppliedDiscoun
 import ProductStockHistory from '@/components/products/ProductStockHistory';
 import {
   addRegisterTransaction,
+  bootstrapRegisterFromDB,
   closeRegisterSession,
   getActiveRegisterSession,
   getRegisterTransactions,
@@ -704,11 +705,28 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    const active = getActiveRegisterSession();
-    if (active?.locationId) {
-      setRegisterSession(active);
-      setSelectedLocationId(active.locationId);
-    }
+    let cancelled = false;
+
+    const refreshActiveSession = async () => {
+      await bootstrapRegisterFromDB().catch(() => {});
+      if (cancelled) return;
+      const active = getActiveRegisterSession();
+      if (active?.locationId) {
+        setRegisterSession(active);
+        setSelectedLocationId(active.locationId);
+        return;
+      }
+      setRegisterSession(null);
+    };
+
+    void refreshActiveSession();
+    const onFocus = () => { void refreshActiveSession(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   useEffect(() => {

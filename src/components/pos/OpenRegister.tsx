@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import {
+  bootstrapRegisterFromDB,
   getActiveRegisterSession,
   RegisterSessionRecord,
   startRegisterSession,
@@ -30,7 +31,19 @@ const OpenRegister: React.FC<OpenRegisterProps> = ({ onNavigate }) => {
   }, [location, activeLocations, locations]);
 
   useEffect(() => {
-    setExistingSession(getActiveRegisterSession());
+    let cancelled = false;
+    const refreshActiveSession = async () => {
+      await bootstrapRegisterFromDB().catch(() => {});
+      if (cancelled) return;
+      setExistingSession(getActiveRegisterSession());
+    };
+    void refreshActiveSession();
+    const onFocus = () => { void refreshActiveSession(); };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   const handleOpen = () => {

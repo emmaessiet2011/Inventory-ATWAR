@@ -16,6 +16,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import {
+  bootstrapRegisterFromDB,
   getActiveRegisterSession,
   getRegisterSessions,
   getRegisterTransactions,
@@ -120,17 +121,33 @@ const ReportRegister: React.FC = () => {
   });
   const [dateRange, setDateRange] = useState<DateRangeSelection>(allTimeRange);
   const [viewingRow, setViewingRow] = useState<RegisterReportRow | null>(null);
+  const [sessions, setSessions] = useState<RegisterSessionRecord[]>([]);
+  const [transactions, setTransactions] = useState<RegisterTransaction[]>([]);
 
-  const sessions = useMemo<RegisterSessionRecord[]>(() => {
-    const list = getRegisterSessions();
-    const active = getActiveRegisterSession();
-    if (active && !list.some((item) => item.id === active.id)) {
-      return [active, ...list];
-    }
-    return list;
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshFromDB = async () => {
+      await bootstrapRegisterFromDB().catch(() => {});
+      if (cancelled) return;
+      const list = getRegisterSessions();
+      const active = getActiveRegisterSession();
+      const merged = active && !list.some((item) => item.id === active.id)
+        ? [active, ...list]
+        : list;
+      setSessions(merged);
+      setTransactions(getRegisterTransactions());
+    };
+
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
-
-  const transactions = useMemo<RegisterTransaction[]>(() => getRegisterTransactions(), []);
 
   const formatDateTimeDisplay = (value?: string) => {
     if (!value) return '--';

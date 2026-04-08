@@ -8,7 +8,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
-import { getStockLotsStorageKey, readStockLotBalances, type StockLotBalance } from '@/utils/stockLots';
+import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances, type StockLotBalance } from '@/utils/stockLots';
 
 type StockStatus = 'Expired' | 'Expiring' | 'Good';
 type ColumnKey =
@@ -227,12 +227,19 @@ const ReportStockExpiry: React.FC = () => {
 
   useEffect(() => {
     const refreshLots = () => setLotVersion((prev) => prev + 1);
+    let isMounted = true;
+    const bootstrap = async () => {
+      await bootstrapStockLotsFromDB().catch(() => {});
+      if (isMounted) refreshLots();
+    };
+    bootstrap();
     const onStorage = (event: StorageEvent) => {
       if (!event.key || event.key === stockLotsStorageKey) refreshLots();
     };
     window.addEventListener('focus', refreshLots);
     window.addEventListener('storage', onStorage);
     return () => {
+      isMounted = false;
       window.removeEventListener('focus', refreshLots);
       window.removeEventListener('storage', onStorage);
     };

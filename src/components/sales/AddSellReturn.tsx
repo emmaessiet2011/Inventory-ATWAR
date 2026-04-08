@@ -6,6 +6,8 @@ import { printCreditNote } from '@/utils/printUtils';
 
 interface AddSellReturnProps {
   onNavigate: (page: string) => void;
+  prefillSaleId?: string;
+  editReturnId?: string;
 }
 
 interface ReturnRow {
@@ -18,7 +20,7 @@ interface ReturnRow {
   unit?: string;
 }
 
-const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
+const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId, editReturnId }) => {
   const { addNotification } = useNotifications();
   const {
     sales,
@@ -48,6 +50,8 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
   const [settlementMode, setSettlementMode] = useState<SellReturnSettlementMode>('apply_to_invoice_due');
   const [returnNote, setReturnNote] = useState('');
   const [rows, setRows] = useState<ReturnRow[]>([]);
+  const linkedSaleId = String(prefillSaleId || '').trim();
+  const routeEditId = String(editReturnId || '').trim();
 
   const currentRoleRecord = roles.find(role => role.name === currentUser?.role);
   const rolePermissions = currentRoleRecord?.permissions || [];
@@ -77,13 +81,18 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
   }, [canAccessSellReturns, addNotification, onNavigate]);
 
   useEffect(() => {
-    const linkedSaleId = localStorage.getItem('app_sell_return_sale_id') || '';
-    const editId = localStorage.getItem('app_edit_sell_return_id') || '';
-
-    if (editId) {
-      if (editingReturnId === editId) return;
-      const existing = sellReturns.find(ret => ret.id === editId);
-      if (!existing) return;
+    if (routeEditId) {
+      if (editingReturnId === routeEditId) return;
+      const existing = sellReturns.find(ret => ret.id === routeEditId);
+      if (!existing) {
+        addNotification({
+          title: 'Sell Return Not Found',
+          message: 'The selected sell return no longer exists.',
+          type: 'error',
+        });
+        onNavigate('returns');
+        return;
+      }
 
       const hasReturnAccess =
         canAccessAllSellReturns ||
@@ -96,8 +105,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
           message: 'You do not have permission to edit this sell return.',
           type: 'error',
         });
-        localStorage.removeItem('app_edit_sell_return_id');
-        localStorage.removeItem('app_sell_return_sale_id');
         onNavigate('returns');
         return;
       }
@@ -131,6 +138,9 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
       return;
     }
 
+    if (editingReturnId) {
+      setEditingReturnId('');
+    }
     if (!saleId && linkedSaleId) {
       setSaleId(linkedSaleId);
     }
@@ -143,6 +153,8 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
     onNavigate,
     editingReturnId,
     saleId,
+    routeEditId,
+    linkedSaleId,
   ]);
 
   const finalSales = useMemo(
@@ -245,11 +257,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
       setSettlementMode('refund_due');
     }
   }, [editingReturn, settlementMode]);
-
-  const clearStoredReturnLinks = () => {
-    localStorage.removeItem('app_sell_return_sale_id');
-    localStorage.removeItem('app_edit_sell_return_id');
-  };
 
   const buildNextReferenceNo = (): string => {
     const prefixRaw = String(settings.sellReturnPrefix || 'CN').trim() || 'CN';
@@ -421,7 +428,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
     } else {
       globalAddSellReturn(returnRecord);
     }
-    clearStoredReturnLinks();
     addNotification({
       title: editingReturn ? 'Sell Return Updated' : 'Sell Return Saved',
       message: `Credit note ${returnRecord.referenceNo} was ${editingReturn ? 'updated' : 'recorded'}.`,
@@ -438,7 +444,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
     } else {
       globalAddSellReturn(returnRecord);
     }
-    clearStoredReturnLinks();
     addNotification({
       title: editingReturn ? 'Sell Return Updated' : 'Sell Return Saved',
       message: `Credit note ${returnRecord.referenceNo} was ${editingReturn ? 'updated' : 'recorded'}.`,
@@ -499,7 +504,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate }) => {
       <div className="flex items-center gap-3">
         <button
           onClick={() => {
-            clearStoredReturnLinks();
             onNavigate('returns');
           }}
           className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition"

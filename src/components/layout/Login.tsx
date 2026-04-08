@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
+import { verifyUserPassword } from '@/utils/authSecurity';
 
 interface LoginProps {
   onLogin: () => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const { setCurrentUser, updateUser, settings } = useGlobalContext();
+  const { users, setCurrentUser, updateUser, settings } = useGlobalContext();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -16,30 +17,52 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     e.preventDefault();
     setError('');
 
+    // --- Try the backend API first (production path) ---
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+          signal: controller.signal,
+        }
+      );
+      clearTimeout(timeoutId);
 
       const payload = await response.json();
-
       if (!response.ok || !payload.ok) {
         setError(payload.error || 'Invalid email or password. Please try again.');
         return;
       }
 
-      // Save token
       localStorage.setItem('atwar_auth_token', payload.token);
-      
-      // Update global context with real user
       updateUser(payload.user);
       setCurrentUser(payload.user);
       onLogin();
-    } catch (err) {
-      setError('Unable to reach the server. Please check your connection.');
+      return;
+    } catch {
+      // Server unreachable (offline / E2E / no backend) — fall through to local auth
     }
+
+    // --- Offline fallback: verify against localStorage users ---
+    const normalizedEmail = email.trim().toLowerCase();
+    const match = users.find(u => String(u.email || '').trim().toLowerCase() === normalizedEmail);
+    if (!match) {
+      setError('Invalid email or password. Please try again.');
+      return;
+    }
+    const valid = verifyUserPassword(match, password);
+    if (!valid) {
+      setError('Invalid email or password. Please try again.');
+      return;
+    }
+    const updated = { ...match, lastLogin: new Date().toISOString() };
+    updateUser(updated);
+    setCurrentUser(updated);
+    onLogin();
   };
 
   return (

@@ -45,8 +45,6 @@ import ListStockTransfers from '@/components/stock/ListStockTransfers';
 import AddStockTransfer from '@/components/stock/AddStockTransfer';
 import ListStockAdjustments from '@/components/stock/ListStockAdjustments';
 import AddStockAdjustment from '@/components/stock/AddStockAdjustment';
-import { getEditStockAdjustmentIdKey } from '@/utils/stockAdjustments';
-import { getEditExpenseIdKey } from '@/utils/expenses';
 import Orders from '@/components/orders/Orders';
 import AddOrder from '@/components/orders/AddOrder';
 import ViewOrder from '@/components/orders/ViewOrder';
@@ -189,6 +187,17 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     setIsAuthenticated(!!currentUser);
   }, [currentUser]);
+
+  // When the JWT expires the server returns 401. apiClient dispatches this
+  // event so all users are returned to the login screen automatically.
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+    };
+    window.addEventListener('atwar:auth:expired', handleAuthExpired);
+    return () => window.removeEventListener('atwar:auth:expired', handleAuthExpired);
+  }, [setCurrentUser]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -343,7 +352,6 @@ const AppContent: React.FC = () => {
   const canEditStockAdjustments =
     hasRolePermission('Stock Adjustment', 'Edit stock adjustment') ||
     canManageLegacyStockOperations;
-  const canManageStockAdjustments = canAddStockAdjustments || canEditStockAdjustments;
   const canDeleteStockAdjustments =
     hasRolePermission('Stock Adjustment', 'Delete stock adjustment') ||
     hasRolePermission('Purchase & Stock Adjustment', 'Delete purchase & Stock Adjustment');
@@ -536,6 +544,106 @@ const AppContent: React.FC = () => {
         return <AddUser isEdit={true} userId={id} onNavigate={setCurrentPage} />;
     }
 
+    // Handle parameterized add-sell-return/sale/{saleId}
+    if (currentPage.startsWith('add-sell-return/sale/')) {
+      if (!canAccessSellReturns) return renderAccessDenied('Sell Returns');
+      const saleId = currentPage.split('/')[2] || '';
+      return <AddSellReturn onNavigate={setCurrentPage} prefillSaleId={saleId} />;
+    }
+
+    // Handle parameterized add-sell-return/edit/{returnId}
+    if (currentPage.startsWith('add-sell-return/edit/')) {
+      if (!canAccessSellReturns) return renderAccessDenied('Sell Returns');
+      const returnId = currentPage.split('/')[2] || '';
+      return <AddSellReturn onNavigate={setCurrentPage} editReturnId={returnId} />;
+    }
+
+    // Handle parameterized add-stock-transfer/{transferId}
+    if (currentPage.startsWith('add-stock-transfer/')) {
+      if (!settings.enableStockTransfers) return renderModuleDisabled('Stock Transfers');
+      if (!canManageStockTransfers) return renderAccessDenied('Stock Transfers');
+      const transferId = currentPage.split('/')[1] || '';
+      return <AddStockTransfer onNavigate={setCurrentPage} editTransferId={transferId} />;
+    }
+
+    // Handle parameterized add-stock-adjustment/{adjustmentId}
+    if (currentPage.startsWith('add-stock-adjustment/')) {
+      if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
+      if (!canEditStockAdjustments) return renderAccessDenied('Stock Adjustments');
+      const adjustmentId = currentPage.split('/')[1] || '';
+      return (
+        <AddStockAdjustment
+          onNavigate={setCurrentPage}
+          editAdjustmentId={adjustmentId}
+          canAdd={canAddStockAdjustments}
+          canEdit={canEditStockAdjustments}
+          restrictToAddedById={stockAdjustmentOwnerScopeId}
+          restrictToAddedByName={stockAdjustmentOwnerScopeName}
+        />
+      );
+    }
+
+    // Handle parameterized purchase-order/{requisitionId}
+    if (currentPage.startsWith('purchase-order/')) {
+      if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+      if (!settings.enablePurchaseOrder) return renderModuleDisabled('Purchase Order');
+      const requisitionId = currentPage.split('/')[1] || '';
+      return <PurchaseOrder onNavigate={setCurrentPage} prefillRequisitionId={requisitionId} />;
+    }
+
+    // Handle parameterized add-purchase/{orderId}
+    if (currentPage.startsWith('add-purchase/')) {
+      if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+      const orderId = currentPage.split('/')[1] || '';
+      return <AddPurchase onNavigate={setCurrentPage} prefillOrderId={orderId} />;
+    }
+
+    // Handle parameterized purchase-return/{purchaseId}
+    if (currentPage.startsWith('purchase-return/')) {
+      if (!settings.enablePurchases) return renderModuleDisabled('Purchases');
+      const purchaseId = currentPage.split('/')[1] || '';
+      return <PurchaseReturn prefillPurchaseId={purchaseId} />;
+    }
+
+    // Handle parameterized convert-order-to-invoice/{orderId}
+    if (currentPage.startsWith('convert-order-to-invoice/')) {
+      if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
+      if (!canGenerateInvoiceFromOrders) return renderAccessDenied('Orders');
+      const orderId = currentPage.split('/')[1] || '';
+      if (!orderId) return renderAccessDenied('Orders');
+      return <AddSale fromOrder={true} sourceOrderId={orderId} onNavigate={setCurrentPage} />;
+    }
+
+    // Handle parameterized edit-expense/{expenseId}
+    if (currentPage.startsWith('edit-expense/')) {
+      if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
+      if (!canEditExpenses) return renderAccessDenied('Expenses');
+      const expenseId = currentPage.split('/')[1] || '';
+      if (!expenseId) return renderAccessDenied('Expenses');
+      return (
+        <AddExpense
+          isEdit
+          editExpenseId={expenseId}
+          onNavigate={setCurrentPage}
+          canAdd={canAddExpenses}
+          canEdit={canEditExpenses}
+          restrictToAddedById={expenseOwnerScopeId}
+          restrictToAddedByName={expenseOwnerScopeName}
+        />
+      );
+    }
+
+    // Handle parameterized payment-account-report/{account}:{location}
+    if (currentPage.startsWith('payment-account-report/')) {
+      if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
+      if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
+      const encoded = currentPage.split('/')[1] || '';
+      const [encodedAccount, encodedLocation] = encoded.split(':');
+      const initialAccount = decodeURIComponent(encodedAccount || '').trim();
+      const initialLocation = decodeURIComponent(encodedLocation || '').trim();
+      return <PaymentAccountReport initialAccount={initialAccount} initialLocation={initialLocation} />;
+    }
+
     switch(currentPage) {
       case 'dashboard': return <Dashboard onNavigate={setCurrentPage} />;
       case 'users': return <Users onNavigate={setCurrentPage} />;
@@ -627,16 +735,7 @@ const AppContent: React.FC = () => {
         );
       case 'add-stock-adjustment':
         if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
-        try {
-          const editId = localStorage.getItem(getEditStockAdjustmentIdKey()) || '';
-          if (editId) {
-            if (!canEditStockAdjustments) return renderAccessDenied('Stock Adjustments');
-          } else if (!canAddStockAdjustments) {
-            return renderAccessDenied('Stock Adjustments');
-          }
-        } catch {
-          if (!canManageStockAdjustments) return renderAccessDenied('Stock Adjustments');
-        }
+        if (!canAddStockAdjustments) return renderAccessDenied('Stock Adjustments');
         return (
           <AddStockAdjustment
             onNavigate={setCurrentPage}
@@ -678,7 +777,8 @@ const AppContent: React.FC = () => {
       case 'convert-order-to-invoice':
         if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
         if (!canGenerateInvoiceFromOrders) return renderAccessDenied('Orders');
-        return <AddSale fromOrder={true} onNavigate={setCurrentPage} />;
+        if (!selectedOrderId) return renderAccessDenied('Orders');
+        return <AddSale fromOrder={true} sourceOrderId={selectedOrderId} onNavigate={setCurrentPage} />;
       case 'new-payment':
         if (!canAddSellPayments) return renderAccessDenied('Payments');
         return <NewPayment onNavigate={setCurrentPage} />;
@@ -751,23 +851,8 @@ const AppContent: React.FC = () => {
         );
       case 'edit-expense':
         if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
-        try {
-          const editId = localStorage.getItem(getEditExpenseIdKey()) || '';
-          if (!editId) return renderAccessDenied('Expenses');
-        } catch {
-          return renderAccessDenied('Expenses');
-        }
         if (!canEditExpenses) return renderAccessDenied('Expenses');
-        return (
-          <AddExpense
-            isEdit
-            onNavigate={setCurrentPage}
-            canAdd={canAddExpenses}
-            canEdit={canEditExpenses}
-            restrictToAddedById={expenseOwnerScopeId}
-            restrictToAddedByName={expenseOwnerScopeName}
-          />
-        );
+        return renderAccessDenied('Expenses');
       case 'expense-categories':
         if (!settings.enableExpenses) return renderModuleDisabled('Expenses');
         if (!canAddExpenses && !canEditExpenses && !canDeleteExpenses) return renderAccessDenied('Expense Categories');

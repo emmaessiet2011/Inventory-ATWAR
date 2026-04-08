@@ -603,8 +603,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
         return;
       }
       if (onNavigate) {
-          localStorage.setItem('app_sell_return_sale_id', saleId);
-          onNavigate('add-sell-return');
+          onNavigate(`add-sell-return/sale/${saleId}`);
       }
       setActiveActionId(null);
   };

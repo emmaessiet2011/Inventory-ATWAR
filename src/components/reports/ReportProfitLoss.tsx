@@ -21,8 +21,16 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
-import { readStockTransfers } from '@/utils/stockTransfers';
-import { readStockAdjustments } from '@/utils/stockAdjustments';
+import {
+  bootstrapStockTransfersFromDB,
+  getStockTransferStorageKey,
+  readStockTransfers,
+} from '@/utils/stockTransfers';
+import {
+  bootstrapStockAdjustmentsFromDB,
+  getStockAdjustmentStorageKey,
+  readStockAdjustments,
+} from '@/utils/stockAdjustments';
 import { parseExpenseDateToMs } from '@/utils/expenses';
 
 interface DateRangeValue {
@@ -153,7 +161,38 @@ const ReportProfitLoss: React.FC = () => {
     label: true,
     grossProfit: true,
   });
+  const [stockOpsVersion, setStockOpsVersion] = useState(0);
   const columnMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const transfersKey = getStockTransferStorageKey();
+    const adjustmentsKey = getStockAdjustmentStorageKey();
+    const refreshStockOps = () => setStockOpsVersion((prev) => prev + 1);
+    let isMounted = true;
+
+    const bootstrap = async () => {
+      await Promise.all([
+        bootstrapStockTransfersFromDB().catch(() => {}),
+        bootstrapStockAdjustmentsFromDB().catch(() => {}),
+      ]);
+      if (isMounted) refreshStockOps();
+    };
+    bootstrap();
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === transfersKey || event.key === adjustmentsKey) {
+        refreshStockOps();
+      }
+    };
+
+    window.addEventListener('focus', refreshStockOps);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      isMounted = false;
+      window.removeEventListener('focus', refreshStockOps);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
 
   const startMs = useMemo(() => (
     dateRange.startDate
@@ -477,7 +516,7 @@ const ReportProfitLoss: React.FC = () => {
       return sum + shipping;
     }, 0);
     return round3(total);
-  }, [startMs, endMs, hasDateFilter, selectedLocationSet]);
+  }, [startMs, endMs, hasDateFilter, selectedLocationSet, stockOpsVersion]);
 
   const totalStockAdjustment = useMemo(() => {
     const total = readStockAdjustments().reduce((sum, adjustment) => {
@@ -488,7 +527,7 @@ const ReportProfitLoss: React.FC = () => {
       return sum + amount;
     }, 0);
     return round3(total);
-  }, [startMs, endMs, hasDateFilter, selectedLocationSet]);
+  }, [startMs, endMs, hasDateFilter, selectedLocationSet, stockOpsVersion]);
 
   const totalStockRecovered = useMemo(() => {
     const total = readStockAdjustments().reduce((sum, adjustment) => {
@@ -499,7 +538,7 @@ const ReportProfitLoss: React.FC = () => {
       return sum + recovered;
     }, 0);
     return round3(total);
-  }, [startMs, endMs, hasDateFilter, selectedLocationSet]);
+  }, [startMs, endMs, hasDateFilter, selectedLocationSet, stockOpsVersion]);
 
   const totalExpense = useMemo(() => {
     const total = expenses.reduce((sum, expense) => {

@@ -7,7 +7,7 @@ import {
   StockTransferRecord,
   StockTransferStatus,
   appendStockLedgerEntries,
-  getEditStockTransferIdKey,
+  bootstrapStockTransfersFromDB,
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
@@ -16,6 +16,7 @@ import {
 
 interface AddStockTransferProps {
   onNavigate?: (page: string) => void;
+  editTransferId?: string;
 }
 
 const STATUS_OPTIONS: StockTransferStatus[] = ['Pending', 'In Transit', 'Completed'];
@@ -44,7 +45,7 @@ const toIso = (value: string) => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 };
 
-const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate }) => {
+const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTransferId }) => {
   const { locations, products, setProducts, generateId, settings, currentUser, formatCurrency, addActivityLog } = useGlobalContext();
   const { addNotification } = useNotifications();
   const defaultUnitLabel = String(settings.defaultUnit || 'Pc(s)').trim() || 'Pc(s)';
@@ -79,32 +80,39 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate }) => {
   };
 
   useEffect(() => {
-    const editId = localStorage.getItem(getEditStockTransferIdKey()) || '';
-    if (!editId) return;
-    const existing = readStockTransfers().find(row => row.id === editId);
-    if (!existing) {
-      localStorage.removeItem(getEditStockTransferIdKey());
-      return;
-    }
-    setEditingTransferId(existing.id);
-    setDate(toDateTimeInput(existing.date));
-    setRefNo(existing.refNo || '');
-    setStatus(existing.status);
-    setLocationFrom(resolveLocationName(existing.locationFrom || ''));
-    setLocationTo(resolveLocationName(existing.locationTo || ''));
-    setShippingCharges(String(existing.shippingCharges ?? 0));
-    setNotes(existing.notes || '');
-    setRows(
-      (existing.items || []).map(item => ({
-        productId: String(item.productId || ''),
-        productName: String(item.productName || ''),
-        sku: String(item.sku || ''),
-        qty: round3(Number(item.qty || 0)),
-        unit: item.unit || defaultUnitLabel,
-        unitCost: round3(Number(item.unitCost || 0)),
-      })),
-    );
-  }, [defaultUnitLabel, locations]);
+    let isMounted = true;
+    const loadTransfer = async () => {
+      await bootstrapStockTransfersFromDB().catch(() => {});
+      if (!isMounted) return;
+
+      const editId = String(editTransferId || '').trim();
+      if (!editId) return;
+      const existing = readStockTransfers().find(row => row.id === editId);
+      if (!existing) return;
+      setEditingTransferId(existing.id);
+      setDate(toDateTimeInput(existing.date));
+      setRefNo(existing.refNo || '');
+      setStatus(existing.status);
+      setLocationFrom(resolveLocationName(existing.locationFrom || ''));
+      setLocationTo(resolveLocationName(existing.locationTo || ''));
+      setShippingCharges(String(existing.shippingCharges ?? 0));
+      setNotes(existing.notes || '');
+      setRows(
+        (existing.items || []).map(item => ({
+          productId: String(item.productId || ''),
+          productName: String(item.productName || ''),
+          sku: String(item.sku || ''),
+          qty: round3(Number(item.qty || 0)),
+          unit: item.unit || defaultUnitLabel,
+          unitCost: round3(Number(item.unitCost || 0)),
+        })),
+      );
+    };
+    loadTransfer();
+    return () => {
+      isMounted = false;
+    };
+  }, [defaultUnitLabel, locations, editTransferId]);
 
   const sourceProducts = useMemo(
     () => products.filter(product => !locationFrom || resolveLocationIdentity(product.businessLocation) === resolveLocationIdentity(locationFrom)),
@@ -181,7 +189,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate }) => {
   };
 
   const handleCancel = () => {
-    localStorage.removeItem(getEditStockTransferIdKey());
     onNavigate?.('list-stock-transfers');
   };
 
@@ -285,9 +292,9 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate }) => {
         : [nextRecord, ...allTransfers];
       writeStockTransfers(
         mergedTransfers.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+        nextRecord.id,
       );
 
-      localStorage.removeItem(getEditStockTransferIdKey());
       addNotification({
         title: editingRecord ? 'Transfer Updated' : 'Transfer Saved',
         message: `${nextRecord.refNo} has been ${editingRecord ? 'updated' : 'created'} successfully.`,
