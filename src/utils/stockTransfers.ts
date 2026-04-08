@@ -1,5 +1,5 @@
 import { Product } from '../context/GlobalContext';
-import { syncDedicated, deleteDedicated, fetchDedicated } from '@/utils/apiClient';
+import { syncDedicated, deleteDedicated, fetchDedicated } from './apiClient';
 
 export type StockTransferStatus = 'Pending' | 'In Transit' | 'Completed';
 

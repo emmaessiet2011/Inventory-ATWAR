@@ -1,4 +1,4 @@
-import { syncDedicated, deleteDedicated, fetchDedicated } from '@/utils/apiClient';
+import { syncDedicated, deleteDedicated, fetchDedicated } from './apiClient';
 
 export interface StockLotBalance {
   id: string;
