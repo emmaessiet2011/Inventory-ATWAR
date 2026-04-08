@@ -172,19 +172,31 @@ app.get('/api/health', async (_req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password) {
+    const identifier = String(email || '').trim();
+    const normalizedPassword = String(password || '');
+    if (!identifier || !normalizedPassword) {
       return res.status(400).json({ ok: false, error: 'Email and password are required' });
     }
 
-    const user = await prisma.appUser.findUnique({
-      where: { email: email.toLowerCase() }
+    // Accept login by email or username, case-insensitive.
+    // This prevents lockouts for accounts created with mixed-case email values.
+    const user = await prisma.appUser.findFirst({
+      where: {
+        OR: [
+          { email: identifier.toLowerCase() },
+          { email: { equals: identifier, mode: 'insensitive' } },
+          { username: { equals: identifier, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
     });
 
-    if (!user || user.status !== 'ACTIVE' || user.allowLogin === false) {
+    const normalizedStatus = String(user?.status || '').trim().toUpperCase();
+    if (!user || normalizedStatus !== 'ACTIVE' || user.allowLogin === false) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
     }
 
-    const { isValid, needsMigration } = await verifyPassword(password, user);
+    const { isValid, needsMigration } = await verifyPassword(normalizedPassword, user);
     
     if (!isValid) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
@@ -192,7 +204,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Migrate password to secure bcrypt hash seamlessly
     if (needsMigration) {
-      const newHash = await hashPassword(password);
+      const newHash = await hashPassword(normalizedPassword);
       await prisma.appUser.update({
         where: { id: user.id },
         data: { passwordHash: newHash, passwordSalt: null, password: null }
