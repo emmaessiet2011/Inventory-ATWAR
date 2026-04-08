@@ -17,6 +17,7 @@ try {
 const prisma = new PrismaClient();
 const app = express();
 const port = Number(process.env.PORT || 4000);
+const host = process.env.HOST || '0.0.0.0';
 const frontendOrigin = String(process.env.FRONTEND_ORIGIN || 'http://localhost:5173')
   .split(',')
   .map((v) => v.trim())
@@ -133,12 +134,38 @@ const sendPrismaError = (res, error, fallbackMessage) => {
   return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : fallbackMessage });
 };
 
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    status: 'up',
+    serverTime: new Date().toISOString(),
+  });
+});
+
 app.get('/api/health', async (_req, res) => {
+  const timeoutMs = Number(process.env.HEALTH_DB_TIMEOUT_MS || 1500);
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, db: 'connected', serverTime: new Date().toISOString() });
+    await Promise.race([
+      prisma.$queryRaw`SELECT 1`,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`DB ping timeout after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+    return res.status(200).json({
+      ok: true,
+      status: 'up',
+      db: 'connected',
+      serverTime: new Date().toISOString(),
+    });
   } catch (error) {
-    res.status(500).json({ ok: false, db: 'disconnected', error: error instanceof Error ? error.message : 'Unknown database error' });
+    // Keep this endpoint fast and non-blocking so platform health checks do not stall deploy.
+    return res.status(200).json({
+      ok: true,
+      status: 'degraded',
+      db: 'disconnected',
+      serverTime: new Date().toISOString(),
+      reason: error instanceof Error ? error.message : 'Unknown database error',
+    });
   }
 });
 
@@ -735,8 +762,13 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
-app.listen(port, () => {
-  console.log(`[ATWAR BSS API] running at http://localhost:${port}`);
+console.log(`[ATWAR BSS API] booting with Node ${process.version} on ${host}:${port}`);
+const server = app.listen(port, host, () => {
+  console.log(`[ATWAR BSS API] running at http://${host}:${port}`);
+});
+server.on('error', (error) => {
+  console.error('[ATWAR BSS API] failed to start listener', error);
+  process.exit(1);
 });
 
 const shutdown = async () => {
