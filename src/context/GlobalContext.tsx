@@ -43,6 +43,7 @@ import {
 import {
   apiFetchAll,
   apiFetchAllWithRetry,
+  hasValidAuthToken,
   isLiveSyncEnabled,
   syncRecord,
   deleteRecord,
@@ -2928,13 +2929,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       coreSyncReadyRef.current = true;
       return;
     }
-    const hasToken = (() => {
-      try {
-        return !!localStorage.getItem('atwar_auth_token');
-      } catch {
-        return false;
-      }
-    })();
+    const hasToken = hasValidAuthToken();
     if (!hasToken) {
       // Before login there is no token, so avoid protected API calls that would
       // spam 401 errors in console and falsely set sync status to error.
@@ -3049,7 +3044,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Keep Render free-tier server warm — ping every 10 minutes so it never sleeps.
   useEffect(() => {
     if (!isCoreSyncEnabled()) return;
-    const id = window.setInterval(() => { void pingBackend(); }, 10 * 60 * 1000);
+    const id = window.setInterval(() => {
+      if (!hasValidAuthToken()) return;
+      void pingBackend();
+    }, 10 * 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -3104,11 +3102,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!isLiveSyncEnabled()) return;
 
     const poll = async () => {
-      try {
-        if (!localStorage.getItem('atwar_auth_token')) return;
-      } catch {
-        return;
-      }
+      if (!hasValidAuthToken()) return;
       try {
         const [
           freshProducts, freshSales, freshPayments, freshCustomers,

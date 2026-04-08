@@ -34,12 +34,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       clearTimeout(timeoutId);
 
       const payload = await response.json();
-      if (!response.ok || !payload.ok) {
+      const token = typeof payload?.token === 'string' ? payload.token.trim() : '';
+      if (!response.ok || !payload.ok || !token || !payload?.user) {
         setError(payload.error || 'Invalid email or password. Please try again.');
         return;
       }
 
-      localStorage.setItem('atwar_auth_token', payload.token);
+      localStorage.setItem('atwar_auth_token', token);
       updateUser(payload.user);
       setCurrentUser(payload.user);
       onLogin();
@@ -55,8 +56,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
 
     // --- Offline fallback: verify against localStorage users ---
-    const normalizedEmail = email.trim().toLowerCase();
-    const match = users.find(u => String(u.email || '').trim().toLowerCase() === normalizedEmail);
+    const normalizedIdentifier = email.trim().toLowerCase();
+    const match = users.find(u => {
+      const emailMatch = String(u.email || '').trim().toLowerCase() === normalizedIdentifier;
+      const usernameMatch = String(u.username || '').trim().toLowerCase() === normalizedIdentifier;
+      return emailMatch || usernameMatch;
+    });
     if (!match) {
       setError('Invalid email or password. Please try again.');
       return;
@@ -123,16 +128,16 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             )}
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-medium text-slate-700 block mb-1">Email Address</label>
+                <label className="text-sm font-medium text-slate-700 block mb-1">Email or Username</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                     <Mail className="h-5 w-5 text-slate-400" />
                   </div>
                   <input
-                    type="email"
+                    type="text"
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
-                    placeholder="manager@atwar.com"
+                    placeholder="manager@atwar.com or manager1"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />

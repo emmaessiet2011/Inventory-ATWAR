@@ -8,7 +8,52 @@
 const getApiBase = (): string =>
   String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
 
-const getToken = (): string => localStorage.getItem('atwar_auth_token') || '';
+const AUTH_TOKEN_KEY = 'atwar_auth_token';
+
+const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
+  const parts = String(token || '').split('.');
+  if (parts.length < 2) return null;
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded));
+    return payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+
+const isTokenExpired = (token: string): boolean => {
+  const payload = decodeJwtPayload(token);
+  if (!payload) return true;
+  const exp = Number(payload.exp);
+  if (!Number.isFinite(exp) || exp <= 0) return true;
+  return Date.now() >= exp * 1000;
+};
+
+/**
+ * Called whenever the server returns 401 (token expired or invalid).
+ * Clears the stored token and dispatches a global event so the app
+ * can redirect to the login screen automatically.
+ */
+function handle401(): void {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
+}
+
+const getToken = (): string => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  if (!token) return '';
+  // Avoid request storms with expired JWTs: clear the token before
+  // any protected call is attempted.
+  if (isTokenExpired(token)) {
+    handle401();
+    return '';
+  }
+  return token;
+};
+
+export const hasValidAuthToken = (): boolean => Boolean(getToken());
 
 const authHeaders = (): Record<string, string> => {
   const token = getToken();
@@ -17,16 +62,6 @@ const authHeaders = (): Record<string, string> => {
     Accept: 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-};
-
-/**
- * Called whenever the server returns 401 (token expired or invalid).
- * Clears the stored token and dispatches a global event so the app
- * can redirect to the login screen automatically.
- */
-const handle401 = (): void => {
-  localStorage.removeItem('atwar_auth_token');
-  window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
 };
 
 /**
@@ -45,6 +80,7 @@ export const isLiveSyncEnabled = (): boolean => {
  * original frontend object. Falls back to the whole row if no meta.
  */
 export async function apiFetchAll<T>(resource: string): Promise<T[]> {
+  if (!isLiveSyncEnabled() || !hasValidAuthToken()) return [];
   const res = await fetch(
     `${getApiBase()}/api/data/${encodeURIComponent(resource)}?paginate=false`,
     { headers: authHeaders() },
@@ -67,6 +103,7 @@ export async function apiFetchAllWithRetry<T>(
   resource: string,
   retries = 2,
 ): Promise<T[] | null> {
+  if (!isLiveSyncEnabled() || !hasValidAuthToken()) return null;
   const delays = [5_000, 15_000];
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

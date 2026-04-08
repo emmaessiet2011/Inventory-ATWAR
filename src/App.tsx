@@ -192,6 +192,7 @@ const AppContent: React.FC = () => {
   // event so all users are returned to the login screen automatically.
   useEffect(() => {
     const handleAuthExpired = () => {
+      try { localStorage.removeItem('atwar_auth_token'); } catch {}
       setCurrentUser(null);
       setIsAuthenticated(false);
     };
@@ -992,6 +993,7 @@ const AppContent: React.FC = () => {
         currentPage={currentPage} 
         onNavigate={setCurrentPage}
         onLogout={() => {
+          try { localStorage.removeItem('atwar_auth_token'); } catch {}
           setCurrentUser(null);
           setIsAuthenticated(false);
         }}
