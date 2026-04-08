@@ -33,8 +33,9 @@ export const loginAsAdmin = async (page: Page) => {
     return;
   }
 
-  await page.locator('input[type="email"]').fill('admin@atwar.com');
-  await page.locator('input[type="password"]').fill('admin123');
+  const loginIdentifierInput = page.getByRole('textbox').first();
+  await loginIdentifierInput.fill('admin@atwar.com');
+  await page.locator('input[type="password"]').first().fill('admin123');
   await page.getByRole('button', { name: 'Sign In' }).click();
 
   if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
@@ -44,7 +45,7 @@ export const loginAsAdmin = async (page: Page) => {
   // CI preview runs frontend-only and may not have a live auth backend.
   // For route smoke coverage, seed a deterministic authenticated session
   // whenever login is still on the auth screen after submit.
-  const stillOnLogin = await page.locator('input[type="email"]').isVisible().catch(() => false);
+  const stillOnLogin = await page.getByRole('button', { name: 'Sign In' }).isVisible().catch(() => false);
   if (stillOnLogin) {
     await seedFallbackSession(page);
   }
