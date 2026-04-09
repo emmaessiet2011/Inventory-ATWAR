@@ -160,6 +160,7 @@ const AppContent: React.FC = () => {
     { label: 'Activity Log', page: 'activity-log' },
     { label: 'Profit / Loss Report', page: 'report-profit-loss' },
     { label: 'Tax Report', page: 'report-tax' },
+    { label: 'VAT Bills', page: 'vat-bills' },
     { label: 'Stock Report', page: 'report-stock' },
     { label: 'Product Purchase Report', page: 'report-product-purchase' },
     { label: 'Product Sell Report', page: 'report-product-sell' },
@@ -816,7 +817,9 @@ const AppContent: React.FC = () => {
         if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
         if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');
         return <PaymentAccountReport />;
-      case 'vat-bills': return <VatBills />;
+      case 'vat-bills':
+        if (!canViewTaxReport) return renderAccessDenied('VAT Bills');
+        return <VatBills />;
       case 'tax-rates':
         if (!canViewTaxRates) return renderAccessDenied('Tax Rates');
         return <TaxRates />;

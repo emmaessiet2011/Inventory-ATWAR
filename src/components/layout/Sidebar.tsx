@@ -195,6 +195,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         { title: 'Profit / Loss Report', path: 'report-profit-loss' },
         { title: 'Purchase & Sale', path: 'report-purchase-sale' },
         { title: 'Tax Report', path: 'report-tax' },
+        { title: 'VAT Bills', path: 'vat-bills' },
         { title: 'Supplier & Customer Report', path: 'report-supplier-customer' },
         { title: 'Customer Groups Report', path: 'report-customer-groups' },
         { title: 'Stock Report', path: 'report-stock' },
@@ -478,6 +479,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             return settings.enableSellPaymentReport && canViewPurchaseSaleReport;
           }
           if (s.path === 'report-tax') {
+            return canViewTaxReport;
+          }
+          if (s.path === 'vat-bills') {
             return canViewTaxReport;
           }
           if (s.path === 'report-profit-loss') {
