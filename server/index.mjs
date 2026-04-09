@@ -1287,8 +1287,17 @@ app.post('/api/bootstrap/defaults', async (_req, res) => {
 
 // Serve React frontend static files (built by `npm run build`)
 const distPath = path.resolve(__dirname, '../dist');
-app.use(express.static(distPath));
+app.use(express.static(distPath, {
+  // Fingerprinted assets can be cached aggressively.
+  maxAge: '365d',
+  index: false,
+}));
 app.get('*', (_req, res) => {
+  // Always revalidate HTML so clients pick up new bundle filenames quickly.
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   res.sendFile(path.join(distPath, 'index.html'));
 });
 

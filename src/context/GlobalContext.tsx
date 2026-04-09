@@ -2973,7 +2973,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<Purchase>('purchases'),
           apiFetchAllWithRetry<SellReturn>('sellReturns'),
           apiFetchAllWithRetry<PurchaseReturn>('purchaseReturns'),
-          apiFetchAllWithRetry<GlobalOrder>('orders'),
+          apiFetchAllWithRetry<GlobalOrder>('salesOrders'),
           apiFetchAllWithRetry<ActivityLogEntry>('activityLogs'),
           fetchCollection<PurchaseRequisition>('purchaseRequisitions'),
           fetchCollection<PurchaseOrder>('purchaseOrders'),
@@ -3116,7 +3116,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<Purchase>('purchases').catch(() => null),
           apiFetchAll<SellReturn>('sellReturns').catch(() => null),
           apiFetchAll<PurchaseReturn>('purchaseReturns').catch(() => null),
-          apiFetchAll<GlobalOrder>('orders').catch(() => null),
+          apiFetchAll<GlobalOrder>('salesOrders').catch(() => null),
         ]);
         if (freshProducts) setProducts(freshProducts);
         if (freshSales) setSales(freshSales);
