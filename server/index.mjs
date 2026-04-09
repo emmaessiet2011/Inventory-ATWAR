@@ -196,10 +196,34 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
     }
 
-    const { isValid, needsMigration } = await verifyPassword(normalizedPassword, user);
+    // Backward-compat: older sync builds may have stored credential fields only in `meta`.
+    // Use them for verification and repair canonical columns after successful login.
+    const userMeta = toObject(user.meta);
+    const fallbackPasswordHash = String(userMeta.passwordHash || '').trim();
+    const fallbackPasswordSalt = String(userMeta.passwordSalt || '').trim();
+    const fallbackPlainPassword = String(userMeta.password || '').trim();
+    const loginUser = {
+      ...user,
+      passwordHash: String(user.passwordHash || '').trim() || fallbackPasswordHash || undefined,
+      passwordSalt: String(user.passwordSalt || '').trim() || fallbackPasswordSalt || undefined,
+      password: fallbackPlainPassword || undefined,
+    };
+
+    const { isValid, needsMigration } = await verifyPassword(normalizedPassword, loginUser);
     
     if (!isValid) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
+    }
+
+    // Heal missing credential columns from fallback meta values.
+    if ((!user.passwordHash || !user.passwordSalt) && (fallbackPasswordHash || fallbackPasswordSalt)) {
+      await prisma.appUser.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: fallbackPasswordHash || user.passwordHash || null,
+          passwordSalt: fallbackPasswordSalt || user.passwordSalt || null,
+        },
+      });
     }
 
     // Migrate password to secure bcrypt hash seamlessly
