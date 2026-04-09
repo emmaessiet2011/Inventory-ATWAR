@@ -754,19 +754,27 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
         if (sourceOrder) {
           if (sourceOrder.convertedSaleId) {
             const existingConvertedSale = sales.find(s => s.id === sourceOrder.convertedSaleId);
-            addNotification({
-              title: 'Order Already Converted',
-              message: existingConvertedSale
-                ? `Order ${sourceOrder.orderNumber} is already converted to invoice ${existingConvertedSale.invoiceNo}.`
-                : `Order ${sourceOrder.orderNumber} is already converted.`,
-              type: 'warning',
-            });
-            setSourceOrderId(sourceOrder.id);
-            setSourceOrderNumber(sourceOrder.orderNumber);
-            if (onNavigate) {
-              onNavigate(existingConvertedSale ? `edit-sale/${existingConvertedSale.id}` : 'sales');
+            if (existingConvertedSale) {
+              addNotification({
+                title: 'Order Already Converted',
+                message: `Order ${sourceOrder.orderNumber} is already converted to invoice ${existingConvertedSale.invoiceNo}.`,
+                type: 'warning',
+              });
+              setSourceOrderId(sourceOrder.id);
+              setSourceOrderNumber(sourceOrder.orderNumber);
+              if (onNavigate) {
+                onNavigate(`edit-sale/${existingConvertedSale.id}`);
+              }
+              return;
             }
-            return;
+            // Stale conversion pointer (invoice record no longer exists):
+            // allow regeneration and clear stale fields so future clicks work normally.
+            updateOrder({
+              ...sourceOrder,
+              convertedSaleId: undefined,
+              convertedInvoiceNo: undefined,
+              convertedAt: undefined,
+            });
           }
 
           const selectedCustomer = customerList.find(c => c.id === sourceOrder.customerId) || {
