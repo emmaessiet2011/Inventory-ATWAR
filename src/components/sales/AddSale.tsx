@@ -153,6 +153,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const scopedDraftStorageKey = `addSaleDraft:${draftScope}:${draftOwner}`;
   const legacySharedDraftKey = 'addSaleDraft';
   const shouldUseLocalDraftCache = !isLiveSyncEnabled();
+  const normalizeSaleLifecycleStatus = (
+    value?: string,
+  ): 'Final' | 'Draft' | 'Quotation' | 'Proforma' => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (normalized === 'FINAL') return 'Final';
+    if (normalized === 'DRAFT' || normalized === 'SUSPEND') return 'Draft';
+    if (normalized === 'QUOTATION') return 'Quotation';
+    if (normalized === 'PROFORMA') return 'Proforma';
+    return 'Final';
+  };
 
   const commissionAgentEnabledInSale = settings.salesCommissionAgent === 'Enable' || settings.enableCommissionAgents;
   const commissionAgentRequiredInSale = commissionAgentEnabledInSale && settings.isCommissionAgentRequired;
@@ -903,7 +913,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
         setSaleDate(toDateTimeLocal(existingSale.date));
         setSellNote(existingSale.sellNote || '');
-        setStatus((existingSale.status || existingSale.saleStatus || 'Final') as 'Final' | 'Draft' | 'Quotation' | 'Proforma');
+        setStatus(normalizeSaleLifecycleStatus(existingSale.status || existingSale.saleStatus));
         const mappedSaleType = existingSale.saleType || (existingSale.paymentStatus === 'Paid' ? 'Paid' : 'Credit Sale');
         setSaleType(settings.disableCreditSaleButton && mappedSaleType === 'Credit Sale' ? 'Paid' : mappedSaleType);
         const resolvedLocation = existingSale.location || defaultLocationName;
@@ -1459,7 +1469,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       : defaultLayout;
     const invoicePrefix = resolveInvoicePrefixForStatus(status, scheme);
     const existingInvoiceNo = String(existingSale?.invoiceNo || '').trim();
-    const existingStatus = String(existingSale?.status || existingSale?.saleStatus || '').trim();
+    const existingStatus = normalizeSaleLifecycleStatus(existingSale?.status || existingSale?.saleStatus);
     const wasNonFinal = !!existingSale && existingStatus !== 'Final';
     const finalPrefix = resolveInvoicePrefixForStatus('Final', scheme);
     const normalizedExistingInvoiceNo = existingInvoiceNo.toLowerCase();
@@ -1659,7 +1669,15 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       if (isEdit) {
           updateSale(newSale);
       } else {
-          addSale(newSale);
+          const created = addSale(newSale);
+          if (!created) {
+            addNotification({
+              title: 'Invoice Not Created',
+              message: 'You do not have permission to create this invoice.',
+              type: 'error',
+            });
+            return;
+          }
           // Reward Points: earn points on Final sales when feature is enabled
           if (
             settings.enableRewardPoints &&

@@ -1105,7 +1105,7 @@ interface GlobalContextType {
   // --- Sales ---
   sales: Sale[];
   setSales: React.Dispatch<React.SetStateAction<Sale[]>>;
-  addSale: (sale: Sale) => void;
+  addSale: (sale: Sale) => boolean;
   updateSale: (sale: Sale) => void;
   deleteSale: (id: string) => void;
 
@@ -4307,7 +4307,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  Only Final sales affect stock and customer due balances
   // ============================================================
 
-  const isFinalizedSale = (sale: Sale): boolean => (sale.status || sale.saleStatus) === 'Final';
+  const normalizeSaleLifecycleStatus = (value: unknown): Sale['status'] | '' => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (normalized === 'FINAL') return 'Final';
+    if (normalized === 'DRAFT' || normalized === 'SUSPEND') return 'Draft';
+    if (normalized === 'QUOTATION') return 'Quotation';
+    if (normalized === 'PROFORMA') return 'Proforma';
+    return '';
+  };
+
+  const isFinalizedSale = (sale: Sale): boolean =>
+    normalizeSaleLifecycleStatus(sale.status || sale.saleStatus) === 'Final';
 
   const saleDueAmount = (sale: Sale): number => {
     if (sale.paymentStatus === 'Paid') return 0;
@@ -4402,8 +4412,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
-  const addSale = (sale: Sale) => {
-    if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return;
+  const addSale = (sale: Sale): boolean => {
+    if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return false;
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(sale);
     setSales(prev => [...prev, saleWithSnapshot]);
     syncRecord('sales', saleWithSnapshot);
@@ -4450,6 +4460,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setPayments(prev => [...prev, payRecord]);
       }
     }
+    return true;
   };
 
   const updateSale = (sale: Sale) => {

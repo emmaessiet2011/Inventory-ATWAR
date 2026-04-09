@@ -172,10 +172,18 @@ const Sales: React.FC<SalesProps> = ({
     ));
   };
   const visibleColumnCount = Math.max(1, columnDefs.length - hiddenColumns.length);
+  const normalizeSaleLifecycleStatus = (value: unknown): 'Final' | 'Draft' | 'Quotation' | 'Proforma' | '' => {
+    const normalized = String(value || '').trim().toUpperCase();
+    if (normalized === 'FINAL') return 'Final';
+    if (normalized === 'DRAFT' || normalized === 'SUSPEND') return 'Draft';
+    if (normalized === 'QUOTATION') return 'Quotation';
+    if (normalized === 'PROFORMA') return 'Proforma';
+    return '';
+  };
   const isFinalizedSale = (sale?: GlobalSale | null): boolean =>
-    !!sale && ((sale.status || sale.saleStatus || '').trim() === 'Final');
+    !!sale && normalizeSaleLifecycleStatus(sale.status || sale.saleStatus) === 'Final';
   const saleStatusLabel = (sale?: GlobalSale | null): string =>
-    String(sale?.saleStatus || sale?.status || '--').trim() || '--';
+    normalizeSaleLifecycleStatus(sale?.saleStatus || sale?.status) || '--';
   const getDocumentLabel = (sale?: GlobalSale | null): string => {
     const normalized = saleStatusLabel(sale);
     if (normalized === 'Quotation') return 'Quotation';
@@ -708,7 +716,7 @@ const Sales: React.FC<SalesProps> = ({
   const scopedSales = useMemo(() => (
     sales.filter(s => {
       if (!statusFilter) return true;
-      const normalizedStatus = (s.status || s.saleStatus || '').trim();
+      const normalizedStatus = normalizeSaleLifecycleStatus(s.status || s.saleStatus);
       if (statusFilter === 'Quotation') {
         const isQuotationRecord = normalizedStatus === 'Quotation' || normalizedStatus === 'Proforma';
         if (!canViewAllQuotations && !canViewOwnQuotations) return false;
@@ -720,7 +728,7 @@ const Sales: React.FC<SalesProps> = ({
         return true;
       }
       if (statusFilter === 'Draft') {
-        return normalizedStatus === 'Draft' || String(s.saleStatus || '').trim() === 'Suspend';
+        return normalizedStatus === 'Draft';
       }
       return normalizedStatus === statusFilter;
     })
