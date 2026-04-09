@@ -88,6 +88,8 @@ const RESOURCE_CONFIG = {
   saleShippingActivities: { delegate: 'saleShippingActivity', idField: 'id', searchFields: ['action', 'by', 'note'], defaultOrderBy: { date: 'desc' } },
   sellReturns: { delegate: 'sellReturn', idField: 'id', searchFields: ['refNo'], defaultOrderBy: { date: 'desc' } },
   sellReturnItems: { delegate: 'sellReturnItem', idField: 'id', searchFields: ['name'], defaultOrderBy: { id: 'asc' } },
+  // Keep both keys for backward compatibility with existing frontend calls.
+  orders: { delegate: 'salesOrder', idField: 'id', searchFields: ['orderNumber'], defaultOrderBy: { orderDate: 'desc' } },
   salesOrders: { delegate: 'salesOrder', idField: 'id', searchFields: ['orderNumber'], defaultOrderBy: { orderDate: 'desc' } },
   salesOrderItems: { delegate: 'salesOrderItem', idField: 'id', searchFields: ['name'], defaultOrderBy: { id: 'asc' } },
   salesRepresentatives: { delegate: 'salesRepresentative', idField: 'id', searchFields: ['name', 'contactNo'], defaultOrderBy: { name: 'asc' } },

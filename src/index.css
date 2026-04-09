@@ -1,4 +1,8 @@
-/* Intentionally minimal. Kept so index.html stylesheet reference is valid. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Intentionally minimal overrides on top of generated Tailwind CSS. */
 
 :root {
   color-scheme: light;
