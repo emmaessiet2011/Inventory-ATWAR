@@ -488,13 +488,57 @@ app.delete('/api/data/:resource/:id', async (req, res) => {
 
 const ROLE_NAMES_ALLOWED_DELETE = ['admin', 'ceo', 'manager'];
 
+const normalizeRoleName = (value) => String(value || '').trim().toLowerCase();
+const isDeleteRoleAllowed = (roleName, isSystem = false) => {
+  if (isSystem) return true;
+  const normalized = normalizeRoleName(roleName);
+  if (!normalized) return false;
+  return ROLE_NAMES_ALLOWED_DELETE.some((allowed) =>
+    normalized === allowed || normalized.includes(allowed),
+  );
+};
+const roleNameFromMeta = (meta) => {
+  const m = toObject(meta);
+  return normalizeRoleName(m.role || m.roleName || m.userRole || '');
+};
+
 const requireCanDelete = async (req, res, next) => {
   try {
-    const roleId = req.user?.roleId;
-    if (!roleId) return res.status(403).json({ ok: false, error: 'Role not assigned' });
-    const role = await prisma.role.findUnique({ where: { id: roleId } });
-    const roleName = String(role?.name || '').trim().toLowerCase();
-    if (ROLE_NAMES_ALLOWED_DELETE.some(n => roleName.includes(n))) return next();
+    const tokenRoleName = normalizeRoleName(req.user?.role || req.user?.roleName || req.user?.userRole);
+    if (isDeleteRoleAllowed(tokenRoleName)) return next();
+
+    const roleId = String(req.user?.roleId || '').trim();
+    if (roleId) {
+      const linkedRole = await prisma.role.findUnique({
+        where: { id: roleId },
+        select: { name: true, isSystem: true },
+      });
+      if (isDeleteRoleAllowed(linkedRole?.name, linkedRole?.isSystem === true)) return next();
+    }
+
+    const userId = String(req.user?.id || '').trim();
+    if (userId) {
+      const account = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: {
+          roleId: true,
+          role: { select: { name: true, isSystem: true } },
+          meta: true,
+        },
+      });
+      if (isDeleteRoleAllowed(account?.role?.name, account?.role?.isSystem === true)) return next();
+      if (isDeleteRoleAllowed(roleNameFromMeta(account?.meta))) return next();
+
+      const fallbackRoleId = String(account?.roleId || '').trim();
+      if (fallbackRoleId && fallbackRoleId !== roleId) {
+        const fallbackRole = await prisma.role.findUnique({
+          where: { id: fallbackRoleId },
+          select: { name: true, isSystem: true },
+        });
+        if (isDeleteRoleAllowed(fallbackRole?.name, fallbackRole?.isSystem === true)) return next();
+      }
+    }
+
     return res.status(403).json({ ok: false, error: 'Insufficient permissions to delete this record' });
   } catch {
     return res.status(500).json({ ok: false, error: 'Permission check failed' });

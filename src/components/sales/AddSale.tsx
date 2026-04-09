@@ -1740,8 +1740,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
         type: 'success'
       });
 
-      const shouldAutoPrint = isFinalStatus && selectedLocation?.autoPrintInvoiceAfterFinalizing === true;
-      const shouldPrint = andPrint || shouldAutoPrint;
+      // In Add Sale, "Save" should only save.
+      // Printing is explicit via "Save & Print".
+      const shouldPrint = andPrint;
       const targetPage = newSale.status === 'Draft'
         ? 'drafts'
         : newSale.status === 'Quotation' || newSale.status === 'Proforma'

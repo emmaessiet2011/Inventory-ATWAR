@@ -434,13 +434,23 @@ const ListOrders: React.FC<ListOrdersProps> = ({
         ? `Delete order ${order.orderNumber}? Linked invoice ${linkedSale.invoiceNo || linkedSale.id} will remain in Sales.`
         : `Are you sure you want to permanently delete order ${order.orderNumber}?`,
       onConfirm: () => {
-        globalDeleteOrder(order.id);
-        addNotification({
-          title: 'Order Deleted',
-          message: `${order.orderNumber} has been deleted.`,
-          type: 'success',
-        });
-        setConfirmModal(null);
+        void (async () => {
+          const deleted = await globalDeleteOrder(order.id);
+          if (deleted) {
+            addNotification({
+              title: 'Order Deleted',
+              message: `${order.orderNumber} has been deleted.`,
+              type: 'success',
+            });
+          } else {
+            addNotification({
+              title: 'Delete Failed',
+              message: `${order.orderNumber} could not be deleted from database.`,
+              type: 'error',
+            });
+          }
+          setConfirmModal(null);
+        })();
       },
     });
   };

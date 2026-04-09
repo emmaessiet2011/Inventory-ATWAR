@@ -47,6 +47,7 @@ import {
   isLiveSyncEnabled,
   syncRecord,
   deleteRecord,
+  deleteRecordStrict,
   syncStockDelta,
   fetchCollection,
   syncCollection,
@@ -1290,7 +1291,7 @@ interface GlobalContextType {
   setOrders: React.Dispatch<React.SetStateAction<GlobalOrder[]>>;
   addOrder: (order: GlobalOrder) => void;
   updateOrder: (order: GlobalOrder) => void;
-  deleteOrder: (id: string) => void;
+  deleteOrder: (id: string) => Promise<boolean>;
 
   // --- Activity Logs ---
   activityLogs: ActivityLogEntry[];
@@ -5277,16 +5278,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: `Updated order: ${order.orderNumber || order.id}`,
     });
   };
-  const deleteOrder = (id: string) => {
-    if (!enforcePermissionBoundary('Order', 'Delete order', 'Delete order')) return;
+  const deleteOrder = async (id: string): Promise<boolean> => {
+    if (!enforcePermissionBoundary('Order', 'Delete order', 'Delete order')) return false;
     const existing = orders.find(o => o.id === id);
+    const result = await deleteRecordStrict('orders', id);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Delete failed for order ${existing?.orderNumber || existing?.id || id}: ${result.error || `HTTP ${result.status}`}`,
+      });
+      return false;
+    }
     setOrders(prev => prev.filter(o => o.id !== id));
-    deleteRecord('orders', id);
     recordActivity({
       action: 'Deleted',
       module: 'Orders',
       description: `Deleted order: ${existing?.orderNumber || existing?.id || id}`,
     });
+    return true;
   };
 
   // ============================================================

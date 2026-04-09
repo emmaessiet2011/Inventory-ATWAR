@@ -178,6 +178,47 @@ export function deleteRecord(resource: string, id: string): void {
 }
 
 /**
+ * Awaited delete helper for critical flows where UI must reflect
+ * true server state (e.g., destructive admin actions).
+ */
+export async function deleteRecordStrict(
+  resource: string,
+  id: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}/${encodeURIComponent(id)}`,
+      { method: 'DELETE', headers: authHeaders() },
+    );
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      console.error(`[deleteRecordStrict] ${resource}:${id} failed (${res.status})`, detail);
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+/**
  * Fetch an entire collection stored as a snapshot (used for resources that
  * don't have a dedicated Prisma model: purchaseRequisitions, purchaseOrders, contacts).
  * Returns null on failure — caller keeps local state.
