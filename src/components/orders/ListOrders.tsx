@@ -107,6 +107,8 @@ const ListOrders: React.FC<ListOrdersProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [range, setRange] = useState<DateRangeValue>(getCurrentYearRange);
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
+  const [cancelModal, setCancelModal] = useState<{ isOpen: boolean; order: GlobalOrder | null }>({ isOpen: false, order: null });
+  const [cancelReason, setCancelReason] = useState('');
   const [filters, setFilters] = useState({
     deliveryStatus: [] as string[],
     paymentStatus: [] as string[],
@@ -353,17 +355,70 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       addNotification({ title: 'Already Cancelled', message: `${order.orderNumber} is already cancelled.`, type: 'warning' });
       return;
     }
+    const linkedSale = order.convertedSaleId
+      ? sales.find((sale) => sale.id === order.convertedSaleId)
+      : undefined;
+    if (linkedSale) {
+      addNotification({
+        title: 'Cannot Cancel Order',
+        message: `Order ${order.orderNumber} is linked to invoice ${linkedSale.invoiceNo || linkedSale.id}. Void/return the invoice first.`,
+        type: 'warning',
+      });
+      return;
+    }
     setActiveActionId(null);
-    setConfirmModal({
-      isOpen: true,
-      title: 'Cancel Order',
-      message: `Are you sure you want to cancel order ${order.orderNumber}?`,
-      onConfirm: () => {
-        globalUpdateOrder({ ...order, status: 'Cancelled' });
-        addNotification({ title: 'Order Cancelled', message: `${order.orderNumber} marked as cancelled.`, type: 'success' });
-        setConfirmModal(null);
-      },
+    setCancelReason('');
+    setCancelModal({ isOpen: true, order });
+  };
+
+  const confirmCancelOrder = () => {
+    const order = cancelModal.order;
+    if (!order) return;
+
+    const reason = String(cancelReason || '').trim();
+    if (!reason) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Cancel reason is required.',
+        type: 'error',
+      });
+      return;
+    }
+
+    const linkedSale = order.convertedSaleId
+      ? sales.find((sale) => sale.id === order.convertedSaleId)
+      : undefined;
+    if (linkedSale) {
+      addNotification({
+        title: 'Cannot Cancel Order',
+        message: `Order ${order.orderNumber} is linked to invoice ${linkedSale.invoiceNo || linkedSale.id}.`,
+        type: 'warning',
+      });
+      setCancelModal({ isOpen: false, order: null });
+      setCancelReason('');
+      return;
+    }
+
+    const hasStaleConvertedReference = !!order.convertedSaleId && !linkedSale;
+    globalUpdateOrder({
+      ...order,
+      status: 'Cancelled',
+      cancelledBy: currentUser?.name || 'Admin',
+      cancelledAt: new Date().toISOString(),
+      cancelReason: reason,
+      convertedSaleId: undefined,
+      convertedInvoiceNo: undefined,
+      convertedAt: undefined,
     });
+    addNotification({
+      title: 'Order Cancelled',
+      message: hasStaleConvertedReference
+        ? `${order.orderNumber} marked as cancelled. Stale invoice link was cleared.`
+        : `${order.orderNumber} marked as cancelled.`,
+      type: 'success',
+    });
+    setCancelModal({ isOpen: false, order: null });
+    setCancelReason('');
   };
 
   const handleDeleteOrder = (order: GlobalOrder) => {
@@ -628,7 +683,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                             <Eye size={14} /> View Order
                           </button>
 
-                          {canEdit && (
+                          {canEdit && order.status !== 'Cancelled' && (
                             <button
                               className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
                               onClick={() => {
@@ -745,6 +800,47 @@ const ListOrders: React.FC<ListOrdersProps> = ({
           </div>
         </div>
       </div>
+      {cancelModal.isOpen && cancelModal.order && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 border border-slate-100">
+            <div className="flex flex-col gap-4">
+              <div className="text-center">
+                <div className="inline-flex p-3 rounded-full bg-amber-50 text-amber-600 mb-3">
+                  <XCircle size={28} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-900">Cancel Order</h3>
+                <p className="text-slate-500 text-sm mt-1">
+                  Provide a reason to cancel <span className="font-bold">{cancelModal.order.orderNumber}</span>.
+                </p>
+              </div>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={4}
+                placeholder="Reason for cancellation..."
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 resize-none"
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setCancelModal({ isOpen: false, order: null });
+                    setCancelReason('');
+                  }}
+                  className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={confirmCancelOrder}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-white font-bold bg-amber-600 hover:bg-amber-700 transition-colors"
+                >
+                  Confirm Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {confirmModal?.isOpen && (
         <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">

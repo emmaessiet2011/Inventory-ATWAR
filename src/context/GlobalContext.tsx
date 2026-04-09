@@ -561,6 +561,9 @@ export interface GlobalOrder {
   isApproved?: boolean;
   approvedBy?: string;
   approvedAt?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
+  cancelReason?: string;
 }
 
 export interface Payment {
@@ -5223,6 +5226,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addOrder = (order: GlobalOrder) => {
+    if (order.status === 'Cancelled') {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Blocked order creation for ${order.orderNumber || order.id}: orders cannot be created directly as Cancelled.`,
+      });
+      return;
+    }
     setOrders(prev => [...prev, order]);
     syncRecord('orders', order);
     recordActivity({
@@ -5232,6 +5243,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
   const updateOrder = (order: GlobalOrder) => {
+    const existingOrder = orders.find(o => o.id === order.id);
+    if (existingOrder?.status === 'Cancelled') {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Blocked update for cancelled order: ${existingOrder.orderNumber || existingOrder.id}`,
+      });
+      return;
+    }
+
+    const isCancellingNow = existingOrder?.status !== 'Cancelled' && order.status === 'Cancelled';
+    if (isCancellingNow) {
+      const cancelReason = String(order.cancelReason || '').trim();
+      const cancelledBy = String(order.cancelledBy || '').trim();
+      const cancelledAt = String(order.cancelledAt || '').trim();
+      if (!cancelReason || !cancelledBy || !cancelledAt) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Orders',
+          description: `Blocked cancellation for ${order.orderNumber || order.id}: missing cancellation reason/by/at.`,
+        });
+        return;
+      }
+    }
+
     if (!canEditTransaction('Orders', String(order.orderNumber || order.id || '').trim(), order.orderDate)) return;
     setOrders(prev => prev.map(o => o.id === order.id ? order : o));
     syncRecord('orders', order);

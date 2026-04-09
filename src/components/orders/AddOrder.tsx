@@ -204,6 +204,15 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       onNavigate?.('list-orders');
       return;
     }
+    if (existing.status === 'Cancelled') {
+      addNotification({
+        title: 'Edit Blocked',
+        message: `${existing.orderNumber} is cancelled and cannot be edited.`,
+        type: 'warning',
+      });
+      onNavigate?.('list-orders');
+      return;
+    }
     setCustomerId(existing.customerId);
     setCustomerSearch(existing.customerName);
     setCustomerPhone(existing.customerPhone || '');
@@ -584,6 +593,14 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       addNotification({ title: 'Validation Error', message: 'Order total must be greater than zero.', type: 'error' });
       return;
     }
+    if (status === 'Cancelled') {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Use Cancel action from List Orders to cancel an order with a reason.',
+        type: 'error',
+      });
+      return;
+    }
 
     const paymentStatus: GlobalOrder['paymentStatus'] = orderType === 'Credit' ? 'Due' : 'Paid';
     const existing = isEdit && orderId ? orders.find(o => o.id === orderId) : null;
@@ -633,6 +650,9 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       convertedSaleId: existing?.convertedSaleId,
       convertedInvoiceNo: existing?.convertedInvoiceNo,
       convertedAt: existing?.convertedAt,
+      cancelledBy: existing?.cancelledBy,
+      cancelledAt: existing?.cancelledAt,
+      cancelReason: existing?.cancelReason,
     };
 
     if (isEdit) {
@@ -807,7 +827,6 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
                   <option value="Ready">Ready</option>
                   <option value="Shipped">Shipped</option>
                   <option value="Delivered">Delivered</option>
-                  <option value="Cancelled">Cancelled</option>
                 </select>
               </div>
             </div>
