@@ -94,6 +94,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
     users,
     currentUser,
     updateOrder: globalUpdateOrder,
+    deleteOrder: globalDeleteOrder,
     formatCurrency,
     settings,
   } = useGlobalContext();
@@ -360,6 +361,30 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       onConfirm: () => {
         globalUpdateOrder({ ...order, status: 'Cancelled' });
         addNotification({ title: 'Order Cancelled', message: `${order.orderNumber} marked as cancelled.`, type: 'success' });
+        setConfirmModal(null);
+      },
+    });
+  };
+
+  const handleDeleteOrder = (order: GlobalOrder) => {
+    if (!canDelete) return;
+    const linkedSale = order.convertedSaleId
+      ? sales.find((sale) => sale.id === order.convertedSaleId)
+      : undefined;
+    setActiveActionId(null);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Order',
+      message: linkedSale
+        ? `Delete order ${order.orderNumber}? Linked invoice ${linkedSale.invoiceNo || linkedSale.id} will remain in Sales.`
+        : `Are you sure you want to permanently delete order ${order.orderNumber}?`,
+      onConfirm: () => {
+        globalDeleteOrder(order.id);
+        addNotification({
+          title: 'Order Deleted',
+          message: `${order.orderNumber} has been deleted.`,
+          type: 'success',
+        });
         setConfirmModal(null);
       },
     });
@@ -670,10 +695,16 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                             <>
                               <div className="h-px bg-slate-100 my-1"></div>
                               <button
-                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
                                 onClick={() => handleCancelOrder(order)}
                               >
                                 <XCircle size={14} /> Cancel
+                              </button>
+                              <button
+                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                onClick={() => handleDeleteOrder(order)}
+                              >
+                                <Trash2 size={14} /> Delete Order
                               </button>
                             </>
                           )}

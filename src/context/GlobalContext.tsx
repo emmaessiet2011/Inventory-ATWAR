@@ -5242,6 +5242,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
   const deleteOrder = (id: string) => {
+    if (!enforcePermissionBoundary('Order', 'Delete order', 'Delete order')) return;
     const existing = orders.find(o => o.id === id);
     setOrders(prev => prev.filter(o => o.id !== id));
     deleteRecord('orders', id);
