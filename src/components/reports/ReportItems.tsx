@@ -170,6 +170,51 @@ const getSortValue = (row: Row, sortKey: ColKey): string | number => {
   }
 };
 
+const getSaleLineTotalsTaxInclusive = (sale: any, items: any[]): number[] => {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const baseTotals = items.map((item) => {
+    const qty = Number(item?.qty || 0);
+    if (!Number.isFinite(qty) || qty <= 0) return 0;
+    const unitPrice = Number(item?.unitPrice || 0);
+    const discount = Number(item?.discount || 0);
+    const subtotalRaw = Number(item?.subtotal);
+    const taxRaw = Number(item?.tax || 0);
+    const totalRaw = Number(item?.total);
+    const subtotal = Number.isFinite(subtotalRaw)
+      ? subtotalRaw
+      : Math.max(0, qty * unitPrice - (Number.isFinite(discount) ? discount : 0));
+    const fallbackTotal = Math.max(0, subtotal + (Number.isFinite(taxRaw) ? taxRaw : 0));
+    return round3(Math.max(0, Number.isFinite(totalRaw) ? totalRaw : fallbackTotal));
+  });
+
+  const positiveIndexes = baseTotals
+    .map((value, index) => ({ value, index }))
+    .filter((row) => row.value > 0)
+    .map((row) => row.index);
+  const baseSum = round3(positiveIndexes.reduce((sum, index) => sum + baseTotals[index], 0));
+  if (positiveIndexes.length === 0 || baseSum <= 0) return baseTotals;
+
+  const grandRaw = Number(sale?.grandTotal || sale?.totalAmount || baseSum);
+  const grandTotal = round3(Math.max(0, Number.isFinite(grandRaw) ? grandRaw : baseSum));
+  if (grandTotal <= 0) return baseTotals.map(() => 0);
+
+  const allocated = new Array(items.length).fill(0);
+  let remainingBase = baseSum;
+  let remainingGrand = grandTotal;
+  positiveIndexes.forEach((index, position) => {
+    const base = baseTotals[index];
+    if (position === positiveIndexes.length - 1 || remainingBase <= 0) {
+      allocated[index] = round3(Math.max(0, remainingGrand));
+      return;
+    }
+    const share = round3(Math.max(0, (base / remainingBase) * remainingGrand));
+    allocated[index] = share;
+    remainingBase = round3(Math.max(0, remainingBase - base));
+    remainingGrand = round3(Math.max(0, remainingGrand - share));
+  });
+  return allocated;
+};
+
 const ReportItems: React.FC = () => {
   const { locations, products, customers, sales, purchases, sellReturns, formatCurrency, settings } = useGlobalContext();
 
@@ -303,7 +348,9 @@ const ReportItems: React.FC = () => {
       const locNorm = normalize(location);
       const customer = String(sale.customerName || customerById.get(String(sale.customerId || ''))?.businessName || 'Direct Customer').trim() || 'Direct Customer';
       const saleRef = String(sale.invoiceNo || sale.id || '').trim() || '--';
-      return (sale.items || []).flatMap((item, idx) => {
+      const saleItems = Array.isArray(sale.items) ? sale.items : [];
+      const lineTotalsTaxInclusive = getSaleLineTotalsTaxInclusive(sale, saleItems);
+      return saleItems.flatMap((item, idx) => {
         const grossQty = round3(Number(item.qty || 0));
         if (!Number.isFinite(grossQty) || grossQty <= 0) return [];
         const product = productById.get(String(item.id || '')) || productByName.get(normalize(item.name));
@@ -317,7 +364,8 @@ const ReportItems: React.FC = () => {
         const opening = Number(product?.openingStock || 0) > 0 && (!product?.openingStockLocation || normalize(product.openingStockLocation) === locNorm);
         const unitPrice = round3(Number(item.unitPrice || 0));
         const lineSubtotal = Number(item.subtotal);
-        const grossSubtotal = round3(Number.isFinite(lineSubtotal) ? lineSubtotal : Math.max(0, (grossQty * unitPrice) - Number(item.discount || 0)));
+        const fallbackSubtotal = round3(Number.isFinite(lineSubtotal) ? lineSubtotal : Math.max(0, (grossQty * unitPrice) - Number(item.discount || 0)));
+        const grossSubtotal = round3(Math.max(0, Number(lineTotalsTaxInclusive[idx] ?? fallbackSubtotal)));
         const saleIdNorm = normalize(sale.id);
         const returnBucket = (
           (idNorm ? remainingById.get(`${saleIdNorm}@@${idNorm}`) : undefined)
@@ -426,7 +474,7 @@ const ReportItems: React.FC = () => {
   const to = totalEntries === 0 ? 0 : start + pageRows.length;
 
   const exportCsv = () => {
-    const headers = ['Product', 'SKU', 'Description', 'Purchase Date', 'Purchase', 'Lot Number', 'Supplier', 'Purchase Price', 'Sell Date', 'Sale', 'Customer', 'Location', 'Sell Qty', 'Selling Price', 'Subtotal'];
+    const headers = ['Product', 'SKU', 'Description', 'Purchase Date', 'Purchase', 'Lot Number', 'Supplier', 'Purchase Price', 'Sell Date', 'Sale', 'Customer', 'Location', 'Sell Qty', 'Selling Price', 'Total (Inc. Tax)'];
     const lines = sorted.map((r) => [
       csv(r.product),
       csv(r.sku),
@@ -452,7 +500,7 @@ const ReportItems: React.FC = () => {
   };
 
   const exportExcel = () => {
-    const headers = ['Product', 'SKU', 'Description', 'Purchase Date', 'Purchase', 'Lot Number', 'Supplier', 'Purchase Price', 'Sell Date', 'Sale', 'Customer', 'Location', 'Sell Qty', 'Selling Price', 'Subtotal'];
+    const headers = ['Product', 'SKU', 'Description', 'Purchase Date', 'Purchase', 'Lot Number', 'Supplier', 'Purchase Price', 'Sell Date', 'Sale', 'Customer', 'Location', 'Sell Qty', 'Selling Price', 'Total (Inc. Tax)'];
     const lines = sorted.map((r) => [
       r.product,
       r.sku,
@@ -522,7 +570,7 @@ const ReportItems: React.FC = () => {
         doc.text('Customer', x.customer, y);
         doc.text('Location', x.location, y);
         doc.text('Qty', x.qty, y);
-        doc.text('Subtotal', x.subtotal, y);
+        doc.text('Total (Inc. Tax)', x.subtotal, y);
         doc.setFont('helvetica', 'normal');
         y += rowHeight;
       };
@@ -554,7 +602,7 @@ const ReportItems: React.FC = () => {
         y = 34;
       }
       doc.setFont('helvetica', 'bold');
-      doc.text(`Total Qty: ${totals.qty.toFixed(3)} | Total Subtotal: ${formatCurrency(totals.subtotal)}`, margin, y + rowHeight);
+      doc.text(`Total Qty: ${totals.qty.toFixed(3)} | Total (Inc. Tax): ${formatCurrency(totals.subtotal)}`, margin, y + rowHeight);
       doc.save(`items_report_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch {
       printActiveReportTable();
@@ -581,7 +629,7 @@ const ReportItems: React.FC = () => {
   const cols: Array<[ColKey, string]> = [
     ['product', 'Product'], ['sku', 'SKU'], ['description', 'Description'], ['purchaseDate', 'Purchase Date'], ['purchaseRef', 'Purchase'],
     ['lot', 'Lot Number'], ['supplier', 'Supplier'], ['purchasePrice', 'Purchase Price'], ['sellDate', 'Sell Date'], ['saleRef', 'Sale'],
-    ['customer', 'Customer'], ['location', 'Location'], ['sellQty', 'Sell Quantity'], ['sellingPrice', 'Selling Price'], ['subtotal', 'Subtotal'],
+    ['customer', 'Customer'], ['location', 'Location'], ['sellQty', 'Sell Quantity'], ['sellingPrice', 'Selling Price'], ['subtotal', 'Total (Inc. Tax)'],
   ];
 
   return (
@@ -703,7 +751,7 @@ const ReportItems: React.FC = () => {
         </div>
         <div className="p-4 border-t border-slate-200 flex justify-between items-center text-xs text-slate-500">
           <div>Showing {from} to {to} of {totalEntries} entries</div>
-          <div className="font-bold text-slate-700">Total Qty: {totals.qty.toFixed(3)} | Total Subtotal: {formatCurrency(totals.subtotal)}</div>
+          <div className="font-bold text-slate-700">Total Qty: {totals.qty.toFixed(3)} | Total (Inc. Tax): {formatCurrency(totals.subtotal)}</div>
           <div className="flex gap-1">
             <button type="button" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
             <button className="px-2 py-1 bg-blue-600 text-white rounded shadow-sm">{safePage}</button>

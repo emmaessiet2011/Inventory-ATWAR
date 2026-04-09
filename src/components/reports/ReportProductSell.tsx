@@ -115,7 +115,7 @@ const columnsByTab: Record<TabId, ColumnDef[]> = {
     { key: 'discount', label: 'Discount', numeric: true },
     { key: 'tax', label: 'Tax', numeric: true },
     { key: 'priceIncTax', label: 'Price Inc. Tax', numeric: true, currency: true },
-    { key: 'total', label: 'Total', numeric: true, currency: true },
+    { key: 'total', label: 'Total (Inc. Tax)', numeric: true, currency: true },
     { key: 'paymentMethod', label: 'Payment Method' },
   ],
   detailed_purchase: [
@@ -135,26 +135,26 @@ const columnsByTab: Record<TabId, ColumnDef[]> = {
     { key: 'dateMs', label: 'Date', numeric: true },
     { key: 'currentStock', label: 'Current Stock', numeric: true, qty: true },
     { key: 'totalUnitSold', label: 'Total Unit Sold', numeric: true, qty: true },
-    { key: 'total', label: 'Total', numeric: true, currency: true },
+    { key: 'total', label: 'Total (Inc. Tax)', numeric: true, currency: true },
   ],
   category: [
     { key: 'category', label: 'Category' },
     { key: 'currentStock', label: 'Current Stock', numeric: true, qty: true },
     { key: 'totalUnitSold', label: 'Total Unit Sold', numeric: true, qty: true },
-    { key: 'total', label: 'Total', numeric: true, currency: true },
+    { key: 'total', label: 'Total (Inc. Tax)', numeric: true, currency: true },
   ],
   detailed_category: [
     { key: 'category', label: 'Category' },
     { key: 'product', label: 'Name' },
     { key: 'qty', label: 'Quantity', numeric: true, qty: true },
     { key: 'unitPrice', label: 'Unit Price', numeric: true, currency: true },
-    { key: 'total', label: 'Total', numeric: true, currency: true },
+    { key: 'total', label: 'Total (Inc. Tax)', numeric: true, currency: true },
   ],
   brand: [
     { key: 'brand', label: 'Brand' },
     { key: 'currentStock', label: 'Current Stock', numeric: true, qty: true },
     { key: 'totalUnitSold', label: 'Total Unit Sold', numeric: true, qty: true },
-    { key: 'total', label: 'Total', numeric: true, currency: true },
+    { key: 'total', label: 'Total (Inc. Tax)', numeric: true, currency: true },
   ],
 };
 
@@ -228,6 +228,51 @@ const sortRows = <T extends ReportRow>(rows: T[], sort: SortState): T[] => {
     if (typeof lv === 'number' && typeof rv === 'number') return (lv - rv) * factor;
     return String(lv ?? '').localeCompare(String(rv ?? ''), undefined, { numeric: true, sensitivity: 'base' }) * factor;
   });
+};
+
+const getSaleLineTotalsTaxInclusive = (sale: any, items: any[]): number[] => {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const baseTotals = items.map((item) => {
+    const qty = Number(item?.qty || 0);
+    if (!Number.isFinite(qty) || qty <= 0) return 0;
+    const unitPrice = Number(item?.unitPrice || 0);
+    const discount = Number(item?.discount || 0);
+    const subtotalRaw = Number(item?.subtotal);
+    const taxRaw = Number(item?.tax || 0);
+    const totalRaw = Number(item?.total);
+    const subtotal = Number.isFinite(subtotalRaw)
+      ? subtotalRaw
+      : Math.max(0, qty * unitPrice - (Number.isFinite(discount) ? discount : 0));
+    const fallbackTotal = Math.max(0, subtotal + (Number.isFinite(taxRaw) ? taxRaw : 0));
+    return round3(Math.max(0, Number.isFinite(totalRaw) ? totalRaw : fallbackTotal));
+  });
+
+  const positiveIndexes = baseTotals
+    .map((value, index) => ({ value, index }))
+    .filter((row) => row.value > 0)
+    .map((row) => row.index);
+  const baseSum = round3(positiveIndexes.reduce((sum, index) => sum + baseTotals[index], 0));
+  if (positiveIndexes.length === 0 || baseSum <= 0) return baseTotals;
+
+  const grandRaw = Number(sale?.grandTotal || sale?.totalAmount || baseSum);
+  const grandTotal = round3(Math.max(0, Number.isFinite(grandRaw) ? grandRaw : baseSum));
+  if (grandTotal <= 0) return baseTotals.map(() => 0);
+
+  const allocated = new Array(items.length).fill(0);
+  let remainingBase = baseSum;
+  let remainingGrand = grandTotal;
+  positiveIndexes.forEach((index, position) => {
+    const base = baseTotals[index];
+    if (position === positiveIndexes.length - 1 || remainingBase <= 0) {
+      allocated[index] = round3(Math.max(0, remainingGrand));
+      return;
+    }
+    const share = round3(Math.max(0, (base / remainingBase) * remainingGrand));
+    allocated[index] = share;
+    remainingBase = round3(Math.max(0, remainingBase - base));
+    remainingGrand = round3(Math.max(0, remainingGrand - share));
+  });
+  return allocated;
 };
 
 const ReportProductSell: React.FC = () => {
@@ -509,8 +554,10 @@ const ReportProductSell: React.FC = () => {
       const invoiceNo = String(sale.invoiceNo || sale.id || '--').trim() || '--';
       const contactId = String(sale.customerId || customerRecord?.id || customer).trim() || customer;
       const paymentMethod = String(sale.paymentMethod || sale.saleType || '--').trim() || '--';
+      const saleItems = Array.isArray(sale.items) ? sale.items : [];
+      const lineTotalsTaxInclusive = getSaleLineTotalsTaxInclusive(sale, saleItems);
 
-      return (sale.items || []).flatMap((item, idx) => {
+      return saleItems.flatMap((item, idx) => {
         const grossQty = round3(Number(item.qty || 0));
         if (!Number.isFinite(grossQty) || grossQty <= 0) return [];
         const product = productById.get(String(item.id || '')) || productByName.get(normalize(item.name));
@@ -520,10 +567,22 @@ const ReportProductSell: React.FC = () => {
         const brand = String(product?.brand || '--').trim() || '--';
         const unit = String(item.unit || product?.unit || 'Pc(s)').trim() || 'Pc(s)';
         const unitPrice = round3(Number(item.unitPrice || 0));
-        const grossDiscount = Math.max(0, round3(Number(item.discount || 0)));
-        const grossTax = Math.max(0, round3(Number(item.tax || 0)));
-        const grossSubtotal = round3(Number.isFinite(Number(item.subtotal)) ? Number(item.subtotal) : Math.max(0, grossQty * unitPrice - grossDiscount));
-        const grossTotal = round3(Number.isFinite(Number(item.total)) ? Number(item.total) : Math.max(0, grossSubtotal + grossTax));
+        const baseDiscount = Math.max(0, round3(Number(item.discount || 0)));
+        const baseTax = Math.max(0, round3(Number(item.tax || 0)));
+        const baseSubtotal = round3(
+          Number.isFinite(Number(item.subtotal))
+            ? Number(item.subtotal)
+            : Math.max(0, grossQty * unitPrice - baseDiscount),
+        );
+        const baseTotal = round3(
+          Number.isFinite(Number(item.total))
+            ? Number(item.total)
+            : Math.max(0, baseSubtotal + baseTax),
+        );
+        const grossTotal = round3(Math.max(0, Number(lineTotalsTaxInclusive[idx] ?? baseTotal)));
+        const allocationFactor = baseTotal > 0 ? grossTotal / baseTotal : 1;
+        const grossDiscount = round3(baseDiscount * allocationFactor);
+        const grossTax = round3(baseTax * allocationFactor);
         const idNorm = normalize(item.id || product?.id);
         const skuNorm = normalize(product?.sku);
         const nameNorm = normalize(item.name || product?.name);
@@ -860,7 +919,7 @@ const ReportProductSell: React.FC = () => {
     if (activeTab === 'detailed') {
       const totalQty = round3((sortedByTab.detailed as ReportRow[]).reduce((sum, row) => sum + Number(row.qty || 0), 0));
       const totalValue = round3((sortedByTab.detailed as ReportRow[]).reduce((sum, row) => sum + Number(row.total || 0), 0));
-      return `Total Qty: ${qty(totalQty)} | Total: ${formatCurrency(totalValue)}`;
+      return `Total Qty: ${qty(totalQty)} | Total (Tax Incl.): ${formatCurrency(totalValue)}`;
     }
     if (activeTab === 'detailed_purchase') {
       const totalQty = round3((sortedByTab.detailed_purchase as ReportRow[]).reduce((sum, row) => sum + Number(row.qty || 0), 0));
@@ -869,12 +928,12 @@ const ReportProductSell: React.FC = () => {
     if (activeTab === 'detailed_category') {
       const totalQty = round3((sortedByTab.detailed_category as ReportRow[]).reduce((sum, row) => sum + Number(row.qty || 0), 0));
       const totalValue = round3((sortedByTab.detailed_category as ReportRow[]).reduce((sum, row) => sum + Number(row.total || 0), 0));
-      return `Total Qty: ${qty(totalQty)} | Total: ${formatCurrency(totalValue)}`;
+      return `Total Qty: ${qty(totalQty)} | Total (Tax Incl.): ${formatCurrency(totalValue)}`;
     }
     const stock = round3((activeRows as ReportRow[]).reduce((sum, row) => sum + Number(row.currentStock || 0), 0));
     const sold = round3((activeRows as ReportRow[]).reduce((sum, row) => sum + Number(row.totalUnitSold || 0), 0));
     const total = round3((activeRows as ReportRow[]).reduce((sum, row) => sum + Number(row.total || 0), 0));
-    return `Current Stock: ${qty(stock)} | Total Unit Sold: ${qty(sold)} | Total: ${formatCurrency(total)}`;
+    return `Current Stock: ${qty(stock)} | Total Unit Sold: ${qty(sold)} | Total (Tax Incl.): ${formatCurrency(total)}`;
   }, [activeTab, activeRows, sortedByTab, formatCurrency, qty]);
 
   const renderValue = (column: ColumnDef, row: ReportRow): string => {
@@ -928,7 +987,7 @@ const ReportProductSell: React.FC = () => {
         csvEscape('Name'),
         csvEscape('Quantity'),
         csvEscape('Unit Price'),
-        csvEscape('Total'),
+        csvEscape('Total (Inc. Tax)'),
       ].join(',')];
       detailedCategorySections.forEach((section) => {
         lines.push([csvEscape(section.category), '', '', '', '', ''].join(','));
@@ -961,7 +1020,7 @@ const ReportProductSell: React.FC = () => {
 
   const handleExportExcel = () => {
     if (activeTab === 'detailed_category') {
-      const lines: string[] = ['Category\tS.N\tName\tQuantity\tUnit Price\tTotal'];
+      const lines: string[] = ['Category\tS.N\tName\tQuantity\tUnit Price\tTotal (Inc. Tax)'];
       detailedCategorySections.forEach((section) => {
         lines.push(`${section.category}\t\t\t\t\t`);
         section.items.forEach((row, index) => {
@@ -1037,7 +1096,7 @@ const ReportProductSell: React.FC = () => {
           doc.text('Name', x.name, y);
           doc.text('Quantity', x.qty, y, { align: 'right' });
           doc.text('Unit Price', x.unit, y, { align: 'right' });
-          doc.text('Total', x.total, y, { align: 'right' });
+          doc.text('Total (Inc. Tax)', x.total, y, { align: 'right' });
           doc.setFont('helvetica', 'normal');
           y += rowHeight;
         };
@@ -1255,8 +1314,8 @@ const ReportProductSell: React.FC = () => {
                           Unit Price
                           <ArrowUpDown size={10} className={`inline ml-1 transition-transform ${sortByTab.detailed_category.key === 'unitPrice' && sortByTab.detailed_category.direction === 'desc' ? 'rotate-180' : ''} ${sortByTab.detailed_category.key === 'unitPrice' ? 'text-blue-600' : 'text-slate-400'}`} />
                         </th>
-                        <th className="px-3 py-2 text-right cursor-pointer select-none" onClick={() => handleSort({ key: 'total', label: 'Total', numeric: true })}>
-                          Total
+                        <th className="px-3 py-2 text-right cursor-pointer select-none" onClick={() => handleSort({ key: 'total', label: 'Total (Inc. Tax)', numeric: true })}>
+                          Total (Inc. Tax)
                           <ArrowUpDown size={10} className={`inline ml-1 transition-transform ${sortByTab.detailed_category.key === 'total' && sortByTab.detailed_category.direction === 'desc' ? 'rotate-180' : ''} ${sortByTab.detailed_category.key === 'total' ? 'text-blue-600' : 'text-slate-400'}`} />
                         </th>
                       </tr>

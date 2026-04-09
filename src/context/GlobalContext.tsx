@@ -2925,6 +2925,65 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   }, [sales, payments]);
 
+  useEffect(() => {
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+
+    const paymentInvoiceSet = new Set(
+      payments
+        .filter((payment) => payment.contactType === 'Customer' && payment.type === 'received')
+        .flatMap((payment) => (payment.linkedInvoices || []).map((invoiceNo) => String(invoiceNo || '').trim()))
+        .filter(Boolean),
+    );
+    const paymentIdSet = new Set(
+      payments
+        .map((payment) => String(payment.id || '').trim())
+        .filter(Boolean),
+    );
+
+    const missingAutoPayments = sales
+      .filter((sale) => isFinalizedSale(sale))
+      .flatMap((sale) => {
+        const paidAmount = Number(sale.totalPaid || 0);
+        if (!Number.isFinite(paidAmount) || paidAmount <= 0) return [];
+        const saleId = String(sale.id || '').trim();
+        if (!saleId) return [];
+        const payId = `pay-${saleId}`;
+        const invoiceNo = String(sale.invoiceNo || '').trim();
+        if (paymentIdSet.has(payId)) return [];
+        if (invoiceNo && paymentInvoiceSet.has(invoiceNo)) return [];
+        const prefix = settings.sellPaymentPrefix || 'SP';
+        const payRef = `${prefix}-${invoiceNo || Date.now()}`;
+        return [{
+          id: payId,
+          date: sale.paymentDate || sale.date,
+          contactId: String(sale.customerId || 'WALK-IN'),
+          contactName: sale.customerName || 'Walk-in Customer',
+          contactType: 'Customer' as const,
+          amount: Number(Math.max(0, paidAmount).toFixed(3)),
+          method: sale.paymentMethod || 'Cash',
+          account: resolveDefaultAccountFromMethod(sale.paymentMethod || 'Cash'),
+          location: sale.location || '',
+          referenceNo: payRef,
+          note: sale.paymentNote || `Payment for invoice ${sale.invoiceNo}`,
+          type: 'received' as const,
+          linkedInvoices: invoiceNo ? [invoiceNo] : [],
+          addedBy: sale.addedBy || 'System',
+        }];
+      });
+
+    if (missingAutoPayments.length === 0) return;
+
+    setPayments((prev) => {
+      const seen = new Set(prev.map((payment) => String(payment.id || '').trim()).filter(Boolean));
+      const additions = missingAutoPayments.filter((payment) => !seen.has(payment.id));
+      if (additions.length === 0) return prev;
+      return [...prev, ...additions];
+    });
+    missingAutoPayments.forEach((payment) => {
+      syncRecord('payments', payment);
+    });
+  }, [sales, payments, settings.sellPaymentPrefix]);
+
   // ─── ATOMIC BOOTSTRAP ────────────────────────────────────────────────────
   // On startup, load each core resource individually from the DB.
   // This replaces the old "fetch entire snapshot blob" approach and eliminates
@@ -4461,7 +4520,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           linkedInvoices: saleWithSnapshot.invoiceNo ? [saleWithSnapshot.invoiceNo] : [],
           addedBy: saleWithSnapshot.addedBy || 'System',
         };
-        setPayments(prev => [...prev, payRecord]);
+        setPayments(prev => {
+          const exists = prev.some(payment => payment.id === payRecord.id);
+          return exists
+            ? prev.map(payment => payment.id === payRecord.id ? payRecord : payment)
+            : [...prev, payRecord];
+        });
+        syncRecord('payments', payRecord);
       }
     }
     return true;
@@ -4539,12 +4604,30 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
           return exists ? prev.map(p => p.id === payId ? record : p) : [...prev, record];
         });
+        syncRecord('payments', {
+          id: payId,
+          date: saleWithSnapshot.paymentDate || saleWithSnapshot.date,
+          contactId: String(saleWithSnapshot.customerId || 'WALK-IN'),
+          contactName: saleWithSnapshot.customerName || 'Walk-in Customer',
+          contactType: 'Customer',
+          amount: paidAmount,
+          method: saleWithSnapshot.paymentMethod || 'Cash',
+          account: resolveDefaultAccountFromMethod(saleWithSnapshot.paymentMethod || 'Cash'),
+          location: saleWithSnapshot.location || '',
+          referenceNo: payRef,
+          note: saleWithSnapshot.paymentNote || `Payment for invoice ${saleWithSnapshot.invoiceNo}`,
+          type: 'received',
+          linkedInvoices: saleWithSnapshot.invoiceNo ? [saleWithSnapshot.invoiceNo] : [],
+          addedBy: saleWithSnapshot.addedBy || 'System',
+        });
       } else {
         // Payment was removed (changed to Credit Sale) — remove the auto record
         setPayments(prev => prev.filter(p => p.id !== payId));
+        deleteRecord('payments', payId);
       }
     } else {
       setPayments(prev => prev.filter(p => p.id !== payId));
+      deleteRecord('payments', payId);
     }
   };
 

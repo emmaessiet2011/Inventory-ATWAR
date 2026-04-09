@@ -174,7 +174,7 @@ const ReportSellPayment: React.FC = () => {
       return match ? match[0] : '--';
     };
 
-    return payments
+    const paymentRows = payments
       .filter((payment) => payment.contactType === 'Customer' && payment.type === 'received')
       .map((payment) => {
         const rawAmount = Number(payment.amount);
@@ -209,13 +209,63 @@ const ReportSellPayment: React.FC = () => {
           amount: round3(rawAmount),
         };
       })
-      .filter((row): row is ReportRow => !!row)
+      .filter((row): row is ReportRow => !!row);
+
+    const coveredInvoiceSet = new Set(
+      paymentRows
+        .map((row) => String(row.invoiceNo || '').trim())
+        .filter((invoiceNo) => invoiceNo && invoiceNo !== '--'),
+    );
+
+    const inferredRows = sales
+      .filter((sale) => {
+        const saleStatus = normalize(sale.status || sale.saleStatus);
+        if (saleStatus !== 'final') return false;
+        const paid = Number(sale.totalPaid || 0);
+        if (!Number.isFinite(paid) || paid <= 0) return false;
+        const invoiceNo = String(sale.invoiceNo || '').trim();
+        if (!invoiceNo || coveredInvoiceSet.has(invoiceNo)) return false;
+        return true;
+      })
+      .map((sale) => {
+        const customer = (
+          customerById.get(String(sale.customerId || '').trim())
+          || customerByName.get(normalize(sale.customerName))
+        );
+        const customerLabel = String(sale.customerName || customer?.businessName || customer?.name || '--').trim() || '--';
+        const customerGroup = String(
+          sale.customerGroup
+          || customerGroupById.get(normalize(sale.customerGroupId))
+          || customer?.customerGroup
+          || customerGroupById.get(normalize(customer?.customerGroupId))
+          || 'Ungrouped',
+        ).trim() || 'Ungrouped';
+        const invoiceNo = String(sale.invoiceNo || '--').trim() || '--';
+        const ref = `SP-${invoiceNo === '--' ? String(sale.id || '').trim() || Date.now() : invoiceNo}`;
+        return {
+          id: `inferred-${sale.id}`,
+          dateRaw: String(sale.paymentDate || sale.date || '').trim(),
+          dateMs: parseMs(sale.paymentDate || sale.date),
+          ref,
+          invoiceNo,
+          customer: customerLabel,
+          customerGroup,
+          location: String(sale.location || '').trim(),
+          method: String(sale.paymentMethod || '--').trim() || '--',
+          addedBy: String(sale.addedBy || '--').trim() || '--',
+          account: String((sale as any).paymentAccount || '').trim(),
+          note: `Recovered from paid invoice ${invoiceNo}`,
+          amount: round3(Number(sale.totalPaid || 0)),
+        };
+      });
+
+    return [...paymentRows, ...inferredRows]
       .sort((left, right) => {
         const leftMs = Number.isFinite(left.dateMs) ? left.dateMs : Number.MIN_SAFE_INTEGER;
         const rightMs = Number.isFinite(right.dateMs) ? right.dateMs : Number.MIN_SAFE_INTEGER;
         return rightMs - leftMs;
       });
-  }, [payments, saleByInvoice, customerById, customerByName, customerGroupById]);
+  }, [payments, sales, saleByInvoice, customerById, customerByName, customerGroupById]);
 
   const customerOptions = useMemo(() => (
     Array.from(new Set(rows.map((row) => row.customer).filter(Boolean) as string[]))
