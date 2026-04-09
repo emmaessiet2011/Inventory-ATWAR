@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Download, FileSpreadsheet, FileText, Filter, Info, Printer, TrendingUp} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import { useGlobalContext } from '@/context/GlobalContext';
+import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
 
 import MultiSelect from '@/components/shared/MultiSelect';
 
@@ -570,7 +571,7 @@ const ReportTrendingProducts: React.FC = () => {
           
           <div className="h-96 w-full overflow-x-auto overflow-y-hidden">
             <div className="h-full" style={{ minWidth: `${chartWidth}px` }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={filteredData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                       <XAxis
@@ -587,7 +588,7 @@ const ReportTrendingProducts: React.FC = () => {
                       <Tooltip cursor={{ fill: '#f1f5f9' }} contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }} />
                       <Bar dataKey="sold" fill="#7cb5ec" name="Total unit sold" barSize={barSize} />
                   </BarChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             </div>
           </div>
           <div className="mt-3 text-xs text-slate-500 text-center">

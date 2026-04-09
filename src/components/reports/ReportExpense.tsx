@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Filter, FileText, FileSpreadsheet, Printer, Columns, Search, ArrowUpDown, Download, Receipt} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import { useGlobalContext } from '@/context/GlobalContext';
+import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
 
 import MultiSelect from '@/components/shared/MultiSelect';
 
@@ -293,7 +294,7 @@ const ReportExpense: React.FC = () => {
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
         <h3 className="font-bold text-slate-800 text-sm mb-4 text-center">Expense Report</h3>
         <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+          <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
             <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} />
@@ -305,7 +306,7 @@ const ReportExpense: React.FC = () => {
               />
               <Bar dataKey="expense" fill="#7cb5ec" name="Total Expense" barSize={50} />
             </BarChart>
-          </ResponsiveContainer>
+          </SafeResponsiveContainer>
         </div>
       </div>
 

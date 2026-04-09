@@ -38,7 +38,6 @@ import {
   Line,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
@@ -48,6 +47,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { parseExpenseDateToMs } from '@/utils/expenses';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { fetchDedicated } from '@/utils/apiClient';
+import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;
@@ -1487,7 +1487,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           <h3 className="text-lg font-bold text-slate-900">Sales vs Profit (Last 6 Weeks)</h3>
           <p className="text-sm text-slate-500 mb-5">Bars show total sales; the line shows gross profit per week.</p>
           <div className="h-80 w-full">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <ComposedChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -1497,7 +1497,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <Bar dataKey="sales" name="Sales" fill="#0f172a" barSize={38} radius={[4, 4, 0, 0]} />
                 <Line type="monotone" dataKey="profit" name="Gross Profit" stroke="#dc2626" strokeWidth={3} dot={{ r: 4, fill: '#dc2626' }} />
               </ComposedChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
 
@@ -1511,7 +1511,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 No category sales in selected filters.
               </div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie data={categoryData} cx="50%" cy="50%" innerRadius={55} outerRadius={82} paddingAngle={3} dataKey="value">
                     {categoryData.map((entry, index) => (
@@ -1521,7 +1521,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                   <Tooltip formatter={(value: number) => formatCurrency(toNum(value))} />
                   <Legend verticalAlign="bottom" height={36} iconType="circle" />
                 </PieChart>
-              </ResponsiveContainer>
+              </SafeResponsiveContainer>
             )}
           </div>
         </div>
@@ -1656,7 +1656,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             ))}
           </div>
           <div className="mt-4 h-32">
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+            <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
               <LineChart data={salesSparkline}>
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
                 <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} />
@@ -1664,7 +1664,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 <Tooltip formatter={(value: number) => formatCurrency(value)} />
                 <Line type="monotone" dataKey="value" stroke="#0f172a" strokeWidth={2} dot={false} />
               </LineChart>
-            </ResponsiveContainer>
+            </SafeResponsiveContainer>
           </div>
         </div>
       )}
@@ -1838,14 +1838,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                 </div>
               </div>
               <div className="h-32">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                <SafeResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <BarChart data={leakageTrend}>
                     <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} tickLine={false} axisLine={false} />
                     <YAxis hide />
                     <Tooltip formatter={(value: number) => formatCurrency(value)} />
                     <Bar dataKey="value" fill="#ef4444" radius={[4, 4, 0, 0]} />
                   </BarChart>
-                </ResponsiveContainer>
+                </SafeResponsiveContainer>
               </div>
             </div>
           )}
