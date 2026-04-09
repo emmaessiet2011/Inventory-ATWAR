@@ -41,6 +41,22 @@ const normalizeOrderDiscountType = (value: unknown): OrderDiscountType => {
   return 'None';
 };
 
+const formatDateForInput = (value: Date): string => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const extractDateInput = (value: unknown): string => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const directMatch = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (directMatch) return directMatch[1];
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? '' : formatDateForInput(parsed);
+};
+
 const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
   const {
     orders,
@@ -63,7 +79,7 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const [salesPerson, setSalesPerson] = useState(currentUser?.name || 'Admin');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().slice(0, 16));
-  const [deliveryDate, setDeliveryDate] = useState('');
+  const [deliveryDate, setDeliveryDate] = useState(() => extractDateInput(new Date().toISOString()));
   const [deliveryTimeSlot, setDeliveryTimeSlot] = useState('');
   const [status, setStatus] = useState<GlobalOrder['status']>('Pending');
   const [orderType, setOrderType] = useState<GlobalOrder['orderType']>('Paid');
@@ -192,8 +208,9 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
     setCustomerSearch(existing.customerName);
     setCustomerPhone(existing.customerPhone || '');
     setSalesPerson(existing.salesRep || currentUser?.name || 'Admin');
-    setOrderDate(existing.orderDate || new Date().toISOString().slice(0, 16));
-    setDeliveryDate(existing.deliveryDate || '');
+    const fallbackOrderDate = existing.orderDate || new Date().toISOString().slice(0, 16);
+    setOrderDate(fallbackOrderDate);
+    setDeliveryDate(existing.deliveryDate || extractDateInput(fallbackOrderDate) || extractDateInput(new Date().toISOString()));
     setDeliveryTimeSlot(normalizeDeliveryTimeSlot(existing.deliveryTimeSlot));
     setStatus(existing.status);
     setOrderType(existing.orderType);
@@ -543,9 +560,13 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       addNotification({ title: 'Validation Error', message: 'Business location is required.', type: 'error' });
       return;
     }
-    if (!deliveryDate) {
-      addNotification({ title: 'Validation Error', message: 'Delivery date is required.', type: 'error' });
+    const resolvedDeliveryDate = extractDateInput(deliveryDate) || extractDateInput(orderDate) || extractDateInput(new Date().toISOString());
+    if (!resolvedDeliveryDate) {
+      addNotification({ title: 'Validation Error', message: 'Unable to resolve delivery date. Please choose a valid date.', type: 'error' });
       return;
+    }
+    if (deliveryDate !== resolvedDeliveryDate) {
+      setDeliveryDate(resolvedDeliveryDate);
     }
     if (nonBlankRows.length === 0) {
       addNotification({ title: 'Validation Error', message: 'Add at least one order item.', type: 'error' });
@@ -573,7 +594,7 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       customerName: selectedCustomer?.businessName || customerSearch,
       customerPhone: customerPhone || selectedCustomer?.mobile || '',
       orderDate,
-      deliveryDate,
+      deliveryDate: resolvedDeliveryDate,
       deliveryTimeSlot: normalizeDeliveryTimeSlot(deliveryTimeSlot) || undefined,
       status,
       paymentStatus,
