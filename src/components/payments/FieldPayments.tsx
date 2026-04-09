@@ -45,6 +45,7 @@ interface FieldPaymentRecord {
   attachmentName?: string;
   linkedInvoices?: string[];
   linkedInvoiceBreakdown?: InvoiceBreakdown[];
+  preferredInvoiceRefs?: string[];
   postedPaymentId?: string;
   approvedBy?: string;
   approvedAt?: string;
@@ -56,6 +57,19 @@ interface FieldPaymentRecord {
 const FIELD_PAYMENTS_UPDATED_EVENT = 'app:field-payments-updated';
 
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+const parseInvoiceRefs = (value: string): string[] => {
+  const seen = new Set<string>();
+  const tokens = String(value || '')
+    .split(/[\n,;]+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+  return tokens.filter((token) => {
+    const normalized = normalizeText(token);
+    if (!normalized || seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+};
 
 const sortByDateDesc = (rows: FieldPaymentRecord[]) => (
   [...rows].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -71,6 +85,9 @@ const normalizeFieldPaymentRecord = (raw: any, index: number): FieldPaymentRecor
   const attachmentName = String(raw?.attachmentName || raw?.document || '').trim();
   const linkedInvoices = Array.isArray(raw?.linkedInvoices)
     ? raw.linkedInvoices.map((ref: unknown) => String(ref || '').trim()).filter(Boolean)
+    : [];
+  const preferredInvoiceRefs = Array.isArray(raw?.preferredInvoiceRefs)
+    ? raw.preferredInvoiceRefs.map((ref: unknown) => String(ref || '').trim()).filter(Boolean)
     : [];
 
   const linkedInvoiceBreakdown: InvoiceBreakdown[] = Array.isArray(raw?.linkedInvoiceBreakdown)
@@ -100,6 +117,7 @@ const normalizeFieldPaymentRecord = (raw: any, index: number): FieldPaymentRecor
     attachmentName: attachmentName || undefined,
     linkedInvoices,
     linkedInvoiceBreakdown: linkedInvoiceBreakdown.length > 0 ? linkedInvoiceBreakdown : undefined,
+    preferredInvoiceRefs: preferredInvoiceRefs.length > 0 ? preferredInvoiceRefs : undefined,
     postedPaymentId: String(raw?.postedPaymentId || '').trim() || undefined,
     approvedBy: String(raw?.approvedBy || '').trim() || undefined,
     approvedAt: toDateTimeLocalInput(raw?.approvedAt) || undefined,
@@ -164,6 +182,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   const [accountInput, setAccountInput] = useState('');
   const [accountOptionsVersion, setAccountOptionsVersion] = useState(0);
   const [noteInput, setNoteInput] = useState('');
+  const [invoiceRefsInput, setInvoiceRefsInput] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
   const [rebateEnabled, setRebateEnabled] = useState(false);
 
@@ -306,6 +325,39 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     });
   }, [customers, customerQuery]);
 
+  const selectedCustomerInvoiceOptions = useMemo(() => {
+    if (!selectedCustomer) {
+      return { all: [] as string[], due: [] as string[] };
+    }
+    const customerId = String(selectedCustomer.id || '').trim();
+    const customerName = normalizeText(selectedCustomer.businessName || selectedCustomer.name);
+    const isDueStatus = (status: unknown) => ['Due', 'Partial', 'Overdue'].includes(String(status || '').trim());
+    const seen = new Set<string>();
+    const all: string[] = [];
+    const due: string[] = [];
+
+    sales
+      .filter((sale) => {
+        const isFinal = String(sale.status || sale.saleStatus || '').trim() === 'Final';
+        if (!isFinal) return false;
+        const sameCustomer =
+          String(sale.customerId || '') === customerId ||
+          normalizeText(sale.customerName) === customerName;
+        return sameCustomer && String(sale.invoiceNo || '').trim().length > 0;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .forEach((sale) => {
+        const invoiceNo = String(sale.invoiceNo || '').trim();
+        const key = normalizeText(invoiceNo);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        all.push(invoiceNo);
+        if (isDueStatus(sale.paymentStatus)) due.push(invoiceNo);
+      });
+
+    return { all, due };
+  }, [sales, selectedCustomer]);
+
   const filteredRecords = useMemo(() => {
     const query = normalizeText(search);
     return records.filter(record => {
@@ -337,6 +389,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     setMethodInput(settings.defaultSalePaymentMethod || paymentMethodOptions[0] || 'Cash');
     setAccountInput(defaultAccountFromMethod(settings.defaultSalePaymentMethod || paymentMethodOptions[0] || 'Cash') || paymentAccountOptions[0] || '');
     setNoteInput('');
+    setInvoiceRefsInput('');
     setAttachmentName('');
     setRebateEnabled(false);
     setShowCustomerDropdown(false);
@@ -371,42 +424,91 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     setMethodInput(record.method || settings.defaultSalePaymentMethod || 'Cash');
     setAccountInput(record.account || '');
     setNoteInput(record.note || '');
+    setInvoiceRefsInput((record.preferredInvoiceRefs || []).join(', '));
     setAttachmentName(record.attachmentName || '');
     setRebateEnabled(record.rebateApplied === true || Number(customer?.rebatePercent || 0) > 0);
     setIsModalOpen(true);
   };
 
-  const resolveInvoiceBreakdown = (customer: any, paymentAmount: number, locationName: string): InvoiceBreakdown[] => {
-    if (!customer || paymentAmount <= 0) return [];
+  const resolveInvoiceBreakdown = (
+    customer: any,
+    paymentAmount: number,
+    locationName: string,
+    requestedInvoiceRefs: string[] = [],
+  ): {
+    breakdown: InvoiceBreakdown[];
+    nonCustomerInvoiceRefs: string[];
+    nonDueInvoiceRefs: string[];
+  } => {
+    if (!customer || paymentAmount <= 0) {
+      return { breakdown: [], nonCustomerInvoiceRefs: [], nonDueInvoiceRefs: [] };
+    }
     let remaining = paymentAmount;
-    const dueSales = sales
+    const customerSales = sales
       .filter(sale =>
         String(sale.status || sale.saleStatus || '').trim() === 'Final' &&
         (String(sale.customerId || '') === String(customer.id || '') ||
-          normalizeText(sale.customerName) === normalizeText(customer.businessName)) &&
-        ['Due', 'Partial', 'Overdue'].includes(String(sale.paymentStatus || ''))
+          normalizeText(sale.customerName) === normalizeText(customer.businessName))
       )
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const dueSales = customerSales.filter(sale =>
+      ['Due', 'Partial', 'Overdue'].includes(String(sale.paymentStatus || ''))
+    );
 
-    const prioritized = locationName
-      ? [
-          ...dueSales.filter(sale => normalizeText(sale.location) === normalizeText(locationName)),
-          ...dueSales.filter(sale => normalizeText(sale.location) !== normalizeText(locationName)),
-        ]
-      : dueSales;
+    const requested = requestedInvoiceRefs.filter(Boolean);
+    const nonCustomerInvoiceRefs: string[] = [];
+    const nonDueInvoiceRefs: string[] = [];
+    let prioritized = dueSales;
+
+    if (requested.length > 0) {
+      const customerByInvoice = new Map<string, any>();
+      customerSales.forEach((sale) => {
+        const key = normalizeText(sale.invoiceNo);
+        if (key && !customerByInvoice.has(key)) {
+          customerByInvoice.set(key, sale);
+        }
+      });
+      const dueByInvoice = new Map<string, any>();
+      dueSales.forEach((sale) => {
+        const key = normalizeText(sale.invoiceNo);
+        if (key && !dueByInvoice.has(key)) {
+          dueByInvoice.set(key, sale);
+        }
+      });
+      prioritized = requested
+        .map((invoiceRef) => {
+          const key = normalizeText(invoiceRef);
+          if (!customerByInvoice.has(key)) {
+            nonCustomerInvoiceRefs.push(invoiceRef);
+            return null;
+          }
+          const dueMatch = dueByInvoice.get(key);
+          if (!dueMatch) {
+            nonDueInvoiceRefs.push(invoiceRef);
+            return null;
+          }
+          return dueMatch;
+        })
+        .filter(Boolean);
+    } else if (locationName) {
+      prioritized = [
+        ...dueSales.filter(sale => normalizeText(sale.location) === normalizeText(locationName)),
+        ...dueSales.filter(sale => normalizeText(sale.location) !== normalizeText(locationName)),
+      ];
+    }
 
     const seen = new Set<string>();
     const breakdown: InvoiceBreakdown[] = [];
-    prioritized.forEach(sale => {
+    prioritized.forEach((sale: any) => {
       if (remaining <= 0) return;
-      if (!sale.invoiceNo || seen.has(sale.invoiceNo)) return;
+      if (!sale?.invoiceNo || seen.has(String(sale.invoiceNo))) return;
       const due = typeof sale.sellDue === 'number'
         ? Math.max(0, sale.sellDue)
         : Math.max(0, (sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0));
       if (due <= 0) return;
       const paying = Math.min(remaining, due);
       if (paying > 0) {
-        seen.add(sale.invoiceNo);
+        seen.add(String(sale.invoiceNo));
         breakdown.push({
           invoiceNo: String(sale.invoiceNo),
           amountApplied: paying,
@@ -416,7 +518,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       }
       remaining -= paying;
     });
-    return breakdown;
+    return { breakdown, nonCustomerInvoiceRefs, nonDueInvoiceRefs };
   };
 
   const requiresAttachment = (method: string) =>
@@ -451,7 +553,36 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       return;
     }
 
-    const breakdown = resolveInvoiceBreakdown(selectedCustomer, paymentAmount, locationInput);
+    const requestedInvoiceRefs = parseInvoiceRefs(invoiceRefsInput);
+    const {
+      breakdown,
+      nonCustomerInvoiceRefs,
+      nonDueInvoiceRefs,
+    } = resolveInvoiceBreakdown(selectedCustomer, paymentAmount, locationInput, requestedInvoiceRefs);
+    if (requestedInvoiceRefs.length > 0 && nonCustomerInvoiceRefs.length > 0) {
+      addNotification({
+        title: 'Validation Error',
+        message: `These invoice ID(s) do not belong to selected customer: ${nonCustomerInvoiceRefs.join(', ')}`,
+        type: 'error',
+      });
+      return;
+    }
+    if (requestedInvoiceRefs.length > 0 && nonDueInvoiceRefs.length > 0) {
+      addNotification({
+        title: 'Validation Error',
+        message: `These invoice ID(s) have no outstanding due: ${nonDueInvoiceRefs.join(', ')}`,
+        type: 'error',
+      });
+      return;
+    }
+    if (requestedInvoiceRefs.length > 0 && breakdown.length === 0) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'No outstanding due found for the selected invoice ID(s).',
+        type: 'error',
+      });
+      return;
+    }
     const linkedInvoices = breakdown.map(b => b.invoiceNo);
     const rebateAmt = (rebateEnabled && customerRebatePercent > 0)
       ? Number((paymentAmount * customerRebatePercent / 100).toFixed(3))
@@ -470,6 +601,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         method: methodInput || 'Cash',
         account: resolvedAccount,
         note: noteInput.trim(),
+        preferredInvoiceRefs: requestedInvoiceRefs.length > 0 ? requestedInvoiceRefs : undefined,
         attachmentName: attachmentName || undefined,
         linkedInvoices,
         linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
@@ -498,6 +630,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       collectedBy: currentUser?.name || 'Admin',
       status: 'Pending',
       note: noteInput.trim(),
+      preferredInvoiceRefs: requestedInvoiceRefs.length > 0 ? requestedInvoiceRefs : undefined,
       attachmentName: attachmentName || undefined,
       linkedInvoices,
       linkedInvoiceBreakdown: breakdown.length > 0 ? breakdown : undefined,
@@ -526,8 +659,9 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     );
 
     const paymentId = existingGlobal?.id || record.postedPaymentId || `PAY-FIELD-${Date.now()}`;
+    let paymentPosted = !!existingGlobal;
     if (!existingGlobal) {
-      globalAddPayment({
+      paymentPosted = globalAddPayment({
         id: paymentId,
         date: record.date,
         contactId: record.customerId,
@@ -542,11 +676,21 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         type: 'received',
         addedBy: currentUser?.name || 'Admin',
         linkedInvoices: record.linkedInvoices || [],
+        strictLinkedAllocation: Array.isArray(record.preferredInvoiceRefs) && record.preferredInvoiceRefs.length > 0,
         attachmentName: record.attachmentName,
         rebatePercent: record.rebatePercent,
         rebateAmount: record.rebateAmount,
         rebateApplied: record.rebateApplied,
+      }, { skipPermissionBoundary: true });
+    }
+
+    if (!paymentPosted) {
+      addNotification({
+        title: 'Approval Failed',
+        message: 'Payment posting failed. Field payment remains pending.',
+        type: 'error',
       });
+      return;
     }
 
     const activeRegister = getActiveRegisterSession();
@@ -775,6 +919,37 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                 </div>
               </div>
 
+              <div>
+                <label className="text-xs font-bold text-slate-600">Invoice ID(s) (Optional)</label>
+                <input
+                  type="text"
+                  value={invoiceRefsInput}
+                  onChange={(e) => setInvoiceRefsInput(e.target.value)}
+                  list="field-payment-invoice-options"
+                  className="w-full mt-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm"
+                  placeholder="INV-1001, INV-1002"
+                />
+                <datalist id="field-payment-invoice-options">
+                  {selectedCustomerInvoiceOptions.due.map((invoiceNo) => (
+                    <option key={invoiceNo} value={invoiceNo} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-slate-500 mt-1">
+                  If provided, approval will settle only these invoice(s). Leave empty for auto FIFO allocation.
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  Only invoice IDs belonging to the selected customer are accepted.
+                </p>
+                {selectedCustomer && selectedCustomerInvoiceOptions.all.length > 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Due invoices for this customer: {selectedCustomerInvoiceOptions.due.length > 0 ? selectedCustomerInvoiceOptions.due.slice(0, 8).join(', ') : 'None'}{selectedCustomerInvoiceOptions.due.length > 8 ? ' ...' : ''}
+                  </p>
+                )}
+                {selectedCustomer && selectedCustomerInvoiceOptions.all.length === 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1">No invoice found for this customer yet.</p>
+                )}
+              </div>
+
               {customerRebatePercent > 0 && (
                 <div className="flex items-center justify-between p-3 rounded-xl bg-amber-50 border border-amber-200">
                   <div>
@@ -847,6 +1022,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
               <p><span className="font-semibold text-slate-700">Location:</span> {viewingRecord.location || '--'}</p>
               <p><span className="font-semibold text-slate-700">Method/Account:</span> {viewingRecord.method} / {viewingRecord.account || '--'}</p>
               <p><span className="font-semibold text-slate-700">Collected By:</span> {viewingRecord.collectedBy}</p>
+              {viewingRecord.preferredInvoiceRefs && viewingRecord.preferredInvoiceRefs.length > 0 && (
+                <p>
+                  <span className="font-semibold text-slate-700">Requested Invoice IDs:</span> {viewingRecord.preferredInvoiceRefs.join(', ')}
+                </p>
+              )}
               <p>
                 <span className="font-semibold text-slate-700">Status:</span>{' '}
                 <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${viewingRecord.status === 'Approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -921,6 +1101,12 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                 <span className="text-slate-500">Collected By</span>
                 <span className="font-semibold text-slate-800">{approvingRecord.collectedBy}</span>
               </div>
+              {approvingRecord.preferredInvoiceRefs && approvingRecord.preferredInvoiceRefs.length > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Requested Invoice IDs</span>
+                  <span className="font-semibold text-slate-800 text-right">{approvingRecord.preferredInvoiceRefs.join(', ')}</span>
+                </div>
+              )}
               {approvingRecord.attachmentName && (
                 <div className="flex justify-between items-center">
                   <span className="text-slate-500">Attachment</span>

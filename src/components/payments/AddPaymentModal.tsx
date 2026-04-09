@@ -173,6 +173,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       type: paymentType,
       addedBy: currentUser?.name || 'Admin',
       linkedInvoices: linkedDocumentNo ? [linkedDocumentNo] : [],
+      strictLinkedAllocation: Boolean(linkedDocumentNo),
       attachmentName: attachmentName || undefined,
       rebatePercent: rebateEnabled && customerRebatePercent > 0 ? customerRebatePercent : undefined,
       rebateAmount: rebateEnabled && rebateAmount > 0 ? rebateAmount : undefined,

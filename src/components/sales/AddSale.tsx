@@ -1586,6 +1586,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       discountType,
       discountAmount: typeof normalizedOrderDiscountAmount === 'number' ? normalizedOrderDiscountAmount : 0,
       tax: orderTax,
+      taxAmount: orderTaxValue,
       grandTotal,
       status: status as any,
     };

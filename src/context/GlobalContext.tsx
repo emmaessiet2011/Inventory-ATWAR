@@ -577,6 +577,7 @@ export interface Payment {
   note: string;
   type: 'received' | 'sent'; // received = customer pays us; sent = we pay supplier
   linkedInvoices?: string[];
+  strictLinkedAllocation?: boolean; // if true, only linkedInvoices are settled; extra becomes advance
   addedBy?: string;
   attachmentName?: string;
   attachmentData?: string;
@@ -1146,7 +1147,7 @@ interface GlobalContextType {
   // --- Payments ---
   payments: Payment[];
   setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
-  addPayment: (payment: Payment, options?: { skipActivity?: boolean }) => void;
+  addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => boolean;
   updatePayment: (payment: Payment) => void;
   deletePayment: (id: string, options?: { skipActivity?: boolean }) => void;
 
@@ -5245,14 +5246,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  addPayment also: updates sale paymentStatus + customer/supplier balances
   // ============================================================
 
-  const addPayment = (payment: Payment, options?: { skipActivity?: boolean }) => {
-    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Create payment')) return;
+  const addPayment = (
+    payment: Payment,
+    options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean },
+  ): boolean => {
+    const canCreatePayment =
+      options?.skipPermissionBoundary === true ||
+      hasContextPermission('POS', 'Add/Edit Payment') ||
+      hasContextPermission('Sell', 'Add sell payment');
+    if (!canCreatePayment) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Payments',
+        description: 'Permission blocked: Create payment. Missing permission "Add/Edit Payment" or "Add sell payment".',
+      });
+      return false;
+    }
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
     const normalizedPayment: Payment = {
       ...payment,
       method: normalizedMethod,
       account: resolveDefaultAccountFromMethod(normalizedMethod),
     };
+    let customerAllocationBySaleId = new Map<string, number>();
+    let customerAppliedToInvoices = 0;
+    let customerUnappliedRemainder = 0;
 
     // Enrich linkedInvoices: dry-run FIFO so the stored payment always references
     // the invoices it will actually cover — fixes visibility in ViewSaleDetails/ViewPaymentsModal.
@@ -5261,6 +5279,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const linkedSet = new Set(
         (normalizedPayment.linkedInvoices || []).map(inv => String(inv || '').trim()).filter(Boolean)
       );
+      const strictLinkedAllocation = normalizedPayment.strictLinkedAllocation === true && linkedSet.size > 0;
       const dueInvoices = sales
         .filter(s =>
           isFinalizedSale(s) &&
@@ -5270,23 +5289,40 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       const prioritized = linkedSet.size === 0
         ? dueInvoices
-        : [
-            ...dueInvoices.filter(s => linkedSet.has(String(s.invoiceNo || '').trim())),
-            ...dueInvoices.filter(s => !linkedSet.has(String(s.invoiceNo || '').trim())),
-          ];
+        : strictLinkedAllocation
+          ? dueInvoices.filter(s => linkedSet.has(String(s.invoiceNo || '').trim()))
+          : [
+              ...dueInvoices.filter(s => linkedSet.has(String(s.invoiceNo || '').trim())),
+              ...dueInvoices.filter(s => !linkedSet.has(String(s.invoiceNo || '').trim())),
+            ];
       let remaining = normalizedPayment.amount;
       const covered = new Set<string>(linkedSet);
+      const allocationBySaleId = new Map<string, number>();
       for (const s of prioritized) {
         if (remaining <= 0) break;
         const due = typeof s.sellDue === 'number'
           ? Math.max(0, s.sellDue)
           : Math.max(0, (s.grandTotal || s.totalAmount || 0) - (s.totalPaid || 0));
         if (due <= 0) continue;
-        remaining -= Math.min(remaining, due);
+        const paying = Math.min(remaining, due);
+        remaining = Number(Math.max(0, remaining - paying).toFixed(3));
+        const saleId = String(s.id || '').trim();
+        if (saleId) {
+          allocationBySaleId.set(saleId, Number(((allocationBySaleId.get(saleId) || 0) + paying).toFixed(3)));
+        }
+        customerAppliedToInvoices = Number((customerAppliedToInvoices + paying).toFixed(3));
         if (s.invoiceNo) covered.add(String(s.invoiceNo).trim());
       }
+      customerAllocationBySaleId = allocationBySaleId;
+      customerUnappliedRemainder = Number(Math.max(0, normalizedPayment.amount - customerAppliedToInvoices).toFixed(3));
       if (covered.size > 0) {
-        paymentToStore = { ...normalizedPayment, linkedInvoices: Array.from(covered).filter(Boolean) };
+        paymentToStore = {
+          ...normalizedPayment,
+          linkedInvoices: Array.from(covered).filter(Boolean),
+          strictLinkedAllocation,
+        };
+      } else if (strictLinkedAllocation) {
+        paymentToStore = { ...normalizedPayment, strictLinkedAllocation: true };
       }
     }
     setPayments(prev => [...prev, paymentToStore]);
@@ -5335,60 +5371,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           });
           return updated;
         });
-        return;
+        return true;
       }
 
-      // Apply payment to outstanding customer invoices (FIFO)
-      setSales(prev => {
-        let remaining = appliedPayment.amount;
-        const updated = [...prev];
-        // Sort by date ascending (oldest first)
-        const dueInvoices = updated
-          .map((s, i) => ({ s, i }))
-          .filter(({ s }) =>
-            isFinalizedSale(s) &&
-            (s.customerName === appliedPayment.contactName || String(s.customerId) === appliedPayment.contactId) &&
-            (s.paymentStatus === 'Due' || s.paymentStatus === 'Partial' || s.paymentStatus === 'Overdue')
-          )
-          .sort((a, b) => new Date(a.s.date).getTime() - new Date(b.s.date).getTime());
-        const linkedSet = new Set(
-          (appliedPayment.linkedInvoices || [])
-            .map(inv => String(inv || '').trim())
-            .filter(Boolean)
-        );
-        const prioritized = linkedSet.size === 0
-          ? dueInvoices
-          : [
-              ...dueInvoices.filter(({ s }) => linkedSet.has(String(s.invoiceNo || '').trim())),
-              ...dueInvoices.filter(({ s }) => !linkedSet.has(String(s.invoiceNo || '').trim())),
-            ];
-
-        prioritized.forEach(({ s, i }) => {
-          if (remaining <= 0) return;
-          // Use sellDue if set; fall back to grandTotal - totalPaid for legacy sales
-          const due = typeof s.sellDue === 'number'
-            ? Math.max(0, s.sellDue)
-            : Math.max(0, (s.grandTotal || s.totalAmount || 0) - (s.totalPaid || 0));
-          if (due <= 0) return;
-          const paying = Math.min(remaining, due);
-          remaining -= paying;
-          const newPaid = (s.totalPaid || 0) + paying;
-          const newDue = due - paying;
-          updated[i] = {
-            ...s,
+      if (customerAllocationBySaleId.size > 0) {
+        setSales(prev => prev.map((sale) => {
+          const appliedAmount = Number(customerAllocationBySaleId.get(String(sale.id || '')) || 0);
+          if (appliedAmount <= 0) return sale;
+          // Use sellDue if set; fall back to grandTotal - totalPaid for legacy sales.
+          const due = typeof sale.sellDue === 'number'
+            ? Math.max(0, sale.sellDue)
+            : Math.max(0, (sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0));
+          if (due <= 0) return sale;
+          const settled = Math.min(appliedAmount, due);
+          const newPaid = Number(((sale.totalPaid || 0) + settled).toFixed(3));
+          const newDue = Number(Math.max(0, due - settled).toFixed(3));
+          return {
+            ...sale,
             totalPaid: newPaid,
             sellDue: newDue,
             paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial',
           };
-        });
-        return updated;
-      });
+        }));
+      }
 
       // Update customer balance
       setCustomers(prev => prev.map(c => {
         if (c.id === appliedPayment.contactId || c.businessName === appliedPayment.contactName) {
-          const newDue = Math.max(0, c.totalSellDue - appliedPayment.amount);
-          const newAdv = appliedPayment.amount > c.totalSellDue ? c.advanceBalance + (appliedPayment.amount - c.totalSellDue) : c.advanceBalance;
+          const totalSellDue = Number(c.totalSellDue || 0);
+          const currentAdvance = Number(c.advanceBalance || 0);
+          const appliedToDue = Math.min(totalSellDue, customerAppliedToInvoices);
+          const newDue = Number(Math.max(0, totalSellDue - appliedToDue).toFixed(3));
+          const newAdv = Number((currentAdvance + customerUnappliedRemainder).toFixed(3));
           return { ...c, totalSellDue: newDue, advanceBalance: newAdv };
         }
         return c;
@@ -5432,6 +5446,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `${direction} payment: ${appliedPayment.referenceNo || appliedPayment.id}`,
       });
     }
+    return true;
   };
 
   const updatePayment = (payment: Payment) => {

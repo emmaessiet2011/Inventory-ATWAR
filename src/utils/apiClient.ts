@@ -135,7 +135,19 @@ export function syncRecord(resource: string, data: object): void {
       body: JSON.stringify(data),
     },
   )
-    .then(res => { if (res.status === 401) handle401(); })
+    .then(async (res) => {
+      if (res.status === 401) {
+        handle401();
+        return;
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = await res.text();
+        } catch {}
+        console.error(`[syncRecord] ${resource} failed (${res.status})`, detail || data);
+      }
+    })
     .catch(() => {});
 }
 
@@ -149,7 +161,19 @@ export function deleteRecord(resource: string, id: string): void {
     `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}/${encodeURIComponent(id)}`,
     { method: 'DELETE', headers: authHeaders() },
   )
-    .then(res => { if (res.status === 401) handle401(); })
+    .then(async (res) => {
+      if (res.status === 401) {
+        handle401();
+        return;
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = await res.text();
+        } catch {}
+        console.error(`[deleteRecord] ${resource}:${id} failed (${res.status})`, detail);
+      }
+    })
     .catch(() => {});
 }
 
@@ -188,7 +212,19 @@ export function syncCollection(key: string, data: unknown[]): void {
       body: JSON.stringify({ data }),
     },
   )
-    .then(res => { if (res.status === 401) handle401(); })
+    .then(async (res) => {
+      if (res.status === 401) {
+        handle401();
+        return;
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = await res.text();
+        } catch {}
+        console.error(`[syncCollection] ${key} failed (${res.status})`, detail);
+      }
+    })
     .catch(() => {});
 }
 
@@ -219,7 +255,19 @@ export function syncDedicated(path: string, id: string, data: object): void {
     headers: authHeaders(),
     body: JSON.stringify(data),
   })
-    .then(res => { if (res.status === 401) handle401(); })
+    .then(async (res) => {
+      if (res.status === 401) {
+        handle401();
+        return;
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = await res.text();
+        } catch {}
+        console.error(`[syncDedicated] ${path}:${id} failed (${res.status})`, detail || data);
+      }
+    })
     .catch(() => {});
 }
 
@@ -230,7 +278,19 @@ export function deleteDedicated(path: string, id: string): void {
     method: 'DELETE',
     headers: authHeaders(),
   })
-    .then(res => { if (res.status === 401) handle401(); })
+    .then(async (res) => {
+      if (res.status === 401) {
+        handle401();
+        return;
+      }
+      if (!res.ok) {
+        let detail = '';
+        try {
+          detail = await res.text();
+        } catch {}
+        console.error(`[deleteDedicated] ${path}:${id} failed (${res.status})`, detail);
+      }
+    })
     .catch(() => {});
 }
 

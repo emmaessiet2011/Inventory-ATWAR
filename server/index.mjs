@@ -41,6 +41,23 @@ const parseIntSafe = (v, fallback, min = 1, max = 1000) => {
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
 };
+const toFiniteNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    const normalized = trimmed.replace(/,/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const toOptionalFiniteNumber = (value) => {
+  if (value === null || value === undefined) return null;
+  const parsed = toFiniteNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 const sanitizeCollectionKey = (value) =>
   String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
 
@@ -132,6 +149,9 @@ const sendPrismaError = (res, error, fallbackMessage) => {
     if (error.code === 'P2025') return res.status(404).json({ ok: false, error: 'Record not found', code: error.code });
     if (error.code === 'P2003') return res.status(400).json({ ok: false, error: 'Invalid foreign key reference', code: error.code });
     return res.status(400).json({ ok: false, error: error.message, code: error.code });
+  }
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    return res.status(400).json({ ok: false, error: error.message });
   }
   return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : fallbackMessage });
 };
@@ -504,10 +524,10 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           sku: String(raw.sku || raw.name || id),
           type: normStatus(raw.type, ['SINGLE', 'VARIABLE', 'COMBO'], 'SINGLE'),
           packagingType: normStatus(raw.packagingType, ['PIECE', 'PACK', 'CARTON'], 'PIECE'),
-          unitsPerPackage: Number(raw.unitsPerPackage || 0) > 0 ? Math.trunc(Number(raw.unitsPerPackage)) : null,
-          unitPurchasePrice: Number(raw.unitPurchasePrice || 0),
-          sellingPrice: Number(raw.sellingPrice || 0),
-          stock: Number(raw.stock || 0),
+          unitsPerPackage: toFiniteNumber(raw.unitsPerPackage, 0) > 0 ? Math.trunc(toFiniteNumber(raw.unitsPerPackage, 0)) : null,
+          unitPurchasePrice: toFiniteNumber(raw.unitPurchasePrice, 0),
+          sellingPrice: toFiniteNumber(raw.sellingPrice, 0),
+          stock: toFiniteNumber(raw.stock, 0),
           meta: raw,
         };
         await prisma.product.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -520,11 +540,11 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           email: raw.email ? String(raw.email) : null,
           mobile: raw.mobile ? String(raw.mobile) : null,
           status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          creditLimit: Number(raw.creditLimit || 0),
-          openingBalance: Number(raw.openingBalance || 0),
-          advanceBalance: Number(raw.advanceBalance || 0),
-          totalSellDue: Number(raw.totalSellDue || 0),
-          totalSellReturnDue: Number(raw.totalSellReturnDue || 0),
+          creditLimit: toFiniteNumber(raw.creditLimit, 0),
+          openingBalance: toFiniteNumber(raw.openingBalance, 0),
+          advanceBalance: toFiniteNumber(raw.advanceBalance, 0),
+          totalSellDue: toFiniteNumber(raw.totalSellDue, 0),
+          totalSellReturnDue: toFiniteNumber(raw.totalSellReturnDue, 0),
           meta: raw,
         };
         await prisma.customer.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -537,30 +557,31 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           email: raw.email ? String(raw.email) : null,
           mobile: raw.mobile ? String(raw.mobile) : null,
           status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          openingBalance: Number(raw.openingBalance || 0),
-          advanceBalance: Number(raw.advanceBalance || 0),
-          totalPurchaseDue: Number(raw.totalPurchaseDue || 0),
-          totalReturnDue: Number(raw.totalReturnDue || 0),
+          openingBalance: toFiniteNumber(raw.openingBalance, 0),
+          advanceBalance: toFiniteNumber(raw.advanceBalance, 0),
+          totalPurchaseDue: toFiniteNumber(raw.totalPurchaseDue, 0),
+          totalReturnDue: toFiniteNumber(raw.totalReturnDue, 0),
           meta: raw,
         };
         await prisma.supplier.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
       case 'sales': {
+        const taxAmountCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           invoiceNo: String(raw.invoiceNo || `INV-${id}`),
           date: normDate(raw.date),
           status: normStatus(raw.status || raw.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           shippingStatus: normStatus(raw.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
-          subTotal: Number(raw.subTotal || 0),
-          discountAmount: Number(raw.discountAmount || 0),
-          taxAmount: Number(raw.taxAmount || raw.tax || 0),
-          shippingCharges: Number(raw.shippingCharges || 0),
-          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
-          totalPaid: Number(raw.totalPaid || 0),
-          sellDue: Number(raw.sellDue || 0),
-          sellReturnDue: Number(raw.sellReturnDue || 0),
+          subTotal: toFiniteNumber(raw.subTotal, 0),
+          discountAmount: toFiniteNumber(raw.discountAmount, 0),
+          taxAmount: toFiniteNumber(taxAmountCandidate, 0),
+          shippingCharges: toFiniteNumber(raw.shippingCharges, 0),
+          grandTotal: toFiniteNumber(raw.grandTotal ?? raw.totalAmount, 0),
+          totalPaid: toFiniteNumber(raw.totalPaid, 0),
+          sellDue: toFiniteNumber(raw.sellDue, 0),
+          sellReturnDue: toFiniteNumber(raw.sellReturnDue, 0),
           meta: raw,
         };
         await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -573,7 +594,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           direction: normStatus(raw.direction || raw.type, ['RECEIVED', 'SENT'], 'RECEIVED'),
           referenceNo: String(raw.referenceNo || raw.refNo || `PAY-${id}`),
           method: String(raw.method || raw.paymentMethod || 'Cash'),
-          amount: Number(raw.amount || 0),
+          amount: toFiniteNumber(raw.amount, 0),
           note: raw.note ? String(raw.note) : null,
           meta: raw,
         };
@@ -587,8 +608,8 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           email: String(raw.email || `user-${id}@local.atwar`),
           mobile: raw.mobile ? String(raw.mobile) : null,
           status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
-          commissionPercent: Number(raw.commissionPercent || 0),
-          maxDiscountPercent: Number(raw.maxDiscountPercent || 0),
+          commissionPercent: toFiniteNumber(raw.commissionPercent, 0),
+          maxDiscountPercent: toFiniteNumber(raw.maxDiscountPercent, 0),
           allowLogin: raw.allowLogin !== false,
           meta: raw,
         };
@@ -624,11 +645,11 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `EXP-${id}`),
           date: normDate(raw.date),
-          amount: Number(raw.amount || 0),
-          tax: Number(raw.tax || 0),
-          totalAmount: Number(raw.totalAmount || raw.amount || 0),
+          amount: toFiniteNumber(raw.amount, 0),
+          tax: toFiniteNumber(raw.tax, 0),
+          totalAmount: toFiniteNumber(raw.totalAmount ?? raw.amount, 0),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          paymentDue: Number(raw.paymentDue || raw.totalAmount || raw.amount || 0),
+          paymentDue: toFiniteNumber(raw.paymentDue ?? raw.totalAmount ?? raw.amount, 0),
           isRecurring: raw.isRecurring === true,
           isRefund: raw.isRefund === true,
           note: raw.note ? String(raw.note) : null,
@@ -638,16 +659,17 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'purchases': {
+        const purchaseTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `PUR-${id}`),
           date: normDate(raw.date),
-          status: normStatus(raw.status, ['RECEIVED', 'PENDING', 'ORDERED', 'DRAFT'], 'PENDING'),
+          status: normStatus(raw.status, ['RECEIVED', 'PENDING', 'ORDERED'], 'PENDING'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          subTotal: Number(raw.subTotal || 0),
-          taxAmount: Number(raw.taxAmount || raw.tax || 0),
-          discountAmount: Number(raw.discountAmount || 0),
-          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
-          paymentDue: Number(raw.paymentDue || raw.grandTotal || 0),
+          subTotal: toFiniteNumber(raw.subTotal, 0),
+          taxAmount: toFiniteNumber(purchaseTaxCandidate, 0),
+          discountAmount: toFiniteNumber(raw.discountAmount, 0),
+          grandTotal: toFiniteNumber(raw.grandTotal ?? raw.totalAmount, 0),
+          paymentDue: toFiniteNumber(raw.paymentDue ?? raw.grandTotal, 0),
           note: raw.note ? String(raw.note) : null,
           meta: raw,
         };
@@ -655,15 +677,16 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'sellReturns': {
+        const sellReturnTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `SR-${id}`),
           date: normDate(raw.date),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          subTotal: Number(raw.subTotal || 0),
-          discountAmount: Number(raw.discountAmount || 0),
-          taxAmount: Number(raw.taxAmount || raw.tax || 0),
-          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
-          totalRefunded: Number(raw.totalRefunded || 0),
+          subTotal: toFiniteNumber(raw.subTotal, 0),
+          discountAmount: toFiniteNumber(raw.discountAmount, 0),
+          taxAmount: toFiniteNumber(sellReturnTaxCandidate, 0),
+          grandTotal: toFiniteNumber(raw.grandTotal ?? raw.totalAmount, 0),
+          totalRefunded: toFiniteNumber(raw.totalRefunded, 0),
           note: raw.note ? String(raw.note) : null,
           meta: raw,
         };
@@ -671,15 +694,16 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'purchaseReturns': {
+        const purchaseReturnTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `PR-${id}`),
           date: normDate(raw.date),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          subTotal: Number(raw.subTotal || 0),
-          discountAmount: Number(raw.discountAmount || 0),
-          taxAmount: Number(raw.taxAmount || raw.tax || 0),
-          grandTotal: Number(raw.grandTotal || raw.totalAmount || 0),
-          totalRefunded: Number(raw.totalRefunded || 0),
+          subTotal: toFiniteNumber(raw.subTotal, 0),
+          discountAmount: toFiniteNumber(raw.discountAmount, 0),
+          taxAmount: toFiniteNumber(purchaseReturnTaxCandidate, 0),
+          grandTotal: toFiniteNumber(raw.grandTotal ?? raw.totalAmount, 0),
+          totalRefunded: toFiniteNumber(raw.totalRefunded, 0),
           note: raw.note ? String(raw.note) : null,
           meta: raw,
         };
@@ -687,15 +711,16 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'orders': {
+        const orderTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           orderNumber: String(raw.orderNumber || raw.refNo || `ORD-${id}`),
           orderDate: normDate(raw.orderDate || raw.date),
-          status: normStatus(raw.status, ['PENDING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'ON_HOLD'], 'PENDING'),
+          status: normStatus(raw.status, ['PENDING', 'PROCESSING', 'READY', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
-          subTotal: Number(raw.subTotal || 0),
-          taxAmount: Number(raw.taxAmount || raw.tax || 0),
-          discountAmount: Number(raw.discountAmount || 0),
-          total: Number(raw.total || raw.grandTotal || raw.totalAmount || 0),
+          subTotal: toFiniteNumber(raw.subTotal, 0),
+          taxAmount: toFiniteNumber(orderTaxCandidate, 0),
+          discountAmount: toFiniteNumber(raw.discountAmount, 0),
+          total: toFiniteNumber(raw.total ?? raw.grandTotal ?? raw.totalAmount, 0),
           isApproved: raw.isApproved === true,
           note: raw.note ? String(raw.note) : null,
           meta: raw,
@@ -721,6 +746,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
     }
     return res.json({ ok: true, id, resource });
   } catch (error) {
+    console.error(`[sync/record] Failed resource=${resource} id=${id}`, error);
     return sendPrismaError(res, error, `Failed to sync ${resource} record`);
   }
 });
@@ -808,7 +834,7 @@ app.put('/api/sync/field-payments/:id', requireAuth, async (req, res) => {
       referenceNo: String(raw.referenceNo || id),
       customerId,
       date: normDate(raw.date),
-      amount: Number(raw.amount || 0),
+      amount: toFiniteNumber(raw.amount, 0),
       method: String(raw.method || 'Cash'),
       status: String(raw.status || 'PENDING').toUpperCase() === 'APPROVED' ? 'APPROVED' : 'PENDING',
       note: raw.note ? String(raw.note) : null,
@@ -846,7 +872,7 @@ app.put('/api/sync/payment-accounts/:id', requireAuth, async (req, res) => {
     const d = {
       name: String(raw.name || `Account-${id}`),
       accountNumber: raw.accountNumber ? String(raw.accountNumber) : null,
-      balance: Number(raw.balance || 0),
+      balance: toFiniteNumber(raw.balance, 0),
       status: String(raw.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
       isSystem: raw.system === true || raw.isSystem === true,
       meta: raw,
@@ -887,8 +913,8 @@ app.put('/api/sync/register-sessions/:id', requireAuth, async (req, res) => {
       openedAt: normDate(raw.openedAt || raw.openedAt),
       closedAt: raw.closedAt ? normDate(raw.closedAt) : null,
       status: String(raw.status || 'OPEN').toUpperCase() === 'CLOSED' ? 'CLOSED' : 'OPEN',
-      cashInHand: Number(raw.cashInHand || 0),
-      closingBalance: raw.closingBalance != null ? Number(raw.closingBalance) : null,
+      cashInHand: toFiniteNumber(raw.cashInHand, 0),
+      closingBalance: toOptionalFiniteNumber(raw.closingBalance),
       meta: raw,
     };
     await prisma.registerSession.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -914,7 +940,7 @@ app.put('/api/sync/register-transactions/:id', requireAuth, async (req, res) => 
       sessionId,
       date: normDate(raw.date),
       transactionType: String(raw.type || raw.transactionType || 'sale'),
-      amount: Number(raw.amount || 0),
+      amount: toFiniteNumber(raw.amount, 0),
       method: raw.method ? String(raw.method) : null,
       invoiceNo: raw.invoiceNo ? String(raw.invoiceNo) : null,
       note: raw.note ? String(raw.note) : null,
@@ -954,8 +980,8 @@ app.put('/api/sync/stock-ledger/:id', requireAuth, async (req, res) => {
     const d = {
       productId,
       entryType: String(raw.type || raw.entryType || 'Adjustment'),
-      changeQty: Number(raw.change || raw.changeQty || 0),
-      newQty: Number(raw.newQty || 0),
+      changeQty: toFiniteNumber(raw.change ?? raw.changeQty, 0),
+      newQty: toFiniteNumber(raw.newQty, 0),
       date: normDate(raw.date),
       ref: String(raw.ref || id),
       party: String(raw.party || 'System'),
@@ -991,8 +1017,8 @@ app.put('/api/sync/stock-adjustments/:id', requireAuth, async (req, res) => {
       locationId,
       adjustmentType: String(raw.adjustmentType || 'NORMAL').toUpperCase() === 'ABNORMAL' ? 'ABNORMAL' : 'NORMAL',
       reason: raw.reason ? String(raw.reason) : null,
-      totalAmount: Number(raw.totalAmount || 0),
-      totalRecovered: Number(raw.totalRecovered || 0),
+      totalAmount: toFiniteNumber(raw.totalAmount, 0),
+      totalRecovered: toFiniteNumber(raw.totalRecovered, 0),
       meta: raw,
     };
     await prisma.stockAdjustment.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -1033,8 +1059,8 @@ app.put('/api/sync/stock-transfers/:id', requireAuth, async (req, res) => {
       locationFromId,
       locationToId,
       status: normStatus(raw.status, ['PENDING', 'IN_TRANSIT', 'COMPLETED'], 'PENDING'),
-      shippingCharges: Number(raw.shippingCharges || 0),
-      totalAmount: Number(raw.totalAmount || 0),
+      shippingCharges: toFiniteNumber(raw.shippingCharges, 0),
+      totalAmount: toFiniteNumber(raw.totalAmount, 0),
       note: raw.notes ? String(raw.notes) : (raw.note ? String(raw.note) : null),
       meta: raw,
     };
@@ -1075,8 +1101,8 @@ app.put('/api/sync/stock-lots/:id', requireAuth, async (req, res) => {
       locationId,
       lotNumber: String(raw.lotNumber || '--'),
       expiryDate: raw.expiryDate ? normDate(raw.expiryDate) : null,
-      unitCost: Number(raw.unitCost || 0),
-      qty: Number(raw.qty || 0),
+      unitCost: toFiniteNumber(raw.unitCost, 0),
+      qty: toFiniteNumber(raw.qty, 0),
       meta: raw,
     };
     await prisma.stockLot.upsert({ where: { id }, update: d, create: { id, ...d } });
