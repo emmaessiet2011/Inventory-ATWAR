@@ -1487,6 +1487,83 @@ const normalizeRoleRecord = (role: Role): Role => {
   };
 };
 
+const permissionKeys = (moduleName: string, permissions: string[]): string[] =>
+  permissions.map((permission) => `${moduleName}::${permission}`);
+
+const REQUIRED_ROLE_TEMPLATES: Array<Omit<Role, 'id' | 'userCount' | 'permissionsCount'>> = [
+  {
+    name: 'Order Creator',
+    description: 'Can create, edit, and delete unapproved orders.',
+    isSystem: false,
+    permissions: permissionKeys('Order', ['View order', 'Add order']),
+  },
+  {
+    name: 'Order Approver',
+    description: 'Can approve orders and delete approved orders when allowed by lifecycle rules.',
+    isSystem: false,
+    permissions: permissionKeys('Order', ['View order', 'Approve order']),
+  },
+  {
+    name: 'Order Manager',
+    description: 'Can manage full order workflow including creation, approval, and controlled deletion.',
+    isSystem: false,
+    permissions: permissionKeys('Order', ['View order', 'Add order', 'Edit order', 'Delete order', 'Approve order']),
+  },
+  {
+    name: 'Invoice Generator',
+    description: 'Can generate and manage sales invoices from approved orders.',
+    isSystem: false,
+    permissions: [
+      ...permissionKeys('Order', ['View order']),
+      ...permissionKeys('Sell', ['View all sell', 'Add Sell', 'Update Sell']),
+    ],
+  },
+  {
+    name: 'Field Payment Collector',
+    description: 'Can record field collections pending approval.',
+    isSystem: false,
+    permissions: permissionKeys('Field Payment', ['View field payment', 'Add field payment']),
+  },
+  {
+    name: 'Field Payment Approver',
+    description: 'Can approve field payments submitted by collection staff.',
+    isSystem: false,
+    permissions: permissionKeys('Field Payment', ['View field payment', 'Approval field payment']),
+  },
+];
+
+const normalizeRoleNameKey = (value: unknown): string => String(value || '').trim().toLowerCase();
+
+const ensureRequiredRoles = (input: Role[]): Role[] => {
+  const normalized = (Array.isArray(input) ? input : [])
+    .map(normalizeRoleRecord)
+    .filter((role) => !!String(role.name || '').trim());
+
+  const existingNames = new Set(normalized.map((role) => normalizeRoleNameKey(role.name)));
+  let nextId = normalized.reduce((max, role) => Math.max(max, Number(role.id) || 0), 0);
+  const additions: Role[] = [];
+
+  REQUIRED_ROLE_TEMPLATES.forEach((template) => {
+    const key = normalizeRoleNameKey(template.name);
+    if (existingNames.has(key)) return;
+    existingNames.add(key);
+    nextId += 1;
+    additions.push(
+      normalizeRoleRecord({
+        id: nextId,
+        name: template.name,
+        description: template.description,
+        userCount: 0,
+        permissionsCount: (template.permissions || []).length,
+        isSystem: template.isSystem,
+        permissions: template.permissions ? [...template.permissions] : [],
+      })
+    );
+  });
+
+  return additions.length > 0 ? [...normalized, ...additions] : normalized;
+};
+
 const normalizeCommissionAgentRecord = (agent: CommissionAgent): CommissionAgent => {
   const normalizedName = String(agent.name || '').trim();
   const resolvedPrefix = String(agent.prefix || '').trim();
@@ -2570,14 +2647,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Roles ----
   const [roles, setRoles] = useState<Role[]>(() => {
-    if (dbSourceOfTruth) return initialRoles.map(normalizeRoleRecord);
+    if (dbSourceOfTruth) return ensureRequiredRoles(initialRoles);
     try {
       const s = localStorage.getItem('app_roles');
-      if (!s) return initialRoles.map(normalizeRoleRecord);
+      if (!s) return ensureRequiredRoles(initialRoles);
       const parsed = JSON.parse(s);
-      return Array.isArray(parsed) ? parsed.map(normalizeRoleRecord) : initialRoles.map(normalizeRoleRecord);
+      return Array.isArray(parsed) ? ensureRequiredRoles(parsed as Role[]) : ensureRequiredRoles(initialRoles);
     } catch {
-      return initialRoles.map(normalizeRoleRecord);
+      return ensureRequiredRoles(initialRoles);
     }
   });
 
@@ -3295,7 +3372,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (remoteRoles.length > 0) {
         hasRemoteData = true;
         dropdownSyncApplyingRemoteRef.current = true;
-        setRoles((remoteRoles as Role[]).map(normalizeRoleRecord));
+        setRoles(ensureRequiredRoles(remoteRoles as Role[]));
       }
 
       const remoteAgents = getRows('commissionAgents');
@@ -3421,7 +3498,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (dbSourceOfTruth && hasRemoteSnapshot) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setRoles((remoteRoles as Role[]).map(normalizeRoleRecord));
+        setRoles(ensureRequiredRoles(remoteRoles as Role[]));
         setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
         setLocations((remoteLocations as Location[])
           .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
@@ -5474,8 +5551,66 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
   const deleteOrder = async (id: string): Promise<boolean> => {
-    if (!enforcePermissionBoundary('Order', 'Delete order', 'Delete order')) return false;
     const existing = orders.find(o => o.id === id);
+    if (!existing) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Delete failed: order not found (${id}).`,
+      });
+      return false;
+    }
+
+    const currentRoleRecord = roles.find((role) => role.name === currentUser?.role);
+    const explicitPermissions = currentRoleRecord?.permissions || [];
+    const isSystemOrderAdmin =
+      String(currentUser?.role || '').toLowerCase() === 'admin' ||
+      currentRoleRecord?.isSystem === true;
+    const hasOrderPermissionStrict = (permission: 'Approve order' | 'Add order' | 'Delete order'): boolean => {
+      if (isSystemOrderAdmin) return true;
+      return (
+        explicitPermissions.includes(permission) ||
+        explicitPermissions.includes(`Order::${permission}`)
+      );
+    };
+
+    const canDeleteApprovedOrder = hasOrderPermissionStrict('Approve order');
+    const canDeleteUnapprovedOrder =
+      hasOrderPermissionStrict('Add order') ||
+      hasOrderPermissionStrict('Delete order');
+    if (existing.isApproved && !canDeleteApprovedOrder) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Permission blocked: Delete approved order ${existing.orderNumber || existing.id}. Missing permission "Approve order".`,
+      });
+      return false;
+    }
+    if (!existing.isApproved && !canDeleteUnapprovedOrder) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Permission blocked: Delete unapproved order ${existing.orderNumber || existing.id}. Missing permission "Add order" (or "Delete order").`,
+      });
+      return false;
+    }
+
+    const linkedSale = existing.convertedSaleId
+      ? sales.find((sale) => String(sale.id || '').trim() === String(existing.convertedSaleId || '').trim())
+      : undefined;
+    const linkedSaleDelivered = !!linkedSale && (
+      String(linkedSale.shippingStatus || '').trim().toLowerCase() === 'delivered' ||
+      isFinalizedSale(linkedSale)
+    );
+    if (linkedSaleDelivered) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Orders',
+        description: `Delete blocked for ${existing.orderNumber || existing.id}: linked invoice ${linkedSale?.invoiceNo || linkedSale?.id} is delivered.`,
+      });
+      return false;
+    }
+
     const result = await deleteRecordStrict('orders', id);
     if (!result.ok) {
       recordActivity({

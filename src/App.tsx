@@ -108,7 +108,7 @@ const App: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { settings, currentUser, setCurrentUser, roles, products } = useGlobalContext();
+  const { settings, currentUser, setCurrentUser, roles, products, orders } = useGlobalContext();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!currentUser);
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -406,6 +406,12 @@ const AppContent: React.FC = () => {
   const canDeleteOrders = hasRolePermission('Order', 'Delete order');
   const canApproveOrders = hasRolePermission('Order', 'Approve order');
   const canAccessOrders = canViewOrders || canAddOrders || canEditOrders || canDeleteOrders || canApproveOrders;
+  const selectedOrderRecord = selectedOrderId
+    ? orders.find((order) => String(order.id || '').trim() === String(selectedOrderId || '').trim())
+    : undefined;
+  const canEditSelectedOrder =
+    !!selectedOrderRecord &&
+    (canEditOrders || (!selectedOrderRecord.isApproved && canAddOrders));
   const canGenerateInvoiceFromOrders = hasRolePermission('Sell', 'Add Sell');
   const canViewSellPayments =
     hasRolePermission('Sell', 'Add sell payment') ||
@@ -769,12 +775,12 @@ const AppContent: React.FC = () => {
         return <AddOrder onNavigate={setCurrentPage} />;
       case 'edit-order':
         if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
-        if (!canEditOrders) return renderAccessDenied('Orders');
+        if (!canEditSelectedOrder) return renderAccessDenied('Orders');
         if (!selectedOrderId) return renderAccessDenied('Orders');
         return <AddOrder isEdit={true} orderId={selectedOrderId} onNavigate={setCurrentPage} />;
       case 'view-order':
         if (!settings.enableSalesOrder) return renderModuleDisabled('Orders');
-        if (!(canViewOrders || canEditOrders || canDeleteOrders)) return renderAccessDenied('Orders');
+        if (!(canViewOrders || canAddOrders || canEditOrders || canDeleteOrders || canApproveOrders)) return renderAccessDenied('Orders');
         if (!selectedOrderId) return renderAccessDenied('Orders');
         return <ViewOrder onClose={() => setCurrentPage('list-orders')} orderId={selectedOrderId} />;
       case 'convert-order-to-invoice':

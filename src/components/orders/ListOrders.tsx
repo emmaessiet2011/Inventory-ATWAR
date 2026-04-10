@@ -211,6 +211,39 @@ const ListOrders: React.FC<ListOrdersProps> = ({
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
+  const resolveLinkedSale = (order: GlobalOrder) => (
+    order.convertedSaleId
+      ? sales.find((sale) => String(sale.id || '').trim() === String(order.convertedSaleId || '').trim())
+      : undefined
+  );
+
+  const isLinkedSaleDelivered = (order: GlobalOrder): boolean => {
+    const linkedSale = resolveLinkedSale(order);
+    if (!linkedSale) return false;
+    return (
+      normalize(linkedSale.shippingStatus) === 'delivered' ||
+      normalize(linkedSale.status) === 'final'
+    );
+  };
+
+  const canEditOrderRecord = (order: GlobalOrder): boolean => {
+    if (order.status === 'Cancelled') return false;
+    if (!order.isApproved) return canEdit || canAdd;
+    return canEdit;
+  };
+
+  const canCancelOrderRecord = (order: GlobalOrder): boolean => {
+    if (order.status === 'Cancelled') return false;
+    if (order.isApproved) return canApprove;
+    return canDelete || canAdd;
+  };
+
+  const canDeleteOrderRecord = (order: GlobalOrder): boolean => {
+    if (isLinkedSaleDelivered(order)) return false;
+    if (order.isApproved) return canApprove;
+    return canDelete || canAdd;
+  };
+
   const exportCsv = () => {
     const headers = [
       'Order No', 'Customer', 'Phone', 'Sales Rep', 'Area', 'Business Location',
@@ -360,14 +393,12 @@ const ListOrders: React.FC<ListOrdersProps> = ({
   };
 
   const handleCancelOrder = (order: GlobalOrder) => {
-    if (!canDelete) return;
+    if (!canCancelOrderRecord(order)) return;
     if (order.status === 'Cancelled') {
       addNotification({ title: 'Already Cancelled', message: `${order.orderNumber} is already cancelled.`, type: 'warning' });
       return;
     }
-    const linkedSale = order.convertedSaleId
-      ? sales.find((sale) => sale.id === order.convertedSaleId)
-      : undefined;
+    const linkedSale = resolveLinkedSale(order);
     if (linkedSale) {
       addNotification({
         title: 'Cannot Cancel Order',
@@ -432,10 +463,17 @@ const ListOrders: React.FC<ListOrdersProps> = ({
   };
 
   const handleDeleteOrder = (order: GlobalOrder) => {
-    if (!canDelete) return;
-    const linkedSale = order.convertedSaleId
-      ? sales.find((sale) => sale.id === order.convertedSaleId)
-      : undefined;
+    if (!canDeleteOrderRecord(order)) return;
+    const linkedSale = resolveLinkedSale(order);
+    const linkedSaleDelivered = isLinkedSaleDelivered(order);
+    if (linkedSaleDelivered) {
+      addNotification({
+        title: 'Cannot Delete Order',
+        message: `Order ${order.orderNumber} is linked to delivered invoice ${linkedSale?.invoiceNo || linkedSale?.id}.`,
+        type: 'warning',
+      });
+      return;
+    }
     setActiveActionId(null);
     setConfirmModal({
       isOpen: true,
@@ -703,7 +741,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                             <Eye size={14} /> View Order
                           </button>
 
-                          {canEdit && order.status !== 'Cancelled' && (
+                          {canEditOrderRecord(order) && (
                             <button
                               className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
                               onClick={() => {
@@ -766,21 +804,25 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                             </button>
                           )}
 
-                          {canDelete && (
+                          {(canCancelOrderRecord(order) || canDeleteOrderRecord(order)) && (
                             <>
                               <div className="h-px bg-slate-100 my-1"></div>
-                              <button
-                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
-                                onClick={() => handleCancelOrder(order)}
-                              >
-                                <XCircle size={14} /> Cancel
-                              </button>
-                              <button
-                                className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
-                                onClick={() => handleDeleteOrder(order)}
-                              >
-                                <Trash2 size={14} /> Delete Order
-                              </button>
+                              {canCancelOrderRecord(order) && (
+                                <button
+                                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                                  onClick={() => handleCancelOrder(order)}
+                                >
+                                  <XCircle size={14} /> Cancel
+                                </button>
+                              )}
+                              {canDeleteOrderRecord(order) && (
+                                <button
+                                  className="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                  onClick={() => handleDeleteOrder(order)}
+                                >
+                                  <Trash2 size={14} /> Delete Order
+                                </button>
+                              )}
                             </>
                           )}
                         </div>
