@@ -1395,6 +1395,23 @@ const initialCustomers: Customer[] = [
 
 const initialSuppliers: Supplier[] = [];
 
+const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
+const normalizeUserEmail = (value: unknown): string => String(value || '').trim().toLowerCase();
+const isCriticalAdminUser = (user: Partial<AppUser> | null | undefined): boolean =>
+  normalizeUserEmail(user?.email) === CRITICAL_ADMIN_EMAIL;
+
+const normalizeActiveState = (status: unknown, isActiveFallback?: unknown): 'Active' | 'Inactive' => {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus === 'inactive') return 'Inactive';
+  if (normalizedStatus === 'active') return 'Active';
+  if (typeof isActiveFallback === 'boolean') return isActiveFallback ? 'Active' : 'Inactive';
+  return 'Active';
+};
+
+const isUserLoginEnabled = (user: Partial<AppUser> | null | undefined): boolean =>
+  normalizeActiveState(user?.status, (user as any)?.isActive) === 'Active' &&
+  user?.allowLogin !== false;
+
 const initialUsers: AppUser[] = [
   {
     id: 'USR-001',
@@ -1418,6 +1435,8 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
   let passwordHash = String(user.passwordHash || '').trim();
   let passwordSalt = String(user.passwordSalt || '').trim();
   let passwordUpdatedAt = String(user.passwordUpdatedAt || '').trim();
+  const normalizedEmail = normalizeUserEmail(user.email);
+  let normalizedStatus = normalizeActiveState(user.status, (user as any).isActive);
 
   if (!passwordHash && normalizedPassword) {
     passwordSalt = passwordSalt || generatePasswordSalt(`${user.id}-${user.email}-${user.username}`);
@@ -1426,16 +1445,23 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
   }
 
   const hasCredential = passwordHash.length > 0 && passwordSalt.length > 0;
+  let allowLogin = typeof user.allowLogin === 'boolean' ? user.allowLogin : hasCredential;
+  if (isCriticalAdminUser({ ...user, email: normalizedEmail })) {
+    normalizedStatus = 'Active';
+    allowLogin = true;
+  }
   const sanitizedUser: AppUser = { ...user };
   delete (sanitizedUser as any).password;
 
   return {
     ...sanitizedUser,
+    email: normalizedEmail,
+    status: normalizedStatus,
     passwordHash: hasCredential ? passwordHash : undefined,
     passwordSalt: hasCredential ? passwordSalt : undefined,
     passwordUpdatedAt: hasCredential ? (passwordUpdatedAt || new Date().toISOString()) : undefined,
     accessLocations: Array.isArray(user.accessLocations) ? user.accessLocations : ['All Locations'],
-    allowLogin: typeof user.allowLogin === 'boolean' ? user.allowLogin : hasCredential,
+    allowLogin,
     enableServiceStaffPin: user.enableServiceStaffPin ?? false,
   };
 };
@@ -2819,6 +2845,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return null;
     }
   });
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const normalizedCurrent = normalizeUserRecord(currentUser);
+    const userId = String(normalizedCurrent.id || '').trim();
+    const linkedUser = users.find((user) => String(user.id || '').trim() === userId);
+    const effectiveUser = linkedUser ? normalizeUserRecord(linkedUser) : normalizedCurrent;
+
+    if (!isUserLoginEnabled(effectiveUser)) {
+      try {
+        localStorage.removeItem('atwar_auth_token');
+      } catch {
+        // ignore storage failures
+      }
+      setCurrentUser(null);
+      window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
+      return;
+    }
+
+    const sameIdentity =
+      normalizedCurrent.status === effectiveUser.status &&
+      normalizedCurrent.allowLogin === effectiveUser.allowLogin &&
+      normalizeUserEmail(normalizedCurrent.email) === normalizeUserEmail(effectiveUser.email);
+    if (!sameIdentity) {
+      setCurrentUser(effectiveUser);
+    }
+  }, [currentUser, users]);
+
   const coreSyncReadyRef = useRef(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'synced'>('idle');
   const dropdownSyncEnabled = isDropdownSyncEnabled();

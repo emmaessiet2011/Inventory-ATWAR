@@ -76,6 +76,7 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
 };
 
 const FALLBACK_ROLE_NAMES = ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
+const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const CheckboxGroup = ({ label, name, checked, info }: any) => {
@@ -393,6 +394,14 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     const projectedUsers = (isEdit && userId)
       ? users.map(u => u.id === userId ? newUser : u)
       : [...users, newUser];
+    if (normalizedEmail === CRITICAL_ADMIN_EMAIL && (newUser.status !== 'Active' || newUser.allowLogin === false)) {
+      addNotification({
+        title: 'Validation Error',
+        message: `${CRITICAL_ADMIN_EMAIL} must remain Active with login access.`,
+        type: 'error',
+      });
+      return;
+    }
     const activeAdminLoginUsers = projectedUsers.filter(
       u => u.role === 'Admin' && u.status === 'Active' && u.allowLogin !== false
     );

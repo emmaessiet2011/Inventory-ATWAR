@@ -58,6 +58,25 @@ const toOptionalFiniteNumber = (value) => {
   const parsed = toFiniteNumber(value, Number.NaN);
   return Number.isFinite(parsed) ? parsed : null;
 };
+const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
+const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+const isCriticalAdminEmail = (value) => normalizeEmail(value) === CRITICAL_ADMIN_EMAIL;
+const isUserLoginEnabled = (user) =>
+  String(user?.status || '').trim().toUpperCase() === 'ACTIVE' &&
+  user?.allowLogin !== false;
+
+const enforceCriticalAdminStatus = async (userId) => {
+  const id = String(userId || '').trim();
+  if (!id) return null;
+  try {
+    return await prisma.appUser.update({
+      where: { id },
+      data: { status: 'ACTIVE', allowLogin: true },
+    });
+  } catch {
+    return null;
+  }
+};
 const sanitizeCollectionKey = (value) =>
   String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
 
@@ -202,7 +221,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     // Accept login by email or username, case-insensitive.
     // This prevents lockouts for accounts created with mixed-case email values.
-    const user = await prisma.appUser.findFirst({
+    let user = await prisma.appUser.findFirst({
       where: {
         OR: [
           { email: identifier.toLowerCase() },
@@ -213,8 +232,12 @@ app.post('/api/auth/login', async (req, res) => {
       orderBy: { updatedAt: 'desc' },
     });
 
-    const normalizedStatus = String(user?.status || '').trim().toUpperCase();
-    if (!user || normalizedStatus !== 'ACTIVE' || user.allowLogin === false) {
+    if (user && isCriticalAdminEmail(user.email) && !isUserLoginEnabled(user)) {
+      const repaired = await enforceCriticalAdminStatus(user.id);
+      if (repaired) user = repaired;
+    }
+
+    if (!user || !isUserLoginEnabled(user)) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
     }
 
@@ -277,10 +300,35 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // Protected routes
-app.use('/api/data', requireAuth);
-app.use('/api/sync', requireAuth);
-app.use('/api/options', requireAuth);
-app.use('/api/bootstrap', requireAuth);
+const requireActiveSessionUser = async (req, res, next) => {
+  try {
+    const userId = String(req.user?.id || '').trim();
+    if (!userId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+    const account = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, status: true, allowLogin: true },
+    });
+    if (!account) return res.status(401).json({ ok: false, error: 'Account not found' });
+
+    if (isCriticalAdminEmail(account.email) && !isUserLoginEnabled(account)) {
+      const repaired = await enforceCriticalAdminStatus(account.id);
+      if (repaired) return next();
+    }
+
+    if (!isUserLoginEnabled(account)) {
+      return res.status(401).json({ ok: false, error: 'Account inactive or login disabled' });
+    }
+    return next();
+  } catch {
+    return res.status(401).json({ ok: false, error: 'Authentication check failed' });
+  }
+};
+
+app.use('/api/data', requireAuth, requireActiveSessionUser);
+app.use('/api/sync', requireAuth, requireActiveSessionUser);
+app.use('/api/options', requireAuth, requireActiveSessionUser);
+app.use('/api/bootstrap', requireAuth, requireActiveSessionUser);
 
 app.get('/api/data/resources', (_req, res) => {
   const resources = Object.entries(RESOURCE_CONFIG).map(([key, cfg]) => ({
@@ -411,6 +459,11 @@ app.post('/api/data/:resource', async (req, res) => {
   try {
     const delegate = prisma[cfg.delegate];
     const payload = toObject(req.body?.data ?? req.body);
+    if (cfg.delegate === 'appUser' && isCriticalAdminEmail(payload.email)) {
+      payload.status = 'ACTIVE';
+      payload.allowLogin = true;
+      payload.email = normalizeEmail(payload.email);
+    }
     if (cfg.singletonId && !payload[cfg.idField]) payload[cfg.idField] = cfg.singletonId;
     if (!payload[cfg.idField] && cfg.idField === 'id') payload.id = randomUUID();
     const data = await delegate.create({ data: payload });
@@ -429,6 +482,11 @@ app.post('/api/data/:resource/bulk-upsert', async (req, res) => {
     const delegate = prisma[cfg.delegate];
     await prisma.$transaction(rows.map((row) => {
       const entry = { ...row };
+      if (cfg.delegate === 'appUser' && isCriticalAdminEmail(entry.email)) {
+        entry.status = 'ACTIVE';
+        entry.allowLogin = true;
+        entry.email = normalizeEmail(entry.email);
+      }
       if (cfg.singletonId && !entry[cfg.idField]) entry[cfg.idField] = cfg.singletonId;
       if (!entry[cfg.idField] && cfg.idField === 'id') entry.id = randomUUID();
       const idValue = entry[cfg.idField];
@@ -456,6 +514,15 @@ app.put('/api/data/:resource/:id', async (req, res) => {
     if (!id) return res.status(400).json({ ok: false, error: `${cfg.idField} is required` });
     const delegate = prisma[cfg.delegate];
     const data = toObject(req.body?.data ?? req.body);
+    if (cfg.delegate === 'appUser') {
+      const existing = await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
+      const willBeCriticalAdmin = isCriticalAdminEmail(existing?.email) || isCriticalAdminEmail(data.email);
+      if (willBeCriticalAdmin) {
+        data.status = 'ACTIVE';
+        data.allowLogin = true;
+        data.email = normalizeEmail(data.email || existing?.email);
+      }
+    }
     delete data.createdAt;
     delete data.updatedAt;
     delete data[cfg.idField];
@@ -473,6 +540,12 @@ app.delete('/api/data/:resource/:id', async (req, res) => {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ ok: false, error: `${cfg.idField} is required` });
     const delegate = prisma[cfg.delegate];
+    if (cfg.delegate === 'appUser') {
+      const user = await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
+      if (user && isCriticalAdminEmail(user.email)) {
+        return res.status(400).json({ ok: false, error: 'Critical admin user cannot be deleted' });
+      }
+    }
     await delegate.delete({ where: { [cfg.idField]: id } });
     return res.json({ ok: true, deleted: true, id });
   } catch (error) {
@@ -646,16 +719,24 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'users': {
+        const existingUser = raw.email
+          ? null
+          : await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
+        const normalizedEmail = normalizeEmail(raw.email || existingUser?.email || `user-${id}@local.atwar`);
+        const isCriticalAdmin = isCriticalAdminEmail(normalizedEmail);
+        const normalizedMeta = isCriticalAdmin
+          ? { ...raw, email: normalizedEmail, status: 'Active', allowLogin: true }
+          : raw;
         const updatePayload = {
-          username: String(raw.username || raw.email || `user-${id}`),
+          username: String(raw.username || normalizedEmail || `user-${id}`),
           name: String(raw.name || raw.username || `User-${id}`),
-          email: String(raw.email || `user-${id}@local.atwar`),
+          email: normalizedEmail,
           mobile: raw.mobile ? String(raw.mobile) : null,
-          status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
+          status: isCriticalAdmin ? 'ACTIVE' : normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
           commissionPercent: toFiniteNumber(raw.commissionPercent, 0),
           maxDiscountPercent: toFiniteNumber(raw.maxDiscountPercent, 0),
-          allowLogin: raw.allowLogin !== false,
-          meta: raw,
+          allowLogin: isCriticalAdmin ? true : raw.allowLogin !== false,
+          meta: normalizedMeta,
         };
         // Keep credentials in dedicated columns used by /api/auth/login.
         // Only override when frontend explicitly sends a value.
@@ -807,7 +888,14 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       case 'suppliers':       await prisma.supplier.deleteMany({ where: { id } }); break;
       case 'sales':           await prisma.sale.deleteMany({ where: { id } }); break;
       case 'payments':        await prisma.payment.deleteMany({ where: { id } }); break;
-      case 'users':           await prisma.appUser.deleteMany({ where: { id } }); break;
+      case 'users': {
+        const user = await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
+        if (user && isCriticalAdminEmail(user.email)) {
+          return res.status(400).json({ ok: false, error: 'Critical admin user cannot be deleted' });
+        }
+        await prisma.appUser.deleteMany({ where: { id } });
+        break;
+      }
       case 'expenses':        await prisma.expense.deleteMany({ where: { id } }); break;
       case 'purchases':       await prisma.purchase.deleteMany({ where: { id } }); break;
       case 'sellReturns':     await prisma.sellReturn.deleteMany({ where: { id } }); break;
@@ -1370,6 +1458,22 @@ app.get('*', (_req, res) => {
   res.setHeader('Surrogate-Control', 'no-store');
   res.sendFile(path.join(distPath, 'index.html'));
 });
+
+const ensureCriticalAdminAtBoot = async () => {
+  try {
+    const admin = await prisma.appUser.findFirst({
+      where: { email: { equals: CRITICAL_ADMIN_EMAIL, mode: 'insensitive' } },
+      select: { id: true, status: true, allowLogin: true },
+    });
+    if (admin && !isUserLoginEnabled(admin)) {
+      await enforceCriticalAdminStatus(admin.id);
+    }
+  } catch (error) {
+    console.error('[ATWAR BSS API] failed to enforce critical admin status at boot', error);
+  }
+};
+
+await ensureCriticalAdminAtBoot();
 
 console.log(`[ATWAR BSS API] booting with Node ${process.version} on ${host}:${port}`);
 const server = app.listen(port, host, () => {

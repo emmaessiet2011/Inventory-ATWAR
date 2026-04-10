@@ -66,6 +66,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setError('Invalid email or password. Please try again.');
       return;
     }
+    const normalizedStatus = String(match.status || '').trim().toLowerCase();
+    const isActive = normalizedStatus !== 'inactive';
+    if (!isActive || match.allowLogin === false) {
+      setError('Account is inactive or login is disabled.');
+      return;
+    }
     const valid = verifyUserPassword(match, password);
     if (!valid) {
       setError('Invalid email or password. Please try again.');
