@@ -20,6 +20,8 @@ interface VatInvoiceRow {
   date: string;
   dateMs: number;
   customer: string;
+  customerMobile: string;
+  customerAddress: string;
   customerType: string;
   customerGroup: string;
   trn: string;
@@ -111,6 +113,27 @@ const truncate = (value: string, maxLength: number): string => {
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
 };
 
+const resolvePdfImageFormat = (source: string): 'PNG' | 'JPEG' | 'WEBP' => {
+  const normalized = String(source || '').trim().toLowerCase();
+  if (normalized.startsWith('data:image/jpeg') || normalized.startsWith('data:image/jpg')) return 'JPEG';
+  if (normalized.startsWith('data:image/webp')) return 'WEBP';
+  if (normalized.endsWith('.jpg') || normalized.endsWith('.jpeg')) return 'JPEG';
+  if (normalized.endsWith('.webp')) return 'WEBP';
+  return 'PNG';
+};
+
+const loadImageForPdf = async (source: string): Promise<HTMLImageElement | null> => {
+  const normalized = String(source || '').trim();
+  if (!normalized || typeof window === 'undefined') return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = normalized;
+  });
+};
+
 const VatBills: React.FC = () => {
   const { addNotification } = useNotifications();
   const {
@@ -189,6 +212,14 @@ const VatBills: React.FC = () => {
         );
         const customer = customerById || customerByName;
         const trn = String(customer?.taxNumber || '--').trim() || '--';
+        const customerMobile = String(sale.contactNumber || customer?.mobile || customer?.phone || '--').trim() || '--';
+        const customerAddress = String(
+          sale.shippingAddress ||
+          sale.billingAddress ||
+          customer?.billingAddress ||
+          customer?.address ||
+          '--'
+        ).trim() || '--';
         const vat = resolveSaleVat(sale);
         const total = round3(Number(sale.grandTotal || sale.totalAmount || 0));
         const net = round3(Math.max(0, total - vat));
@@ -200,6 +231,8 @@ const VatBills: React.FC = () => {
           date: String(sale.date || ''),
           dateMs: toMs(sale.date),
           customer: customerName,
+          customerMobile,
+          customerAddress,
           customerType,
           customerGroup,
           trn,
@@ -373,136 +406,240 @@ const VatBills: React.FC = () => {
     try {
       const { jsPDF } = await import('jspdf');
       const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const left = 12;
-      const right = 198;
+      const pageLeft = 7;
+      const pageRight = 203;
+      const pageWidth = pageRight - pageLeft;
+
+      const logoSource = String(settings.businessLogo || '').trim();
+      const logoImage = await loadImageForPdf(logoSource);
+      const logoFormat = resolvePdfImageFormat(logoSource);
+      const businessName = String(settings.businessName || 'Business').trim() || 'Business';
+      const businessAddress = String(settings.businessAddress || settings.address || '').trim() || 'Address not set';
+      const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || '--';
+      const vatLabel = settings.tax1Name || settings.taxLabel || 'VAT';
+      const generatedAt = formatDateTimeBySettings(
+        new Date().toISOString(),
+        settings.dateFormat,
+        settings.timeFormat,
+        settings.timeZone,
+      );
 
       filteredInvoices.forEach((invoice, index) => {
         if (index > 0) doc.addPage();
 
         const sale = invoice.sale;
-        let y = 12;
+        let y = 8;
 
+        const logoBox = { x: pageLeft, y, w: 26, h: 18 };
+        if (logoImage) {
+          const maxW = logoBox.w - 2;
+          const maxH = logoBox.h - 2;
+          const ratio = logoImage.width > 0 && logoImage.height > 0 ? logoImage.width / logoImage.height : 1;
+          let drawW = maxW;
+          let drawH = drawW / ratio;
+          if (drawH > maxH) {
+            drawH = maxH;
+            drawW = drawH * ratio;
+          }
+          const drawX = logoBox.x + (logoBox.w - drawW) / 2;
+          const drawY = logoBox.y + (logoBox.h - drawH) / 2;
+          doc.addImage(logoImage, logoFormat, drawX, drawY, drawW, drawH, undefined, 'FAST');
+        } else {
+          doc.rect(logoBox.x + 2, logoBox.y + 2, logoBox.w - 6, logoBox.h - 6);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.text('LOGO', logoBox.x + logoBox.w / 2 - 4, logoBox.y + logoBox.h / 2 + 1);
+        }
+
+        const centerX = pageLeft + pageWidth / 2;
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text(String(settings.businessName || 'Business'), left, y);
-
+        doc.setFontSize(12);
+        doc.text(businessName.toUpperCase(), centerX, y + 4, { align: 'center' });
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        const address = String(settings.address || '').trim() || 'Address not set';
-        const addressLines = doc.splitTextToSize(address, 90) as string[];
-        doc.text(addressLines, left, y + 5);
-        const leftHeaderBottom = y + 5 + addressLines.length * 4;
-
-        let rightY = 12;
+        doc.setFontSize(8.5);
+        const addressLines = (doc.splitTextToSize(businessAddress, 80) as string[]).slice(0, 2);
+        doc.text(addressLines, centerX, y + 8, { align: 'center' });
+        doc.text(`VATIN ${businessTaxNumber}`, centerX, y + 13, { align: 'center' });
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(14);
-        doc.text('VAT INVOICE', right, rightY, { align: 'right' });
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        rightY += 6;
-        doc.text(`Invoice: ${invoice.id}`, right, rightY, { align: 'right' });
-        rightY += 5;
-        doc.text(`Date: ${formatDate(invoice.date)}`, right, rightY, { align: 'right' });
-        rightY += 5;
-        doc.text(`Location: ${invoice.location || '--'}`, right, rightY, { align: 'right' });
-        rightY += 5;
-        doc.text(`Status: ${invoice.status}`, right, rightY, { align: 'right' });
-        rightY += 5;
-        doc.text(`Payment: ${invoice.paymentMethod || '--'}`, right, rightY, { align: 'right' });
+        doc.setFontSize(11);
+        doc.text('Tax Invoice', centerX, y + 17, { align: 'center' });
 
-        y = Math.max(leftHeaderBottom, rightY) + 4;
-        doc.line(left, y, right, y);
-        y += 6;
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10);
-        doc.text('Bill To', left, y);
-        doc.text('Tax Details', 120, y);
-        y += 5;
+        const rightLabelX = 150;
+        const rightValueX = pageRight;
+        let metaY = y + 3;
+        const metaRows = [
+          { label: 'Invoice No.', value: invoice.id || '--' },
+          { label: 'Date', value: formatDateTimeBySettings(invoice.date, settings.dateFormat, settings.timeFormat, settings.timeZone) },
+          { label: 'Status', value: invoice.status || '--' },
+          { label: 'Location', value: invoice.location || '--' },
+          { label: 'Payment', value: invoice.paymentMethod || '--' },
+        ];
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        doc.text(`Customer: ${invoice.customer}`, left, y);
-        doc.text(`TRN: ${invoice.trn}`, 120, y);
-        y += 5;
-        doc.text(`Customer Type: ${invoice.customerType}`, left, y);
-        doc.text(`Customer Group: ${invoice.customerGroup}`, 120, y);
-        y += 5;
-        doc.text(`Added By: ${invoice.addedBy || '--'}`, left, y);
+        doc.setFontSize(8.2);
+        metaRows.forEach((row) => {
+          doc.setFont('helvetica', 'bold');
+          doc.text(row.label, rightLabelX, metaY);
+          doc.setFont('helvetica', 'normal');
+          doc.text(truncate(String(row.value || '--'), 30), rightValueX, metaY, { align: 'right' });
+          metaY += 3.7;
+        });
+
+        const headerBottom = y + 20;
+        doc.line(pageLeft, headerBottom, pageRight, headerBottom);
+        y = headerBottom + 4.5;
+
+        const customerRows = [
+          { label: 'Customer', value: invoice.customer },
+          { label: 'VATIN', value: invoice.trn },
+          { label: 'Mobile', value: invoice.customerMobile || '--' },
+          { label: 'Address', value: invoice.customerAddress || '--' },
+        ];
+        const rightRows = [
+          { label: 'Customer Type', value: invoice.customerType || '--' },
+          { label: 'Customer Group', value: invoice.customerGroup || '--' },
+          { label: 'Added By', value: invoice.addedBy || '--' },
+          { label: 'Payment Status', value: invoice.status || '--' },
+        ];
+        const rowHeight = 4.8;
+        customerRows.forEach((row, rowIndex) => {
+          const rowY = y + rowIndex * rowHeight;
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.4);
+          doc.text(`${row.label}:`, pageLeft, rowY);
+          doc.setFont('helvetica', 'normal');
+          doc.text(truncate(String(row.value || '--'), 52), pageLeft + 24, rowY);
+
+          doc.setFont('helvetica', 'bold');
+          doc.text(`${rightRows[rowIndex].label}:`, 122, rowY);
+          doc.setFont('helvetica', 'normal');
+          doc.text(truncate(String(rightRows[rowIndex].value || '--'), 27), pageRight, rowY, { align: 'right' });
+        });
+        y += customerRows.length * rowHeight + 0.8;
+        doc.line(pageLeft, y, pageRight, y);
         y += 4;
-        doc.line(left, y, right, y);
-        y += 6;
 
+        const tableX = pageLeft;
+        const tableY = y;
+        const tableHeaderHeight = 6;
+        const columnQtyX = 128;
+        const columnUnitPriceX = 152;
+        const columnSubtotalX = 176;
+        const tableMaxBottom = 214;
+
+        doc.setFillColor(241, 245, 249);
+        doc.rect(tableX, tableY, pageWidth, tableHeaderHeight, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8.5);
-        doc.text('Item', left, y);
-        doc.text('Qty', 120, y, { align: 'right' });
-        doc.text('Unit Price', 142, y, { align: 'right' });
-        doc.text('Tax', 162, y, { align: 'right' });
-        doc.text('Line Total', right, y, { align: 'right' });
-        y += 2;
-        doc.line(left, y, right, y);
-        y += 4;
+        doc.text('Product', tableX + 2, tableY + 4.2);
+        doc.text('Quantity', columnQtyX + 20, tableY + 4.2, { align: 'right' });
+        doc.text('Unit Price', columnUnitPriceX + 20, tableY + 4.2, { align: 'right' });
+        doc.text('Subtotal', pageRight - 2, tableY + 4.2, { align: 'right' });
+
+        const items = Array.isArray(sale.items) ? sale.items : [];
+        const itemRowHeight = 5;
+        let rowY = tableY + tableHeaderHeight;
+        let visibleItems = 0;
 
         doc.setFont('helvetica', 'normal');
-        const items = Array.isArray(sale.items) ? sale.items : [];
-        const maxRows = 26;
+        doc.setFontSize(8.3);
         if (items.length === 0) {
-          doc.text('No line items recorded.', left, y);
-          y += 4.5;
+          rowY += itemRowHeight;
+          doc.text('No products found.', tableX + 2, rowY - 1.6);
+          doc.line(tableX, rowY, tableX + pageWidth, rowY);
         } else {
-          items.slice(0, maxRows).forEach((item) => {
-            const itemName = truncate(String(item.name || 'Item'), 52);
+          for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
+            if (rowY + itemRowHeight > tableMaxBottom) break;
+            const item = items[itemIndex];
             const qty = Number(item.qty || 0);
             const unitPrice = Number(item.unitPrice || 0);
-            const itemTax = Number(item.tax || 0);
-            const lineTotal = Number(item.total ?? item.subtotal ?? qty * unitPrice);
-            doc.text(itemName, left, y);
-            doc.text(qty.toFixed(3), 120, y, { align: 'right' });
-            doc.text(formatCurrency(unitPrice), 142, y, { align: 'right' });
-            doc.text(formatCurrency(itemTax), 162, y, { align: 'right' });
-            doc.text(formatCurrency(lineTotal), right, y, { align: 'right' });
-            y += 4.5;
-          });
-          if (items.length > maxRows) {
+            const lineSubtotal = Number(item.total ?? item.subtotal ?? qty * unitPrice);
+            rowY += itemRowHeight;
+            doc.text(truncate(String(item.name || '--'), 54), tableX + 2, rowY - 1.6);
+            doc.text(qty.toFixed(3), columnQtyX + 20, rowY - 1.6, { align: 'right' });
+            doc.text(formatCurrency(unitPrice), columnUnitPriceX + 20, rowY - 1.6, { align: 'right' });
+            doc.text(formatCurrency(lineSubtotal), pageRight - 2, rowY - 1.6, { align: 'right' });
+            doc.line(tableX, rowY, tableX + pageWidth, rowY);
+            visibleItems += 1;
+          }
+          if (items.length > visibleItems && rowY + itemRowHeight <= tableMaxBottom) {
+            rowY += itemRowHeight;
             doc.setFont('helvetica', 'italic');
-            doc.text(`+${items.length - maxRows} more item(s) not shown in batch export`, left, y);
+            doc.text(`+${items.length - visibleItems} more item(s) not shown`, tableX + 2, rowY - 1.6);
             doc.setFont('helvetica', 'normal');
-            y += 4.5;
+            doc.line(tableX, rowY, tableX + pageWidth, rowY);
           }
         }
 
-        y += 1;
-        doc.line(left, y, right, y);
-        y += 5;
+        const tableBottomY = Math.max(tableY + tableHeaderHeight + itemRowHeight, rowY);
+        doc.rect(tableX, tableY, pageWidth, tableBottomY - tableY);
+        doc.line(columnQtyX, tableY, columnQtyX, tableBottomY);
+        doc.line(columnUnitPriceX, tableY, columnUnitPriceX, tableBottomY);
+        doc.line(columnSubtotalX, tableY, columnSubtotalX, tableBottomY);
 
         const subTotal = Number(sale.subTotal || 0);
         const discountValue = resolveSaleDiscountValue(sale);
+        const netSubtotal = Math.max(0, Number((subTotal - discountValue).toFixed(3)));
         const shipping = Number(sale.shippingCharges || 0);
         const paid = Number(sale.totalPaid || 0);
-        const due = Number(
-          sale.sellDue ?? Math.max(0, Number(sale.grandTotal || sale.totalAmount || 0) - paid),
-        );
+        const due = Number(sale.sellDue ?? Math.max(0, Number(sale.grandTotal || sale.totalAmount || 0) - paid));
 
-        const summaryRows: Array<{ label: string; value: number; bold?: boolean }> = [
-          { label: 'Subtotal', value: subTotal },
-          { label: 'Discount', value: discountValue },
-          { label: 'VAT', value: invoice.vat },
-          { label: 'Shipping', value: shipping },
-          { label: 'Grand Total', value: invoice.total, bold: true },
-          { label: 'Paid', value: paid },
-          { label: 'Due', value: due, bold: true },
+        let sectionTop = tableBottomY + 5;
+        const hasPaymentDetails = paid > 0.0001;
+        const paymentBoxWidth = 96;
+        const paymentBoxHeight = hasPaymentDetails ? 20 : 0;
+
+        if (hasPaymentDetails) {
+          doc.rect(pageLeft, sectionTop, paymentBoxWidth, paymentBoxHeight);
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8);
+          doc.text('Payment', pageLeft + 2, sectionTop + 4);
+          doc.setFont('helvetica', 'normal');
+          doc.text(`Amount Paid: ${formatCurrency(paid)}`, pageLeft + 2, sectionTop + 9);
+          doc.text(`Pay Method: ${truncate(String(invoice.paymentMethod || '--'), 32)}`, pageLeft + 2, sectionTop + 14);
+        }
+
+        const totalsX = 120;
+        const totalsWidth = pageRight - totalsX;
+        const totalsRows: Array<{ label: string; value: string; bold?: boolean }> = [
+          { label: 'Due', value: formatCurrency(round3(due)) },
+          { label: 'Subtotal', value: formatCurrency(round3(netSubtotal)) },
+          { label: `VATIN (${vatLabel}) (+)`, value: formatCurrency(round3(invoice.vat)) },
+          ...(shipping > 0.0001 ? [{ label: 'Shipping (+)', value: formatCurrency(round3(shipping)) }] : []),
+          { label: 'Total', value: formatCurrency(round3(invoice.total)), bold: true },
         ];
-
-        summaryRows.forEach((row) => {
+        const totalsRowHeight = 5.2;
+        const totalsHeight = totalsRows.length * totalsRowHeight;
+        doc.rect(totalsX, sectionTop, totalsWidth, totalsHeight);
+        totalsRows.forEach((row, rowIndex) => {
+          const rowTop = sectionTop + rowIndex * totalsRowHeight;
+          if (rowIndex > 0) doc.line(totalsX, rowTop, totalsX + totalsWidth, rowTop);
           doc.setFont('helvetica', row.bold ? 'bold' : 'normal');
-          doc.text(row.label, 158, y, { align: 'right' });
-          doc.text(formatCurrency(round3(row.value)), right, y, { align: 'right' });
-          y += 4.8;
+          doc.setFontSize(8.5);
+          doc.text(row.label, totalsX + 2, rowTop + 3.5);
+          doc.text(row.value, totalsX + totalsWidth - 2, rowTop + 3.5, { align: 'right' });
         });
 
+        sectionTop += Math.max(paymentBoxHeight, totalsHeight) + 8;
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8);
-        doc.text(`Generated ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, left, 287);
+        doc.setFontSize(8.4);
+        doc.text('Credit', pageLeft, sectionTop);
+        doc.text('Received By', pageLeft, sectionTop + 7);
+        doc.text('Name: ____________________', pageLeft, sectionTop + 14);
+        doc.text('Signature: ________________', pageLeft, sectionTop + 20);
+        doc.text('Received in good condition; payment as agreed.', 124, sectionTop + 20);
+
+        const invoicePublicUrl = sale.invoiceNo && typeof window !== 'undefined'
+          ? `${window.location.origin}/invoice/${encodeURIComponent(String(sale.invoiceNo))}`
+          : `invoice/${encodeURIComponent(String(sale.invoiceNo || invoice.id || ''))}`;
+
+        const footerY = 289;
+        doc.line(pageLeft, footerY - 3, pageRight, footerY - 3);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7.4);
+        doc.text(generatedAt, pageLeft, footerY);
+        doc.text(String(invoice.id || '--'), pageLeft + 35, footerY);
+        doc.text(truncate(invoicePublicUrl, 64), pageLeft + 62, footerY);
+        doc.text(`${index + 1}/${filteredInvoices.length}`, pageRight, footerY, { align: 'right' });
       });
 
       const fileDate = new Date().toISOString().slice(0, 10);
