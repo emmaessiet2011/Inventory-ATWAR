@@ -505,6 +505,34 @@ const Sales: React.FC<SalesProps> = ({
       setActiveActionId(null);
   };
 
+  const handlePaymentStatusClick = (sale: GlobalSale) => {
+      if (!sale) return;
+      if (!isFinalizedSale(sale)) {
+        addNotification({
+          title: 'Action blocked',
+          message: 'Payment actions are available only for Final sales.',
+          type: 'error',
+        });
+        return;
+      }
+      const normalizedStatus = String(sale.paymentStatus || '').trim();
+      if (normalizedStatus === 'Paid') {
+        handleViewPayments(sale.id);
+        return;
+      }
+      handleAddPayment(sale.id);
+  };
+
+  const shouldIgnoreRowOpen = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) return true;
+    return !!target.closest('button, a, input, select, textarea, [data-no-row-open="true"]');
+  };
+
+  const handleSaleRowClick = (saleId: string, target: EventTarget | null) => {
+    if (shouldIgnoreRowOpen(target)) return;
+    handleViewDetails(saleId);
+  };
+
   const handleViewPayments = (saleId: string) => {
       const sale = sales.find(s => s.id === saleId);
       if (!isFinalizedSale(sale)) {
@@ -1068,9 +1096,14 @@ const Sales: React.FC<SalesProps> = ({
             <tbody className="divide-y divide-slate-100">
               {pagedSales.length > 0 ? (
                   pagedSales.map((sale) => (
-                    <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors group">
+                    <tr
+                      key={sale.id}
+                      className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                      onClick={(event) => handleSaleRowClick(sale.id, event.target)}
+                    >
                       <td style={getColumnStyle('action')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                           <button 
+                            data-no-row-open="true"
                             onClick={(e) => toggleActions(e, sale.id)}
                             className={`px-3 py-1.5 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-all ${
                                 activeActionId === sale.id 
@@ -1084,7 +1117,15 @@ const Sales: React.FC<SalesProps> = ({
                       <td style={getColumnStyle('date')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-600 font-medium whitespace-nowrap">{formatDateTimeDisplay(sale.date)}</td>
                       <td style={getColumnStyle('invoiceNo')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-700 font-bold whitespace-nowrap">
                         <div className="flex flex-col items-start">
-                          <span>{sale.invoiceNo}</span>
+                          <button
+                            type="button"
+                            data-no-row-open="true"
+                            onClick={() => handleViewDetails(sale.id)}
+                            className="text-left hover:text-blue-600 hover:underline underline-offset-2 transition-colors"
+                            title="View sale details"
+                          >
+                            {sale.invoiceNo}
+                          </button>
                           {settings.showInvoiceScheme && (
                             <span className="text-[9px] text-slate-400 mt-0.5">{sale.invoiceScheme || '--'}</span>
                           )}
@@ -1122,13 +1163,19 @@ const Sales: React.FC<SalesProps> = ({
                                N/A
                              </span>
                            ) : (
-                           <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${
-                               sale.paymentStatus === 'Paid' ? 'bg-emerald-500 text-white border-emerald-400' : 
-                               sale.paymentStatus === 'Partial' ? 'bg-sky-500 text-white border-sky-400' :
-                               'bg-amber-500 text-white border-amber-400'
-                           }`}>
-                               {getDisplayPaymentStatus(sale)}
-                           </span>
+                           <button
+                             type="button"
+                             data-no-row-open="true"
+                             onClick={() => handlePaymentStatusClick(sale)}
+                             className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                               sale.paymentStatus === 'Paid' ? 'bg-emerald-500 text-white border-emerald-400 focus:ring-emerald-300' : 
+                               sale.paymentStatus === 'Partial' ? 'bg-sky-500 text-white border-sky-400 focus:ring-sky-300' :
+                               'bg-amber-500 text-white border-amber-400 focus:ring-amber-300'
+                             }`}
+                             title={sale.paymentStatus === 'Paid' ? 'View payments' : 'Add payment for due amount'}
+                           >
+                             {getDisplayPaymentStatus(sale)}
+                           </button>
                            )}
                       </td>
                       <td style={getColumnStyle('saleType')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
@@ -1309,6 +1356,13 @@ const Sales: React.FC<SalesProps> = ({
 
             {/* List Actions */}
             <div className="py-1">
+                <button 
+                    className="w-full text-left px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"
+                    onClick={() => { if (activeActionId) handleViewDetails(activeActionId); }}
+                >
+                    <Eye size={14} className="text-blue-500" /> View Details
+                </button>
+                <div className="h-px bg-slate-100 my-1 mx-2"></div>
                 {activeSaleIsFinal && (
                   <>
                     <button 
