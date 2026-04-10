@@ -114,6 +114,10 @@ const AddExpense: React.FC<AddExpenseProps> = ({
   const [payAccount, setPayAccount] = useState('');
   const [payNote, setPayNote] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
 
   const taxOptions = useMemo<TaxOption[]>(() => {
     const mapped = taxRates
@@ -243,10 +247,10 @@ const AddExpense: React.FC<AddExpenseProps> = ({
 
   useEffect(() => {
     if (editingExpenseId) return;
-    if (locations.length > 0 && !location) {
-      setLocation(locations[0].name);
+    if (activeLocations.length > 0 && !location) {
+      setLocation(activeLocations[0].name);
     }
-  }, [locations, location, editingExpenseId]);
+  }, [activeLocations, location, editingExpenseId]);
 
   useEffect(() => {
     if (editingExpenseId) return;
@@ -272,6 +276,11 @@ const AddExpense: React.FC<AddExpenseProps> = ({
 
     if (!location) {
       addNotification({ title: 'Error', message: 'Please select a Business Location.', type: 'error' });
+      return;
+    }
+    const selectedLocationRecord = activeLocations.find(row => row.name === location);
+    if (!selectedLocationRecord) {
+      addNotification({ title: 'Error', message: 'Selected business location is inactive.', type: 'error' });
       return;
     }
     if (!category) {
@@ -495,7 +504,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
               <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <select className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700" value={location} onChange={(e) => setLocation(e.target.value)}>
                 <option value="">Please Select</option>
-                {locations.map((loc) => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                {activeLocations.map((loc) => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
               </select>
             </div>
           </div>

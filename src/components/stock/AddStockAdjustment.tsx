@@ -89,6 +89,22 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   const permissionRedirectedRef = useRef(false);
   const ownerIdFilter = normalize(restrictToAddedById);
   const ownerNameFilter = normalize(restrictToAddedByName);
+  const activeLocations = useMemo(
+    () => locations.filter(row => row.isActive !== false),
+    [locations]
+  );
+  const selectableLocations = useMemo(() => {
+    if (!location) return activeLocations;
+    const current = locations.find(row => normalize(row.name) === normalize(location));
+    if (
+      current &&
+      current.isActive === false &&
+      !activeLocations.some(row => normalize(row.name) === normalize(current.name))
+    ) {
+      return [current, ...activeLocations];
+    }
+    return activeLocations;
+  }, [activeLocations, locations, location]);
 
   useEffect(() => {
     let isMounted = true;
@@ -334,6 +350,11 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
 
     if (!location) {
       addNotification({ title: 'Validation Error', message: 'Select a business location.', type: 'error' });
+      return;
+    }
+    const selectedLocationRecord = activeLocations.find(row => normalize(row.name) === normalize(location));
+    if (!selectedLocationRecord) {
+      addNotification({ title: 'Validation Error', message: 'Selected business location is inactive.', type: 'error' });
       return;
     }
 
@@ -612,7 +633,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
                 onChange={(e) => handleLocationChange(e.target.value)}
               >
                 <option value="">Please Select</option>
-                {locations.map((loc) => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                {selectableLocations.map((loc) => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
             </div>

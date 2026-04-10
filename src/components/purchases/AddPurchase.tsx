@@ -120,7 +120,14 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
 
   const linkedOrder = useMemo(() => purchaseOrders.find(order => order.id === linkedPurchaseOrderId) || null, [purchaseOrders, linkedPurchaseOrderId]);
   const activeSuppliers = useMemo(() => suppliers.filter(s => s.status === 'Active'), [suppliers]);
-  const locationOptions = useMemo(() => Array.from(new Set(locations.map(l => l.name).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)), [locations]);
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
+  const locationOptions = useMemo(
+    () => Array.from(new Set(activeLocations.map(location => location.name).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)),
+    [activeLocations]
+  );
 
   const buildNextRefNo = (): string => {
     const year = new Date().getFullYear();
@@ -248,6 +255,8 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
     const selectedSupplier = activeSuppliers.find(item => item.id === supplierId);
     if (!selectedSupplier) return setFormError('Supplier is required.');
     if (!locationName.trim()) return setFormError('Business location is required.');
+    const selectedLocationRecord = activeLocations.find(location => location.name === locationName);
+    if (!selectedLocationRecord) return setFormError('Selected business location is inactive.');
     if (!purchaseDate.trim()) return setFormError('Purchase date is required.');
     if (rows.length === 0) return setFormError('Add at least one product row.');
     if (rows.some(row => !row.productId)) return setFormError('Select a product in every row.');

@@ -72,10 +72,18 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRequisition, setEditingRequisition] = useState<GlobalPurchaseRequisition | null>(null);
   const [formError, setFormError] = useState('');
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
+  const defaultLocationName = useMemo(
+    () => activeLocations[0]?.name || locations[0]?.name || '',
+    [activeLocations, locations]
+  );
   const [form, setForm] = useState<RequisitionFormState>({
     date: toLocalDateTimeInput(),
     referenceNo: '',
-    location: locations[0]?.name || '',
+    location: defaultLocationName,
     brand: '',
     category: '',
     requiredByDate: toLocalDateInput(),
@@ -93,6 +101,15 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   const locationOptions = useMemo(
     () => Array.from(new Set(locations.map(l => l.name).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)),
     [locations]
+  );
+  const formLocationOptions = useMemo(
+    () => {
+      const options = Array.from(new Set(activeLocations.map(location => location.name).filter(Boolean) as string[]));
+      const currentLocation = String(form.location || '').trim();
+      if (currentLocation && !options.includes(currentLocation)) options.unshift(currentLocation);
+      return options.sort((a, b) => a.localeCompare(b));
+    },
+    [activeLocations, form.location]
   );
 
   const buildReferenceNo = (): string => {
@@ -120,7 +137,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     setForm({
       date: toLocalDateTimeInput(),
       referenceNo: buildReferenceNo(),
-      location: locations[0]?.name || '',
+      location: defaultLocationName,
       brand: '',
       category: '',
       requiredByDate: toLocalDateInput(),
@@ -135,7 +152,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     setForm({
       date: toLocalDateTimeInput(requisition.date),
       referenceNo: requisition.referenceNo || '',
-      location: requisition.location || locations[0]?.name || '',
+      location: requisition.location || defaultLocationName,
       brand: requisition.brand || '',
       category: requisition.category || '',
       requiredByDate: toLocalDateInput(requisition.requiredByDate),
@@ -159,6 +176,11 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   const handleShowProducts = () => {
     if (!form.location.trim()) {
       setFormError('Business location is required before loading products.');
+      return;
+    }
+    const selectedLocationRecord = activeLocations.find(location => location.name === form.location.trim());
+    if (!selectedLocationRecord) {
+      setFormError('Selected business location is inactive.');
       return;
     }
     const rows: RequisitionItemForm[] = products
@@ -193,6 +215,8 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     const requiredByDate = form.requiredByDate.trim();
     const referenceNo = form.referenceNo.trim() || editingRequisition?.referenceNo || buildReferenceNo();
     if (!location) return setFormError('Business location is required.');
+    const selectedLocationRecord = activeLocations.find(item => item.name === location);
+    if (!selectedLocationRecord) return setFormError('Selected business location is inactive.');
     if (!requiredByDate) return setFormError('Required by date is required.');
     if (form.items.length === 0) return setFormError('Add at least one product row (use "Show products").');
 
@@ -448,7 +472,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div><label className="block text-[11px] font-bold text-slate-600 mb-1">Brand:</label><select value={form.brand} onChange={(e) => setForm(prev => ({ ...prev, brand: e.target.value }))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded"><option value="">All Brands</option>{brandOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
                   <div><label className="block text-[11px] font-bold text-slate-600 mb-1">Category:</label><select value={form.category} onChange={(e) => setForm(prev => ({ ...prev, category: e.target.value }))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded"><option value="">All Categories</option>{categoryOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
-                  <div><label className="block text-[11px] font-bold text-slate-600 mb-1">Business Location:</label><select value={form.location} onChange={(e) => setForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded"><option value="">Please Select</option>{locationOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
+                  <div><label className="block text-[11px] font-bold text-slate-600 mb-1">Business Location:</label><select value={form.location} onChange={(e) => setForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 text-sm border border-slate-300 rounded"><option value="">Please Select</option>{formLocationOptions.map(v => <option key={v} value={v}>{v}</option>)}</select></div>
                 </div>
                 <div className="mt-3 flex justify-end"><button onClick={handleShowProducts} className="px-3 py-1.5 text-xs font-bold rounded bg-amber-500 text-white hover:bg-amber-600">Show products</button></div>
               </div>

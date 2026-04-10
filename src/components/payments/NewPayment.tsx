@@ -81,20 +81,24 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
   const [chequeNo, setChequeNo] = useState('');
   const [chequeBankName, setChequeBankName] = useState('');
   const [chequeDrawerName, setChequeDrawerName] = useState('');
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
 
   useEffect(() => {
-    if (locations.length === 0) {
+    if (activeLocations.length === 0) {
       setSelectedLocation('');
       return;
     }
-    if (!selectedLocation || !locations.some(location => location.name === selectedLocation)) {
-      setSelectedLocation(locations[0].name);
+    if (!selectedLocation || !activeLocations.some(location => location.name === selectedLocation)) {
+      setSelectedLocation(activeLocations[0].name);
     }
-  }, [locations, selectedLocation]);
+  }, [activeLocations, selectedLocation]);
 
   const activeLocation = useMemo(
-    () => locations.find(location => location.name === selectedLocation),
-    [locations, selectedLocation]
+    () => activeLocations.find(location => location.name === selectedLocation),
+    [activeLocations, selectedLocation]
   );
 
   const paymentMethodOptions = useMemo(() => {
@@ -255,6 +259,10 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
   const handleSave = () => {
     if (!selectedCustomer || !amount) {
       addNotification({ title: 'Validation Error', message: 'Please select a customer and enter amount.', type: 'error' });
+      return;
+    }
+    if (!selectedLocation || !activeLocation) {
+      addNotification({ title: 'Validation Error', message: 'Please select an active business location.', type: 'error' });
       return;
     }
     if (!method) {
@@ -529,12 +537,12 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
                   value={selectedLocation}
                   onChange={(event) => setSelectedLocation(event.target.value)}
                 >
-                  {locations.length > 0 ? (
-                    locations.map(location => (
+                  {activeLocations.length > 0 ? (
+                    activeLocations.map(location => (
                       <option key={location.id} value={location.name}>{location.name}</option>
                     ))
                   ) : (
-                    <option value="">No location</option>
+                    <option value="">No active location</option>
                   )}
                 </select>
                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />

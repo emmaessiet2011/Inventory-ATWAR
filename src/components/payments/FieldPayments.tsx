@@ -166,6 +166,10 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | FieldPaymentStatus>('All');
   const [locationFilter, setLocationFilter] = useState('All');
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewingRecord, setViewingRecord] = useState<FieldPaymentRecord | null>(null);
@@ -221,12 +225,12 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     if (locationInput) return;
-    if (locations.length > 0) setLocationInput(locations[0].name);
-  }, [locations, locationInput]);
+    if (activeLocations.length > 0) setLocationInput(activeLocations[0].name);
+  }, [activeLocations, locationInput]);
 
   const activeLocation = useMemo(
-    () => locations.find(location => location.name === locationInput),
-    [locations, locationInput]
+    () => activeLocations.find(location => location.name === locationInput),
+    [activeLocations, locationInput]
   );
 
   const paymentMethodOptions = useMemo(() => {
@@ -535,6 +539,10 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     }
     if (!locationInput) {
       addNotification({ title: 'Validation Error', message: 'Select a business location.', type: 'error' });
+      return;
+    }
+    if (!activeLocation) {
+      addNotification({ title: 'Validation Error', message: 'Selected business location is inactive.', type: 'error' });
       return;
     }
     if (requiresAttachment(methodInput) && !attachmentName) {
@@ -888,8 +896,8 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                 <div>
                   <label className="text-xs font-bold text-slate-600">Business Location</label>
                   <select value={locationInput} onChange={(e) => setLocationInput(e.target.value)} className="w-full mt-1 px-3 py-2.5 rounded-xl border border-slate-200 text-sm">
-                    {locations.map(location => <option key={location.id} value={location.name}>{location.name}</option>)}
-                    {locations.length === 0 && <option value="">No location</option>}
+                    {activeLocations.map(location => <option key={location.id} value={location.name}>{location.name}</option>)}
+                    {activeLocations.length === 0 && <option value="">No location</option>}
                   </select>
                 </div>
                 <div>

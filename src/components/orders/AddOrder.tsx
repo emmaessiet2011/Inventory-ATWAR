@@ -106,10 +106,26 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
   const [rowProductSearch, setRowProductSearch] = useState<Record<string, string>>({});
   const [rowProductDropdownOpen, setRowProductDropdownOpen] = useState<Record<string, boolean>>({});
   const [showMultiPicker, setShowMultiPicker] = useState(false);
+  const activeCustomers = useMemo(
+    () => customers.filter(customer => String(customer.status || 'Active') === 'Active'),
+    [customers]
+  );
   const activeLocations = useMemo(
     () => locations.filter(location => location.isActive !== false),
     [locations]
   );
+  const selectableCustomers = useMemo(() => {
+    if (!customerId) return activeCustomers;
+    const current = customers.find(customer => customer.id === customerId);
+    if (
+      current &&
+      String(current.status || 'Active') !== 'Active' &&
+      !activeCustomers.some(customer => customer.id === current.id)
+    ) {
+      return [current, ...activeCustomers];
+    }
+    return activeCustomers;
+  }, [activeCustomers, customers, customerId]);
   const defaultLocationName = useMemo(
     () => activeLocations[0]?.name || locations[0]?.name || '',
     [activeLocations, locations]
@@ -250,12 +266,12 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
 
   const filteredCustomers = useMemo(() => {
     const q = customerSearch.toLowerCase();
-    return customers.filter(c =>
+    return selectableCustomers.filter(c =>
       c.businessName.toLowerCase().includes(q) ||
       c.name.toLowerCase().includes(q) ||
       (c.mobile || '').includes(customerSearch)
     ).slice(0, 15);
-  }, [customers, customerSearch]);
+  }, [selectableCustomers, customerSearch]);
 
   const selectedLocation = useMemo(
     () => locations.find(loc => loc.name === businessLocation),
@@ -565,8 +581,17 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       addNotification({ title: 'Validation Error', message: 'Select a customer before saving.', type: 'error' });
       return;
     }
+    if (!selectedCustomer || String(selectedCustomer.status || 'Active') !== 'Active') {
+      addNotification({ title: 'Validation Error', message: 'Selected customer is inactive.', type: 'error' });
+      return;
+    }
     if (!businessLocation) {
       addNotification({ title: 'Validation Error', message: 'Business location is required.', type: 'error' });
+      return;
+    }
+    const selectedLocationRecord = locations.find(loc => loc.name === businessLocation);
+    if (!selectedLocationRecord || selectedLocationRecord.isActive === false) {
+      addNotification({ title: 'Validation Error', message: 'Selected business location is inactive.', type: 'error' });
       return;
     }
     const resolvedDeliveryDate = extractDateInput(deliveryDate) || extractDateInput(orderDate) || extractDateInput(new Date().toISOString());

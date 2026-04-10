@@ -99,6 +99,10 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   const discountInputRef = useRef<HTMLInputElement>(null);
 
   const products = globalProducts;
+  const activeCustomers = useMemo(
+    () => customers.filter(customer => String(customer.status || 'Active') === 'Active'),
+    [customers]
+  );
   const activeLocations = useMemo(
     () => locations.filter(location => location.isActive !== false),
     [locations]
@@ -406,6 +410,24 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       });
       return false;
     }
+    if (selectedLocation.isActive === false) {
+      addNotification({
+        title: 'Location inactive',
+        message: 'Please select an active business location before checkout.',
+        type: 'error',
+      });
+      return false;
+    }
+    if (customerId !== 'WALK-IN') {
+      if (!selectedCustomer || String(selectedCustomer.status || 'Active') !== 'Active') {
+        addNotification({
+          title: 'Customer inactive',
+          message: 'Selected customer is inactive. Choose an active customer or Walk-in.',
+          type: 'error',
+        });
+        return false;
+      }
+    }
     return true;
   };
 
@@ -525,7 +547,15 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         : undefined,
     };
 
-    addSale(newSale);
+    const created = addSale(newSale);
+    if (!created) {
+      addNotification({
+        title: 'Invoice Not Created',
+        message: 'Selected customer/location is inactive or permission denied.',
+        type: 'error',
+      });
+      return;
+    }
 
     // Reward Points: award on final POS sales
     if (
@@ -742,6 +772,12 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       setSelectedLocationId(selectableLocations[0].id);
     }
   }, [selectedLocationId, selectableLocations]);
+
+  useEffect(() => {
+    if (customerId === 'WALK-IN') return;
+    const stillActive = activeCustomers.some(customer => customer.id === customerId);
+    if (!stillActive) setCustomerId('WALK-IN');
+  }, [activeCustomers, customerId]);
 
   useEffect(() => {
     if (!settings.posEnableDiscount) {
@@ -973,7 +1009,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                   onChange={(e) => setCustomerId(e.target.value)}
                 >
                   <option value="WALK-IN">Walk-in Customer</option>
-                  {customers.map((c) => (
+                  {activeCustomers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.businessName}
                     </option>

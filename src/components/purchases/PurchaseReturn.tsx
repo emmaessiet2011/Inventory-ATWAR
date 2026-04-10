@@ -96,6 +96,10 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
   const [formError, setFormError] = useState('');
   const [productSearch, setProductSearch] = useState('');
 
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
   const locationOptions = useMemo(
     () => Array.from(new Set(locations.map(l => l.name).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)),
     [locations]
@@ -141,6 +145,15 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
   });
 
   const [form, setForm] = useState<PurchaseReturnFormState>(buildEmptyForm);
+  const formLocationOptions = useMemo(
+    () => {
+      const options = Array.from(new Set(activeLocations.map(location => location.name).filter(Boolean) as string[]));
+      const currentLocation = String(form.location || '').trim();
+      if (currentLocation && !options.includes(currentLocation)) options.unshift(currentLocation);
+      return options.sort((a, b) => a.localeCompare(b));
+    },
+    [activeLocations, form.location]
+  );
 
   const buildRowsFromPurchase = (purchaseId: string): PurchaseReturnItemForm[] => {
     const purchase = purchases.find(item => item.id === purchaseId);
@@ -288,6 +301,8 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
     setFormError('');
     if (!form.supplierId.trim()) return setFormError('Supplier is required.');
     if (!form.location.trim()) return setFormError('Business location is required.');
+    const selectedLocationRecord = activeLocations.find(location => location.name === form.location.trim());
+    if (!selectedLocationRecord) return setFormError('Selected business location is inactive.');
     if (!form.date.trim()) return setFormError('Date is required.');
     if (form.items.length === 0) return setFormError('Add at least one product row.');
 
@@ -561,7 +576,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
             <div className="p-4 bg-slate-100 space-y-3">
               <div className="bg-white rounded-lg border border-slate-200 p-4 grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <div><label className="block text-[11px] font-bold mb-1">Supplier:<span className="text-rose-500">*</span></label><select value={form.supplierId} onChange={(e) => setForm(prev => ({ ...prev, supplierId: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"><option value="">Please Select</option>{supplierOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
-                <div><label className="block text-[11px] font-bold mb-1">Business Location:<span className="text-rose-500">*</span></label><select value={form.location} onChange={(e) => setForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"><option value="">Please Select</option>{locationOptions.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
+                <div><label className="block text-[11px] font-bold mb-1">Business Location:<span className="text-rose-500">*</span></label><select value={form.location} onChange={(e) => setForm(prev => ({ ...prev, location: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"><option value="">Please Select</option>{formLocationOptions.map(l => <option key={l} value={l}>{l}</option>)}</select></div>
                 <div><label className="block text-[11px] font-bold mb-1">Reference No:</label><input type="text" value={form.referenceNo} onChange={(e) => setForm(prev => ({ ...prev, referenceNo: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm" /></div>
                 <div><label className="block text-[11px] font-bold mb-1">Date:<span className="text-rose-500">*</span></label><input type="datetime-local" value={form.date} onChange={(e) => setForm(prev => ({ ...prev, date: e.target.value }))} className="w-full px-3 py-2 border border-slate-300 rounded text-sm" /></div>
                 <div><label className="block text-[11px] font-bold mb-1">Parent Purchase:</label><select value={form.parentPurchaseId} onChange={(e) => { const next = e.target.value; if (!next) setForm(prev => ({ ...prev, parentPurchaseId: '', items: [] })); else applyParentPurchaseToForm(next); }} className="w-full px-3 py-2 border border-slate-300 rounded text-sm"><option value="">Select purchase</option>{purchases.filter(p => !form.supplierId || p.supplierId === form.supplierId || p.supplier === supplierOptions.find(s => s.id === form.supplierId)?.name).map(p => <option key={p.id} value={p.id}>{p.refNo}</option>)}</select></div>

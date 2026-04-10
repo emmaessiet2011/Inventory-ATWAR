@@ -60,6 +60,10 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
   const [productSearch, setProductSearch] = useState('');
   const [rows, setRows] = useState<StockTransferItem[]>([]);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
+  const activeLocations = useMemo(
+    () => locations.filter(location => location.isActive !== false),
+    [locations]
+  );
 
   const resolveLocationRecord = (value: string) => {
     const normalizedValue = normalize(value);
@@ -78,6 +82,30 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     const matched = resolveLocationRecord(value);
     return matched ? `id:${normalize(matched.id)}` : `name:${normalize(value)}`;
   };
+  const selectableSourceLocations = useMemo(() => {
+    if (!locationFrom) return activeLocations;
+    const current = resolveLocationRecord(locationFrom);
+    if (
+      current &&
+      current.isActive === false &&
+      !activeLocations.some(location => normalize(location.id) === normalize(current.id))
+    ) {
+      return [current, ...activeLocations];
+    }
+    return activeLocations;
+  }, [activeLocations, locationFrom, locations]);
+  const selectableDestinationLocations = useMemo(() => {
+    if (!locationTo) return activeLocations;
+    const current = resolveLocationRecord(locationTo);
+    if (
+      current &&
+      current.isActive === false &&
+      !activeLocations.some(location => normalize(location.id) === normalize(current.id))
+    ) {
+      return [current, ...activeLocations];
+    }
+    return activeLocations;
+  }, [activeLocations, locationTo, locations]);
 
   useEffect(() => {
     let isMounted = true;
@@ -203,6 +231,12 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
 
     if (!locationFrom || !locationTo) {
       addNotification({ title: 'Validation Error', message: 'Select both source and destination locations.', type: 'error' });
+      return;
+    }
+    const sourceLocationRecord = resolveLocationRecord(locationFrom);
+    const destinationLocationRecord = resolveLocationRecord(locationTo);
+    if (!sourceLocationRecord || sourceLocationRecord.isActive === false || !destinationLocationRecord || destinationLocationRecord.isActive === false) {
+      addNotification({ title: 'Validation Error', message: 'Source and destination locations must both be active.', type: 'error' });
       return;
     }
     if (resolveLocationIdentity(locationFrom) === resolveLocationIdentity(locationTo)) {
@@ -393,7 +427,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
                 onChange={(e) => setLocationFrom(e.target.value)}
               >
                 <option value="">Please Select</option>
-                {locations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                {selectableSourceLocations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
             </div>
@@ -408,7 +442,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
                 onChange={(e) => setLocationTo(e.target.value)}
               >
                 <option value="">Please Select</option>
-                {locations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                {selectableDestinationLocations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
             </div>

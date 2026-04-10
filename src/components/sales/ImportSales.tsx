@@ -476,6 +476,7 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
     }
 
     let imported = 0;
+    let skipped = 0;
     const usedInvoices = new Set(existingInvoiceSet);
     const allocateInvoiceNo = (preferredInvoice: string, locationName: string) => {
       const preferred = normalizeText(preferredInvoice);
@@ -542,11 +543,15 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
         addedBy: currentUser?.name || 'System',
       };
 
-      addSale(sale);
-      imported += 1;
+      const created = addSale(sale);
+      if (created) {
+        imported += 1;
+      } else {
+        skipped += 1;
+      }
     });
 
-    const skipped = groupedSales.length - validSales.length;
+    skipped += groupedSales.length - validSales.length;
     const batch: ImportBatchRecord = {
       id: `batch-${Date.now()}`,
       imported,

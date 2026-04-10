@@ -3938,6 +3938,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const normalizeText = (value?: string): string => String(value || '').trim().toLowerCase();
 
+  const isCustomerRecordActive = (customer?: Customer): boolean =>
+    !!customer && String(customer.status || 'Active') === 'Active';
+
+  const resolveCustomerRecordForTransaction = (customerId?: string, customerName?: string): Customer | undefined => {
+    const normalizedCustomerId = String(customerId || '').trim();
+    const normalizedCustomerName = normalizeText(customerName);
+    return customers.find(customer =>
+      (normalizedCustomerId && String(customer.id || '').trim() === normalizedCustomerId) ||
+      (normalizedCustomerName && (
+        normalizeText(customer.businessName) === normalizedCustomerName ||
+        normalizeText(customer.name) === normalizedCustomerName
+      ))
+    );
+  };
+
+  const resolveLocationRecordByName = (locationName?: string): Location | undefined => {
+    const normalizedLocationName = normalizeText(locationName);
+    if (!normalizedLocationName) return undefined;
+    return locations.find(location => normalizeText(location.name) === normalizedLocationName);
+  };
+
   const resolveProductCategoryLink = (
     categoryId: string | undefined,
     categoryName: string | undefined,
@@ -4532,6 +4553,37 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addSale = (sale: Sale): boolean => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return false;
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(sale);
+    const linkedLocation = resolveLocationRecordByName(saleWithSnapshot.location);
+    if (!linkedLocation || linkedLocation.isActive === false) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sales',
+        description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: selected location is inactive.`,
+      });
+      return false;
+    }
+    if (!isWalkInSale(saleWithSnapshot)) {
+      const linkedCustomer = resolveCustomerRecordForTransaction(
+        String(saleWithSnapshot.customerId || ''),
+        saleWithSnapshot.customerName,
+      );
+      if (!linkedCustomer) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sales',
+          description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: customer not found.`,
+        });
+        return false;
+      }
+      if (!isCustomerRecordActive(linkedCustomer)) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sales',
+          description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: customer is inactive.`,
+        });
+        return false;
+      }
+    }
     setSales(prev => [...prev, saleWithSnapshot]);
     syncRecord('sales', saleWithSnapshot);
     recordActivity({

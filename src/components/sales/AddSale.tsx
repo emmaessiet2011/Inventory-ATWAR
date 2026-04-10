@@ -1617,6 +1617,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           addNotification({ title: 'Error', message: 'Please select a Business Location.', type: 'error' });
           return;
       }
+      const selectedLocationRecord = locations.find(loc => loc.name === location);
+      if (!selectedLocationRecord || selectedLocationRecord.isActive === false) {
+          addNotification({ title: 'Error', message: 'Selected business location is inactive.', type: 'error' });
+          return;
+      }
+      if (customer && customer !== 'WALK-IN') {
+          if (!selectedCustomerRecord) {
+              addNotification({ title: 'Error', message: 'Selected customer is not available.', type: 'error' });
+              return;
+          }
+          if (String(selectedCustomerRecord.status || 'Active') !== 'Active') {
+              addNotification({ title: 'Error', message: 'Selected customer is inactive.', type: 'error' });
+              return;
+          }
+      }
       if (isFinalStatus && settings.isPayTermRequired && saleType === 'Credit Sale' && (!payTermNumber || Number(payTermNumber) <= 0)) {
           addNotification({ title: 'Error', message: 'Pay term is required for Credit Sale.', type: 'error' });
           return;
