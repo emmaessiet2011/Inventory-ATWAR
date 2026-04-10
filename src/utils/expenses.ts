@@ -1,3 +1,5 @@
+import { formatDateTimeBySettings } from './dateTime';
+
 const EDIT_EXPENSE_ID_KEY = 'app_edit_expense_id';
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
@@ -15,6 +17,15 @@ type ExpenseAmountLike = {
 export const parseExpenseDateToMs = (value: unknown): number => {
   const raw = String(value ?? '').trim();
   if (!raw) return Number.NaN;
+
+  const isoDateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoDateOnly) {
+    const year = Number(isoDateOnly[1]);
+    const month = Number(isoDateOnly[2]) - 1;
+    const day = Number(isoDateOnly[3]);
+    const parsed = new Date(year, month, day, 0, 0, 0, 0).getTime();
+    if (Number.isFinite(parsed)) return parsed;
+  }
 
   const direct = Date.parse(raw);
   if (Number.isFinite(direct)) return direct;
@@ -51,10 +62,15 @@ export const toExpenseDateTimeInput = (value: string): string => {
   return new Date(date.getTime() - tzOffsetMs).toISOString().slice(0, 16);
 };
 
-export const formatExpenseDateTime = (value: string): string => {
+export const formatExpenseDateTime = (
+  value: string,
+  dateFormat: string = 'dd/mm/yyyy',
+  timeFormat: string = '12',
+  timeZone?: string,
+): string => {
   const parsedMs = parseExpenseDateToMs(value);
   if (!Number.isFinite(parsedMs)) return String(value || '--');
-  return new Date(parsedMs).toLocaleString();
+  return formatDateTimeBySettings(parsedMs, dateFormat, timeFormat, timeZone);
 };
 
 export const getExpenseTotalAmount = (expense: ExpenseAmountLike): number => {

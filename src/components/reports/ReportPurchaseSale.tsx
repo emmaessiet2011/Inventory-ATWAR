@@ -105,8 +105,8 @@ const ReportPurchaseSale: React.FC = () => {
   )), [purchaseReturns, startMs, endMs, hasDateFilter, selectedLocationSet]);
 
   const filteredSales = useMemo(() => sales.filter((sale) => {
-    const status = String(sale.status || sale.saleStatus || '').trim();
-    return status === 'Final' && isDateMatch(sale.date) && isLocationMatch(sale.location);
+    const status = normalizeText(String(sale.status || sale.saleStatus || ''));
+    return status === 'final' && isDateMatch(sale.date) && isLocationMatch(sale.location);
   }), [sales, startMs, endMs, hasDateFilter, selectedLocationSet]);
 
   const filteredSellReturns = useMemo(() => sellReturns.filter((record) => (

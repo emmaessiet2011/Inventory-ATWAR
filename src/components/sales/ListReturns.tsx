@@ -295,7 +295,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
         { label: 'Added By', width: '80px' },
       ],
       rows: sortedReturns.map(record => [
-        record.date ? new Date(record.date).toLocaleDateString() : '--',
+        formatDateTimeDisplay(record.date),
         record.referenceNo,
         record.parentSaleDisplay,
         record.customerName,

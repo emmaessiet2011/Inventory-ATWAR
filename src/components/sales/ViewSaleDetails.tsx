@@ -4,6 +4,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { findLocationByIdOrName, resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { fetchDedicated } from '@/utils/apiClient';
+import { printElementSnapshot } from '@/utils/printUtils';
 
 interface ViewSaleDetailsProps {
   isOpen: boolean;
@@ -203,10 +204,14 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   useEffect(() => {
     if (!isOpen || !sale || !autoPrintRequestId) return;
     const timer = window.setTimeout(() => {
-      window.print();
+      printElementSnapshot({
+        elementId: 'invoice-print-root',
+        title: `${documentLabel} ${sale.invoiceNo || ''}`.trim(),
+        extraStyles: '@media print { @page { size: A4; margin: 5mm; } }',
+      });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [isOpen, sale, autoPrintRequestId]);
+  }, [autoPrintRequestId, documentLabel, isOpen, sale]);
 
   if (!isOpen) return null;
 
@@ -679,7 +684,13 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
             <Package size={13} /> Packing Slip
           </button>
           <button
-            onClick={() => window.print()}
+            onClick={() =>
+              printElementSnapshot({
+                elementId: 'invoice-print-root',
+                title: `${documentLabel} ${sale?.invoiceNo || ''}`.trim(),
+                extraStyles: '@media print { @page { size: A4; margin: 5mm; } }',
+              })
+            }
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
           >
             <Printer size={13} /> Print {documentLabel}

@@ -8,6 +8,7 @@ import {
 import { useGlobalContext } from '@/context/GlobalContext';
 import type { ProductVariation } from '@/context/GlobalContext';
 import { buildPaginationItems } from '@/utils/pagination';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const escapeHtml = (value: string) =>
@@ -26,6 +27,7 @@ const Variations: React.FC = () => {
     updateProductVariation,
     deleteProductVariation,
     products,
+    settings,
     generateId,
   } = useGlobalContext();
 
@@ -146,7 +148,7 @@ const Variations: React.FC = () => {
     y += 22;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, marginX, y);
+    doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, marginX, y);
     y += 20;
 
     filtered.forEach((v, idx) => {

@@ -8,6 +8,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import {
   StockTransferRecord,
   appendStockLedgerEntries,
@@ -42,6 +43,10 @@ const getCurrentYearRange = (): DateRangeValue => {
 const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, canManage = true }) => {
   const { locations, products, setProducts, generateId, currentUser, formatCurrency, addActivityLog, settings } = useGlobalContext();
   const { addNotification } = useNotifications();
+  const formatDateDisplay = (value?: string) =>
+    formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
+  const formatDateTimeDisplay = (value?: string) =>
+    formatDateTimeBySettings(value || '', settings.dateFormat, settings.timeFormat, settings.timeZone);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
@@ -211,7 +216,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         { label: 'Added By', width: '80px' },
       ],
       rows: visibleTransfers.map(t => [
-        t.date ? new Date(t.date).toLocaleDateString() : '--',
+        formatDateDisplay(t.date),
         t.refNo,
         t.locationFrom,
         t.locationTo,
@@ -418,7 +423,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
               {pagedTransfers.length > 0 ? (
                 pagedTransfers.map((transfer) => (
                   <tr key={transfer.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 whitespace-nowrap">{new Date(transfer.date).toLocaleString()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDateTimeDisplay(transfer.date)}</td>
                     <td className="px-4 py-3 font-bold text-slate-700">{transfer.refNo}</td>
                     <td className="px-4 py-3">{transfer.locationFrom}</td>
                     <td className="px-4 py-3">{transfer.locationTo}</td>
@@ -520,7 +525,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
             </div>
             <div className="p-5 space-y-4 overflow-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{new Date(viewTransfer.date).toLocaleString()}</span></div>
+                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatDateTimeDisplay(viewTransfer.date)}</span></div>
                 <div><span className="text-slate-500">Status:</span> <span className="font-bold text-slate-800">{viewTransfer.status}</span></div>
                 <div><span className="text-slate-500">From:</span> <span className="font-bold text-slate-800">{viewTransfer.locationFrom}</span></div>
                 <div><span className="text-slate-500">To:</span> <span className="font-bold text-slate-800">{viewTransfer.locationTo}</span></div>

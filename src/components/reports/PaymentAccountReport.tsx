@@ -27,6 +27,7 @@ interface ReportRow {
 }
 
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+const MONTH_SHORT_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const parseReportDateToMs = (value: unknown): number => {
   const raw = String(value || '').trim();
   if (!raw) return Number.NaN;
@@ -256,7 +257,7 @@ const PaymentAccountReport: React.FC<PaymentAccountReportProps> = ({
       const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
       months.push({
         key,
-        label: cursor.toLocaleString('en-US', { month: 'short' }),
+        label: MONTH_SHORT_LABELS[cursor.getMonth()],
         inflow: 0,
         outflow: 0,
       });

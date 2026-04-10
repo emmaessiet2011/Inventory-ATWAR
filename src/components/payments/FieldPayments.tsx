@@ -19,6 +19,7 @@ import {
   resolveDefaultAccountFromMethod,
 } from '@/utils/paymentAccounts';
 import { fetchDedicated, syncDedicated, deleteDedicated } from '@/utils/apiClient';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 type FieldPaymentStatus = 'Pending' | 'Approved';
 
@@ -142,6 +143,8 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     formatCurrency,
   } = useGlobalContext();
   const { addNotification } = useNotifications();
+  const formatDateTimeDisplay = (value?: string) =>
+    formatDateTimeBySettings(value || '', settings.dateFormat, settings.timeFormat, settings.timeZone);
 
   const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
 
@@ -803,7 +806,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
               <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400 italic">No field payments found.</td></tr>
             ) : filteredRecords.map(record => (
               <tr key={record.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">{new Date(record.date).toLocaleString()}</td>
+                <td className="px-4 py-3">{formatDateTimeDisplay(record.date)}</td>
                 <td className="px-4 py-3 font-semibold">{record.referenceNo}</td>
                 <td className="px-4 py-3">{record.customerName}</td>
                 <td className="px-4 py-3">{record.location || '--'}</td>
@@ -1018,7 +1021,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
               <p><span className="font-semibold text-slate-700">Reference:</span> {viewingRecord.referenceNo}</p>
               <p><span className="font-semibold text-slate-700">Customer:</span> {viewingRecord.customerName}</p>
               <p><span className="font-semibold text-slate-700">Amount:</span> {formatCurrency(viewingRecord.amount)}</p>
-              <p><span className="font-semibold text-slate-700">Date:</span> {new Date(viewingRecord.date).toLocaleString()}</p>
+              <p><span className="font-semibold text-slate-700">Date:</span> {formatDateTimeDisplay(viewingRecord.date)}</p>
               <p><span className="font-semibold text-slate-700">Location:</span> {viewingRecord.location || '--'}</p>
               <p><span className="font-semibold text-slate-700">Method/Account:</span> {viewingRecord.method} / {viewingRecord.account || '--'}</p>
               <p><span className="font-semibold text-slate-700">Collected By:</span> {viewingRecord.collectedBy}</p>
@@ -1034,7 +1037,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
                 </span>
               </p>
               {viewingRecord.approvedBy && <p><span className="font-semibold text-slate-700">Approved By:</span> {viewingRecord.approvedBy}</p>}
-              {viewingRecord.approvedAt && <p><span className="font-semibold text-slate-700">Approved At:</span> {new Date(viewingRecord.approvedAt).toLocaleString()}</p>}
+              {viewingRecord.approvedAt && <p><span className="font-semibold text-slate-700">Approved At:</span> {formatDateTimeDisplay(viewingRecord.approvedAt)}</p>}
               {viewingRecord.attachmentName && (
                 <p className="flex items-center gap-1.5">
                   <span className="font-semibold text-slate-700">Attachment:</span>

@@ -11,6 +11,7 @@ import {
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface PurchaseRequisitionProps {
   onNavigate?: (page: string) => void;
@@ -106,18 +107,11 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   };
 
   const formatDateTime = (value: string): string => {
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return value;
-    const hour12 = settings.timeFormat !== '24';
-    return date.toLocaleString('en-GB', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12,
-    }).replace(',', '');
+    return formatDateTimeBySettings(value, settings.dateFormat, settings.timeFormat, settings.timeZone);
   };
 
   const formatDateOnly = (value?: string): string => {
-    if (!value) return '--';
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('en-GB');
+    return formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
   };
 
   const openAddModal = () => {
@@ -324,7 +318,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     let y = 44; const marginX = 40; const width = doc.internal.pageSize.getWidth() - marginX * 2;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text('Purchase Requisitions Report', marginX, y); y += 20;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, marginX, y); y += 18;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, marginX, y); y += 18;
     exportRows.forEach((r, idx) => {
       const line = `${idx + 1}. ${r.referenceNo} | ${r.date} | ${r.location} | ${r.brand} | ${r.category} | Req By: ${r.requiredBy} | Qty: ${r.itemsQty}`;
       const wrapped = doc.splitTextToSize(line, width);

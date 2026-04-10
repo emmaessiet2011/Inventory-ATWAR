@@ -14,6 +14,7 @@ import {
 } from '@/utils/paymentUtils';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { printDocument } from '@/utils/printUtils';
+import { formatDateBySettings } from '@/utils/dateTime';
 
 interface ViewSupplierProps {
   onNavigate: (page: string) => void;
@@ -250,10 +251,7 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
   const selectedEditPayment = supplierPayments.find(p => p.id === editPaymentId) || null;
 
   const formatDateDisplay = (dateStr: string) => {
-    if (!dateStr) return '';
-    const parsed = new Date(dateStr);
-    if (Number.isNaN(parsed.getTime())) return dateStr;
-    return parsed.toLocaleDateString('en-GB');
+    return formatDateBySettings(dateStr || '', settings.dateFormat, settings.timeZone);
   };
 
   const getContactLabel = (s: any) => {
@@ -980,8 +978,8 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
                   <tr key={doc.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-slate-800">{doc.heading}</td>
                     <td className="px-4 py-3 text-slate-600">{doc.addedBy}</td>
-                    <td className="px-4 py-3 text-slate-500">{new Date(doc.createdAt).toLocaleDateString('en-GB')}</td>
-                    <td className="px-4 py-3 text-slate-500">{new Date(doc.updatedAt).toLocaleDateString('en-GB')}</td>
+                    <td className="px-4 py-3 text-slate-500">{formatDateDisplay(doc.createdAt)}</td>
+                    <td className="px-4 py-3 text-slate-500">{formatDateDisplay(doc.updatedAt)}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button

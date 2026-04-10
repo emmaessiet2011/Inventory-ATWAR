@@ -81,7 +81,7 @@ const TrialBalance: React.FC = () => {
 
     const scopedCustomerKeys = new Set<string>();
     sales.forEach((sale) => {
-      if (String(sale.status || sale.saleStatus || '').trim() !== 'Final') return;
+      if (normalizeText(sale.status || sale.saleStatus) !== 'final') return;
       if (!isOnOrBeforeReportDate(sale.date)) return;
       if (!matchesLocation(sale.location)) return;
       const customerId = String(sale.customerId || '').trim().toLowerCase();

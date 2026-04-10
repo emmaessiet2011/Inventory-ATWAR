@@ -792,6 +792,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true })
         isOpen={!!historyProduct}
         onClose={() => setHistoryProductId(null)}
         product={historyProduct}
+        pageMode={true}
       />
     </div>
   );

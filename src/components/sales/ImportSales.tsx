@@ -3,6 +3,7 @@ import { Download, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import type { Sale, SaleItem } from '@/context/GlobalContext';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 type PaymentStatus = Sale['paymentStatus'];
 type Step = 'upload' | 'preview' | 'done';
@@ -217,8 +218,11 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
     addSale,
     generateId,
     nextInvoiceNumber,
+    settings,
   } = useGlobalContext();
   const { addNotification } = useNotifications();
+  const formatDateTimeDisplay = (value?: string) =>
+    formatDateTimeBySettings(value || '', settings.dateFormat, settings.timeFormat, settings.timeZone);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [step, setStep] = useState<Step>('upload');
@@ -745,7 +749,7 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
                   ) : importHistory.map(record => (
                     <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
                       <td className="px-4 py-3 font-mono text-xs text-slate-600">{record.id}</td>
-                      <td className="px-4 py-3 text-slate-600">{new Date(record.importTime).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatDateTimeDisplay(record.importTime)}</td>
                       <td className="px-4 py-3 text-slate-700">{record.createdBy}</td>
                       <td className="px-4 py-3 text-slate-700">{record.invoices}</td>
                       <td className="px-4 py-3 text-emerald-700 font-bold">{record.imported}</td>

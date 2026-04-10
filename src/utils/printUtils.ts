@@ -3,6 +3,7 @@
  * Beautiful A4 print document generator for ATWAR BSS ERP.
  * Opens a styled print window showing only table data — no filters, no pagination, no UI chrome.
  */
+import { formatDateTimeBySettings } from './dateTime';
 
 export interface PrintColumn {
   label: string;
@@ -39,6 +40,13 @@ export interface PrintActiveReportTableConfig {
   printedBy?: string;
   /** Optional selector to scope which part of the page should be inspected for tables. */
   rootSelector?: string;
+}
+
+export interface PrintElementSnapshotConfig {
+  elementId: string;
+  title?: string;
+  extraStyles?: string;
+  windowFeatures?: string;
 }
 
 function esc(value: unknown): string {
@@ -90,6 +98,36 @@ function resolveLogoFromStorage(): string {
   return '';
 }
 
+function resolvePrintDateSettings(): { dateFormat: string; timeFormat: string; timeZone: string } {
+  const fallback = {
+    dateFormat: 'dd/mm/yyyy',
+    timeFormat: '12',
+    timeZone: 'Asia/Dubai',
+  };
+  try {
+    const raw = localStorage.getItem('app_settings');
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      dateFormat: String(parsed.dateFormat || fallback.dateFormat),
+      timeFormat: String(parsed.timeFormat || fallback.timeFormat),
+      timeZone: String(parsed.timeZone || fallback.timeZone),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function getGeneratedTimestamp(): string {
+  const settings = resolvePrintDateSettings();
+  return formatDateTimeBySettings(
+    new Date().toISOString(),
+    settings.dateFormat,
+    settings.timeFormat,
+    settings.timeZone,
+  );
+}
+
 export function printDocument(config: PrintConfig): void {
   const w = window.open('', '_blank', 'width=960,height=720');
   if (!w) return;
@@ -100,6 +138,7 @@ export function printDocument(config: PrintConfig): void {
   } = config;
 
   const businessLogo = config.businessLogo ?? resolveLogoFromStorage();
+  const generatedAt = getGeneratedTimestamp();
 
   const colWidthAttrs = columns
     .map(col => (col.width ? `<col style="width:${esc(col.width)}">` : '<col>'))
@@ -202,7 +241,7 @@ tbody tr:nth-child(even) td{background:#f8fafc}
   <div class="report-meta">
     <div class="report-title">${esc(title)}</div>
     ${subtitle ? `<div class="report-subtitle">${esc(subtitle)}</div>` : ''}
-    <div class="report-date">Generated: ${new Date().toLocaleString()}</div>
+    <div class="report-date">Generated: ${generatedAt}</div>
   </div>
 </div>
 
@@ -218,7 +257,7 @@ ${statsHtml}
 <div class="footer">
   <span>${printedBy ? `Printed by: ${esc(printedBy)}` : 'ATWAR BSS ERP'}</span>
   <span>${rows.length} record${rows.length !== 1 ? 's' : ''}</span>
-  <span>${new Date().toLocaleString()}</span>
+  <span>${generatedAt}</span>
 </div>
 
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()};}<\/script>
@@ -231,6 +270,37 @@ ${statsHtml}
 
 function compactText(value: unknown): string {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function hasClassTokenInAncestors(el: Element, token: string): boolean {
+  let node: Element | null = el;
+  while (node) {
+    if (node instanceof HTMLElement && node.classList.contains(token)) return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function isLikelyCalendarTable(table: HTMLTableElement): boolean {
+  if (
+    table.closest('.react-datepicker, .rdrCalendarWrapper, .react-calendar, [class*="calendar"], [class*="date-picker"], [class*="datepicker"]')
+  ) {
+    return true;
+  }
+
+  const headerRow = table.tHead?.rows[0] || table.querySelector('tr');
+  const headerCells = headerRow
+    ? Array.from(headerRow.cells).map((cell) => compactText(cell.textContent || '').toLowerCase())
+    : [];
+  const shortDays = new Set(['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa', 'sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
+  if (headerCells.length >= 7 && headerCells.every((cell) => shortDays.has(cell))) {
+    return true;
+  }
+
+  const bodyCells = Array.from(table.querySelectorAll('tbody td'));
+  if (bodyCells.length === 0) return false;
+  const numericCells = bodyCells.filter((cell) => /^\d{1,2}$/.test(compactText(cell.textContent || '')));
+  return numericCells.length > 0 && numericCells.length / bodyCells.length > 0.8;
 }
 
 function isVisibleElement(el: Element): el is HTMLElement {
@@ -302,11 +372,23 @@ export function printActiveReportTable(config: PrintActiveReportTableConfig = {}
 
   if (!(mainRoot instanceof HTMLElement)) return;
 
-  const visibleTables = Array.from(mainRoot.querySelectorAll('table')).filter(isVisibleElement);
+  const visibleTables = Array.from(mainRoot.querySelectorAll('table'))
+    .filter(isVisibleElement)
+    .filter((table) => !hasClassTokenInAncestors(table, 'print:hidden'));
   const scoreTable = (table: HTMLTableElement) => {
     const bodyRows = Array.from(table.tBodies).reduce((sum, body) => sum + body.rows.length, 0);
     const allRows = table.querySelectorAll('tr').length;
-    return bodyRows * 100 + allRows;
+    const headerRow = table.tHead?.rows[0] || table.querySelector('tr');
+    const colCount = headerRow?.cells.length || table.rows[0]?.cells.length || 0;
+    const hasThead = Boolean(table.tHead && table.tHead.rows.length > 0);
+    const controlCount = table.querySelectorAll('input,select,button,textarea').length;
+
+    let score = bodyRows * 120 + allRows * 4 + colCount * 8 + (hasThead ? 40 : 0);
+    if (colCount <= 2) score -= 200;
+    if (controlCount > 0) score -= 120;
+    if (table.closest('[role="dialog"], [role="menu"], [role="listbox"]')) score -= 500;
+    if (isLikelyCalendarTable(table)) score -= 1500;
+    return score;
   };
   const targetTable = visibleTables.sort((a, b) => scoreTable(b) - scoreTable(a))[0];
 
@@ -378,6 +460,52 @@ export function printActiveReportTable(config: PrintActiveReportTableConfig = {}
   });
 }
 
+export function printElementSnapshot(config: PrintElementSnapshotConfig): void {
+  const target = document.getElementById(config.elementId);
+  if (!(target instanceof HTMLElement)) return;
+
+  const printWindow = window.open(
+    '',
+    '_blank',
+    config.windowFeatures || 'width=1100,height=760',
+  );
+  if (!printWindow) return;
+
+  const headAssets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+    .map((node) => node.outerHTML)
+    .join('\n');
+  const title = esc(config.title || document.title || 'Print');
+  const extraStyles = String(config.extraStyles || '').trim();
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+${headAssets}
+<style>
+html, body { margin: 0; padding: 0; background: #fff; }
+${extraStyles}
+</style>
+</head>
+<body>
+${target.outerHTML}
+<script>
+window.onload = function () {
+  setTimeout(function () {
+    window.print();
+    window.onafterprint = function () { window.close(); };
+  }, 80);
+};
+<\/script>
+</body>
+</html>`;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  Document-style prints (Packing Slip, Delivery Note)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,6 +538,7 @@ export function printShippingDocument(cfg: ShippingDocConfig): void {
   const businessLogo = cfg.businessLogo ?? resolveLogoFromStorage();
   const logo = esc((cfg.businessName || 'B').trim().charAt(0).toUpperCase());
   const isDelivery = cfg.documentType === 'Delivery Note';
+  const generatedAt = getGeneratedTimestamp();
 
   const itemRows = cfg.items.length > 0
     ? cfg.items.map((item, i) =>
@@ -528,7 +657,7 @@ ${receivedByHtml}
 
 <div class="footer">
   <span>${cfg.printedBy ? `Printed by: ${esc(cfg.printedBy)}` : esc(cfg.businessName)}</span>
-  <span>${new Date().toLocaleString()}</span>
+  <span>${generatedAt}</span>
 </div>
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()};}<\/script>
 </body></html>`;
@@ -587,6 +716,7 @@ export function printCreditNote(cfg: CreditNoteConfig): void {
 
   const businessLogo = cfg.businessLogo ?? resolveLogoFromStorage();
   const logo = esc((cfg.businessName || 'B').trim().charAt(0).toUpperCase());
+  const generatedAt = getGeneratedTimestamp();
 
   const itemRows = cfg.items.length > 0
     ? cfg.items.map((item, i) =>
@@ -716,7 +846,7 @@ ${cfg.note ? `<div class="note-box"><strong>Note:</strong> ${esc(cfg.note)}</div
 
 <div class="footer">
   <span>${cfg.printedBy ? `Printed by: ${esc(cfg.printedBy)}` : esc(cfg.businessName)}</span>
-  <span>${new Date().toLocaleString()}</span>
+  <span>${generatedAt}</span>
 </div>
 <script>window.onload=function(){window.print();window.onafterprint=function(){window.close()};}<\/script>
 </body></html>`;

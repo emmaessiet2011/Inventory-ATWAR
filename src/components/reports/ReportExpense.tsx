@@ -9,6 +9,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { getExpenseTotalAmount, parseExpenseDateToMs } from '@/utils/expenses';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface DateRangeValue {
   startDate: Date | null;
@@ -224,7 +225,7 @@ const ReportExpense: React.FC = () => {
       doc.setFont('helvetica', 'normal');
       doc.text(`Date Range: ${range.label || 'All Time'}`, margin, y);
       y += rowHeight;
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
       y += rowHeight + 4;
 
       const drawHeader = () => {

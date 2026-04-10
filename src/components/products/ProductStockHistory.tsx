@@ -12,6 +12,7 @@ import {
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { printDocument } from '@/utils/printUtils';
 import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface ProductStockHistoryProps {
   isOpen?: boolean;
@@ -38,23 +39,10 @@ const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
 
 const toCsvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
-const formatDateTime = (value: string): string => {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d
-    .toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    })
-    .replace(',', '');
-};
-
 const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen = true, onClose, product, pageMode = false }) => {
   const { sales, sellReturns, purchases, purchaseReturns, locations, settings, currentUser } = useGlobalContext();
+  const formatDateTime = (value: string): string =>
+    formatDateTimeBySettings(value, settings.dateFormat, settings.timeFormat, settings.timeZone);
   const visible = pageMode ? !!product : (isOpen && !!product);
   const handleClose = () => {
     onClose?.();

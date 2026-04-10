@@ -18,7 +18,7 @@ import ViewSaleDetails from './ViewSaleDetails';
 import MultiSelect from '@/components/shared/MultiSelect';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import { useGlobalContext, Sale as GlobalSale } from '@/context/GlobalContext';
-import { formatDateTimeBySettings } from '@/utils/dateTime';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument, paymentBadge, statusBadge } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
@@ -90,6 +90,7 @@ const Sales: React.FC<SalesProps> = ({
     | 'totalAmount'
     | 'totalPaid'
     | 'sellDue'
+    | 'sellReturnTotal'
     | 'sellReturnDue'
     | 'shippingStatus'
     | 'totalItems'
@@ -117,6 +118,7 @@ const Sales: React.FC<SalesProps> = ({
     { key: 'totalAmount', label: 'Total Amount' },
     { key: 'totalPaid', label: 'Total Paid' },
     { key: 'sellDue', label: 'Sell Due' },
+    { key: 'sellReturnTotal', label: 'Sell Return Total' },
     { key: 'sellReturnDue', label: 'Sell Return Due' },
     { key: 'shippingStatus', label: 'Shipping Status' },
     { key: 'totalItems', label: 'Total Items' },
@@ -191,10 +193,55 @@ const Sales: React.FC<SalesProps> = ({
     if (normalized === 'Draft' || normalized === 'Suspend') return 'Draft';
     return 'Invoice';
   };
+  const sellReturnSummaryBySaleId = useMemo(() => {
+    const summaryMap = new Map<string, { total: number; due: number; count: number }>();
+    sellReturns.forEach((record) => {
+      const saleId = String(record.parentSaleId || '').trim();
+      if (!saleId) return;
+      const current = summaryMap.get(saleId) || { total: 0, due: 0, count: 0 };
+      current.total += Number(record.total || 0);
+      current.due += Number(record.paymentDue || 0);
+      current.count += 1;
+      summaryMap.set(saleId, current);
+    });
+    summaryMap.forEach((summary, saleId) => {
+      summaryMap.set(saleId, {
+        total: Number(summary.total.toFixed(3)),
+        due: Number(summary.due.toFixed(3)),
+        count: summary.count,
+      });
+    });
+    return summaryMap;
+  }, [sellReturns]);
+
+  const getSellReturnSummary = (sale?: GlobalSale | null): { total: number; due: number; count: number } => {
+    const saleId = String(sale?.id || '').trim();
+    if (!saleId) return { total: 0, due: 0, count: 0 };
+    const globalSummary = sellReturnSummaryBySaleId.get(saleId);
+    if (globalSummary) return globalSummary;
+
+    const embeddedReturns = Array.isArray(sale?.sellReturns) ? sale.sellReturns : [];
+    if (embeddedReturns.length === 0) {
+      const fallbackDue = Number(sale?.sellReturnDue || 0);
+      return { total: fallbackDue, due: fallbackDue, count: 0 };
+    }
+    const embeddedTotal = embeddedReturns.reduce((sum, record) => sum + Number(record.total || 0), 0);
+    const embeddedDue = embeddedReturns.reduce((sum, record) => sum + Number(record.paymentDue || 0), 0);
+    return {
+      total: Number(embeddedTotal.toFixed(3)),
+      due: Number(embeddedDue.toFixed(3)),
+      count: embeddedReturns.length,
+    };
+  };
+
   const getDisplaySellDue = (sale?: GlobalSale | null): number =>
     isFinalizedSale(sale) ? Number(sale?.sellDue || 0) : 0;
   const getDisplaySellReturnDue = (sale?: GlobalSale | null): number =>
-    isFinalizedSale(sale) ? Number(sale?.sellReturnDue || 0) : 0;
+    isFinalizedSale(sale) ? Number(getSellReturnSummary(sale).due || 0) : 0;
+  const getDisplaySellReturnTotal = (sale?: GlobalSale | null): number =>
+    isFinalizedSale(sale) ? Number(getSellReturnSummary(sale).total || 0) : 0;
+  const hasLinkedSellReturn = (sale?: GlobalSale | null): boolean =>
+    isFinalizedSale(sale) && getSellReturnSummary(sale).count > 0;
   const getDisplayPaymentStatus = (sale?: GlobalSale | null): string =>
     isFinalizedSale(sale) ? String(sale?.paymentStatus || '--') : 'N/A';
 
@@ -594,6 +641,8 @@ const Sales: React.FC<SalesProps> = ({
       'Total Amount',
       'Total Paid',
       'Sell Due',
+      'Sell Return Total',
+      'Sell Return Due',
       'Shipping Status',
       'Added By',
     ];
@@ -610,6 +659,8 @@ const Sales: React.FC<SalesProps> = ({
         Number(s.grandTotal || s.totalAmount || 0).toFixed(3),
         Number(s.totalPaid || 0).toFixed(3),
         Number(getDisplaySellDue(s)).toFixed(3),
+        Number(getDisplaySellReturnTotal(s)).toFixed(3),
+        Number(getDisplaySellReturnDue(s)).toFixed(3),
         s.shippingStatus || '',
         s.addedBy || '',
       ].map(escapeCSV).join(',')),
@@ -634,10 +685,10 @@ const Sales: React.FC<SalesProps> = ({
       doc.text(exportTitle, 14, y);
       y += 7;
       doc.setFontSize(9);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, y);
+      doc.text(`Generated: ${formatDateTimeDisplay(new Date().toISOString())}`, 14, y);
       y += 8;
 
-      const headers = ['Date', isQuotationList ? 'Document' : 'Invoice', 'Customer', 'Status', 'Total', 'Paid', 'Due'];
+      const headers = ['Date', isQuotationList ? 'Document' : 'Invoice', 'Customer', 'Status', 'Total', 'Paid', 'Due', 'Return Total', 'Return Due'];
       doc.text(headers.join(' | '), 14, y);
       y += 6;
 
@@ -654,6 +705,8 @@ const Sales: React.FC<SalesProps> = ({
           Number(sale.grandTotal || sale.totalAmount || 0).toFixed(3),
           Number(sale.totalPaid || 0).toFixed(3),
           Number(getDisplaySellDue(sale)).toFixed(3),
+          Number(getDisplaySellReturnTotal(sale)).toFixed(3),
+          Number(getDisplaySellReturnDue(sale)).toFixed(3),
         ].join(' | ');
         doc.text(line, 14, y);
         y += 5;
@@ -677,7 +730,7 @@ const Sales: React.FC<SalesProps> = ({
     printDocument({
       title,
       subtitle: dateRange?.startDate && dateRange?.endDate
-        ? `Period: ${new Date(dateRange.startDate).toLocaleDateString()} – ${new Date(dateRange.endDate).toLocaleDateString()}`
+        ? `Period: ${formatDateBySettings(dateRange.startDate, settings.dateFormat, settings.timeZone)} – ${formatDateBySettings(dateRange.endDate, settings.dateFormat, settings.timeZone)}`
         : undefined,
       businessName: settings?.businessName || 'ATWAR AL MUSTAQBAL',
       businessAddress: settings?.address || '',
@@ -693,9 +746,8 @@ const Sales: React.FC<SalesProps> = ({
         { label: 'Added By', width: '80px' },
       ],
       rows: sortedSales.map(s => {
-        const dateVal = s.date ? new Date(s.date.includes('T') ? s.date : s.date + 'T00:00:00') : null;
         return [
-          dateVal ? dateVal.toLocaleDateString() : (s.date || '--'),
+          formatDateBySettings(s.date || '', settings.dateFormat, settings.timeZone),
           s.invoiceNo || '--',
           s.customerName || '--',
           s.location || '--',
@@ -799,8 +851,9 @@ const Sales: React.FC<SalesProps> = ({
       amount: acc.amount + (curr.grandTotal || curr.totalAmount || 0),
       paid: acc.paid + (curr.totalPaid || 0),
       due: acc.due + getDisplaySellDue(curr),
+      returnTotal: acc.returnTotal + getDisplaySellReturnTotal(curr),
       returnDue: acc.returnDue + getDisplaySellReturnDue(curr)
-  }), { amount: 0, paid: 0, due: 0, returnDue: 0 });
+  }), { amount: 0, paid: 0, due: 0, returnTotal: 0, returnDue: 0 });
 
   return (
     <div className="space-y-6 animate-fade-in pb-16 print:p-0">
@@ -1002,6 +1055,7 @@ const Sales: React.FC<SalesProps> = ({
                 </th>
                 <th style={getColumnStyle('totalPaid')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Total Paid</th>
                 <th style={getColumnStyle('sellDue')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Sell Due</th>
+                <th style={getColumnStyle('sellReturnTotal')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Sell Return Total</th>
                 <th style={getColumnStyle('sellReturnDue')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Sell Return Due</th>
                 <th style={getColumnStyle('shippingStatus')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-center">Shipping Status</th>
                 <th style={getColumnStyle('totalItems')} className="px-2 py-2 sm:px-4 sm:py-4 whitespace-nowrap text-right">Total Items</th>
@@ -1034,8 +1088,11 @@ const Sales: React.FC<SalesProps> = ({
                           {settings.showInvoiceScheme && (
                             <span className="text-[9px] text-slate-400 mt-0.5">{sale.invoiceScheme || '--'}</span>
                           )}
-                          {getDisplaySellReturnDue(sale) > 0 && (
-                            <div className="mt-1.5 relative group/return cursor-help" title={`Sale Return: ${formatCurrency(getDisplaySellReturnDue(sale))}`}>
+                          {hasLinkedSellReturn(sale) && (
+                            <div
+                              className="mt-1.5 relative group/return cursor-help"
+                              title={`Sale Return Total: ${formatCurrency(getDisplaySellReturnTotal(sale))}${getDisplaySellReturnDue(sale) > 0 ? ` | Return Due: ${formatCurrency(getDisplaySellReturnDue(sale))}` : ''}`}
+                            >
                               <div className="absolute inset-0 bg-rose-500 blur-[6px] opacity-40 rounded-full animate-pulse"></div>
                               <div className="relative w-4 h-4 rounded-full bg-rose-600 flex items-center justify-center text-white border border-rose-400/50 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] transition-transform group-hover/return:scale-110 duration-300">
                                 <Undo2 size={8} strokeWidth={3} className="drop-shadow-sm" />
@@ -1087,6 +1144,9 @@ const Sales: React.FC<SalesProps> = ({
                       <td style={getColumnStyle('sellDue')} className="px-2 py-2 sm:px-4 sm:py-3text-right whitespace-nowrap">
                           <span className={`${getDisplaySellDue(sale) > 0 ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>{formatCurrency(getDisplaySellDue(sale))}</span>
                       </td>
+                      <td style={getColumnStyle('sellReturnTotal')} className="px-2 py-2 sm:px-4 sm:py-3text-right whitespace-nowrap">
+                          <span className={`${getDisplaySellReturnTotal(sale) > 0 ? 'text-rose-700 font-bold' : 'text-slate-400'}`}>{formatCurrency(getDisplaySellReturnTotal(sale))}</span>
+                      </td>
                       <td style={getColumnStyle('sellReturnDue')} className="px-2 py-2 sm:px-4 sm:py-3text-right whitespace-nowrap">
                           <span className={`${getDisplaySellReturnDue(sale) > 0 ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>{formatCurrency(getDisplaySellReturnDue(sale))}</span>
                       </td>
@@ -1130,6 +1190,7 @@ const Sales: React.FC<SalesProps> = ({
                 <td style={getColumnStyle('totalAmount')}     className="px-2 py-2 sm:px-4 sm:py-3text-right text-slate-900">{formatCurrency(totals.amount)}</td>
                 <td style={getColumnStyle('totalPaid')}       className="px-2 py-2 sm:px-4 sm:py-3text-right text-emerald-700">{formatCurrency(totals.paid)}</td>
                 <td style={getColumnStyle('sellDue')}         className="px-2 py-2 sm:px-4 sm:py-3text-right text-amber-700">{formatCurrency(totals.due)}</td>
+                <td style={getColumnStyle('sellReturnTotal')} className="px-2 py-2 sm:px-4 sm:py-3text-right text-rose-800">{formatCurrency(totals.returnTotal)}</td>
                 <td style={getColumnStyle('sellReturnDue')}   className="px-2 py-2 sm:px-4 sm:py-3text-right text-rose-700">{formatCurrency(totals.returnDue)}</td>
                 <td style={getColumnStyle('shippingStatus')}  className="px-4 py-3" />
                 <td style={getColumnStyle('totalItems')}      className="px-4 py-3" />

@@ -7,6 +7,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import { appendStockLedgerEntries } from '@/utils/stockTransfers';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
 import {
@@ -81,6 +82,10 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 }) => {
   const { locations, products, setProducts, currentUser, formatCurrency, addActivityLog, settings } = useGlobalContext();
   const { addNotification } = useNotifications();
+  const formatDateDisplay = (value?: string) =>
+    formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
+  const formatDateTimeDisplay = (value?: string) =>
+    formatDateTimeBySettings(value || '', settings.dateFormat, settings.timeFormat, settings.timeZone);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
@@ -308,7 +313,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         { label: 'Added By', width: '80px' },
       ],
       rows: visibleAdjustments.map(a => [
-        a.date ? new Date(a.date).toLocaleDateString() : '--',
+        formatDateDisplay(a.date),
         a.referenceNo,
         a.location,
         statusBadge(a.adjustmentType),
@@ -551,7 +556,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
               {paginatedAdjustments.length > 0 ? (
                 paginatedAdjustments.map((adjustment) => (
                   <tr key={adjustment.id} className="hover:bg-slate-50 transition-colors">
-                    {visibleColumns.date && <td className="px-4 py-3 whitespace-nowrap">{new Date(adjustment.date).toLocaleString()}</td>}
+                    {visibleColumns.date && <td className="px-4 py-3 whitespace-nowrap">{formatDateTimeDisplay(adjustment.date)}</td>}
                     {visibleColumns.referenceNo && <td className="px-4 py-3 font-bold text-slate-700">{adjustment.referenceNo}</td>}
                     {visibleColumns.location && <td className="px-4 py-3">{adjustment.location}</td>}
                     {visibleColumns.adjustmentType && (
@@ -644,7 +649,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             </div>
             <div className="p-5 space-y-4 overflow-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{new Date(viewAdjustment.date).toLocaleString()}</span></div>
+                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatDateTimeDisplay(viewAdjustment.date)}</span></div>
                 <div><span className="text-slate-500">Type:</span> <span className="font-bold text-slate-800">{viewAdjustment.adjustmentType}</span></div>
                 <div><span className="text-slate-500">Location:</span> <span className="font-bold text-slate-800">{viewAdjustment.location}</span></div>
                 <div><span className="text-slate-500">Added By:</span> <span className="font-bold text-slate-800">{viewAdjustment.addedBy}</span></div>

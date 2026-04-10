@@ -26,6 +26,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { clampPrecision, normalizePrefix, toFixedPrecision } from '@/utils/paymentUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { resolveDefaultAccountFromMethod, buildPaymentAccountOptions } from '@/utils/paymentAccounts';
+import { printElementSnapshot } from '@/utils/printUtils';
 
 interface ViewCustomerProps {
     onNavigate: (page: string) => void;
@@ -1251,7 +1252,13 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
                     <div className="flex flex-col items-end justify-start gap-2">
                          <div className="flex gap-2">
                              <button
-                                 onClick={() => window.print()}
+                                 onClick={() =>
+                                   printElementSnapshot({
+                                     elementId: 'customer-ledger-print',
+                                     title: `Customer Ledger - ${customer.businessName || 'Customer'}`,
+                                     extraStyles: '@media print { @page { size: A4; margin: 8mm; } }',
+                                   })
+                                 }
                                  className="p-2 border border-slate-300 rounded hover:bg-slate-50 text-slate-600"
                                  title="Print / Save as PDF"
                              >

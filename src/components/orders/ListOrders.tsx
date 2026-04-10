@@ -9,6 +9,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 import { useGlobalContext, GlobalOrder } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge, paymentBadge } from '@/utils/printUtils';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface ListOrdersProps {
   onNavigate: (page: string) => void;
@@ -28,10 +29,21 @@ interface DateRangeValue {
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const toCsvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const ISO_DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const parseDateToMs = (value: unknown): number => {
   const raw = String(value ?? '').trim();
   if (!raw) return Number.NaN;
+
+  const isoDateOnly = raw.match(ISO_DATE_ONLY_RE);
+  if (isoDateOnly) {
+    const year = Number(isoDateOnly[1]);
+    const month = Number(isoDateOnly[2]) - 1;
+    const day = Number(isoDateOnly[3]);
+    const parsedLocal = new Date(year, month, day, 0, 0, 0, 0).getTime();
+    return Number.isFinite(parsedLocal) ? parsedLocal : Number.NaN;
+  }
+
   const direct = Date.parse(raw);
   if (Number.isFinite(direct)) return direct;
 
@@ -50,12 +62,6 @@ const parseDateToMs = (value: unknown): number => {
   if (meridiem === 'am' && hour === 12) hour = 0;
   const parsed = new Date(year, month, day, hour, minute, 0, 0).getTime();
   return Number.isFinite(parsed) ? parsed : Number.NaN;
-};
-
-const formatDateTime = (value: string) => {
-  const ms = parseDateToMs(value);
-  if (!Number.isFinite(ms)) return value || '--';
-  return new Date(ms).toLocaleString();
 };
 
 const getCurrentYearRange = (): DateRangeValue => {
@@ -99,6 +105,10 @@ const ListOrders: React.FC<ListOrdersProps> = ({
     settings,
   } = useGlobalContext();
   const { addNotification } = useNotifications();
+  const formatOrderDate = (value: string) =>
+    formatDateTimeBySettings(value, settings.dateFormat, settings.timeFormat, settings.timeZone);
+  const formatDeliveryDate = (value: string) =>
+    formatDateBySettings(value, settings.dateFormat, settings.timeZone);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
@@ -292,8 +302,8 @@ const ListOrders: React.FC<ListOrdersProps> = ({
         order.salesRep,
         order.area || '--',
         order.businessLocation || '--',
-        formatDateTime(order.orderDate),
-        formatDateTime(order.deliveryDate),
+        formatOrderDate(order.orderDate),
+        formatDeliveryDate(order.deliveryDate),
         statusBadge(order.status),
         paymentBadge(order.paymentStatus),
         String(order.itemCount || 0),
@@ -338,7 +348,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
         doc.text(String(order.customerName || ''), marginLeft + 90, y, { maxWidth: 180 });
         doc.text(String(order.status || ''), marginLeft + 280, y, { maxWidth: 65 });
         doc.text(String(order.paymentStatus || ''), marginLeft + 350, y, { maxWidth: 65 });
-        doc.text(formatDateTime(order.orderDate), marginLeft + 420, y, { maxWidth: 75 });
+        doc.text(formatOrderDate(order.orderDate), marginLeft + 420, y, { maxWidth: 75 });
         doc.text(Number(order.total || 0).toFixed(3), marginLeft + 500, y, { maxWidth: 45, align: 'right' });
         y += 14;
       });
@@ -636,10 +646,10 @@ const ListOrders: React.FC<ListOrdersProps> = ({
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="text-xs text-slate-600">
-                        <span className="text-slate-400">Ord:</span> {formatDateTime(order.orderDate)}
+                        <span className="text-slate-400">Ord:</span> {formatOrderDate(order.orderDate)}
                       </div>
                       <div className="text-xs font-bold text-slate-700 mt-0.5">
-                        <span className="text-slate-400 font-normal">Del:</span> {formatDateTime(order.deliveryDate)}
+                        <span className="text-slate-400 font-normal">Del:</span> {formatDeliveryDate(order.deliveryDate)}
                       </div>
                     </td>
                     <td className="px-6 py-4 text-center">

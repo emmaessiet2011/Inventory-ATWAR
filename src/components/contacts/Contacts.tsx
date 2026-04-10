@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 import { useGlobalContext, Contact } from '@/context/GlobalContext';
+import { formatDateBySettings } from '@/utils/dateTime';
 
 interface ContactsProps {
   onNavigate?: (page: string) => void;
@@ -18,7 +19,7 @@ interface ContactsProps {
 
 const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
-  const { contacts, addContact, updateContact, deleteContact, sales, purchases, payments, customers, suppliers, formatCurrency } = useGlobalContext();
+  const { contacts, addContact, updateContact, deleteContact, sales, purchases, payments, customers, suppliers, formatCurrency, settings } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'All' | 'Supplier' | 'Customer'>('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -229,9 +230,7 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
   };
 
   const formatStatementDate = (value: string): string => {
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) return value || '--';
-    return parsed.toLocaleDateString('en-GB');
+    return formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
   };
 
   const statementRows = useMemo(() => {

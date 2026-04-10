@@ -21,6 +21,7 @@ import {
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
@@ -924,7 +925,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
               const details = `Register: ${registerSession.id}\n` +
                 `Location: ${registerSession.locationName}\n` +
                 `Opened by: ${registerSession.openedBy}\n` +
-                `Opened at: ${new Date(registerSession.openedAt).toLocaleString()}\n` +
+                `Opened at: ${formatDateTimeBySettings(registerSession.openedAt, settings.dateFormat, settings.timeFormat, settings.timeZone)}\n` +
                 `Cash in hand: ${formatCurrency(registerSession.cashInHand)}\n\n` +
                 `Click OK to close this register, Cancel to keep it open.`;
               if (confirm(details)) {
@@ -1361,6 +1362,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         isOpen={isStockHistoryOpen}
         onClose={() => setIsStockHistoryOpen(false)}
         product={stockHistoryProduct}
+        pageMode={true}
       />
     </div>
   );

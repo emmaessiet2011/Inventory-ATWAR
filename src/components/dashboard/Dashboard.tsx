@@ -47,6 +47,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { parseExpenseDateToMs } from '@/utils/expenses';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { fetchDedicated } from '@/utils/apiClient';
+import { formatDateBySettings } from '@/utils/dateTime';
 import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
 
 interface DashboardProps {
@@ -67,6 +68,7 @@ interface SavedDashboardView {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CHART_COLORS = ['#0f172a', '#dc2626', '#2563eb', '#d97706', '#0ea5e9', '#16a34a'];
+const MONTH_SHORT_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const toKey = (value: unknown) => String(value || '').trim().toLowerCase();
 const toNum = (value: unknown) => {
   const n = Number(value);
@@ -93,6 +95,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     expenses: expensesSource,
     sellReturns: sellReturnsSource,
     purchaseReturns: purchaseReturnsSource,
+    settings,
     currentUser,
     formatCurrency: formatCurrencySource,
   } = useGlobalContext();
@@ -953,7 +956,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       const date = new Date(todayDate.getFullYear(), todayDate.getMonth() - i, 1);
       months.push({
         key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-        label: date.toLocaleString(undefined, { month: 'short' }),
+        label: MONTH_SHORT_LABELS[date.getMonth()],
         value: 0,
       });
     }
@@ -1626,7 +1629,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             <div>
               <h3 className="text-lg font-bold text-slate-900">How This Period Compares</h3>
               <p className="text-sm text-slate-500">
-                {new Date(startMs).toLocaleDateString()} – {new Date(endMs).toLocaleDateString()} vs the previous {rangeDays}-day period.
+                {formatDateBySettings(startMs, settings.dateFormat, settings.timeZone)} – {formatDateBySettings(endMs, settings.dateFormat, settings.timeZone)} vs the previous {rangeDays}-day period.
               </p>
             </div>
             <button

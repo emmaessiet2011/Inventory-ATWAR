@@ -17,6 +17,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { parseExpenseDateToMs } from '@/utils/expenses';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface DateRangeValue {
   startDate: Date | null;
@@ -167,8 +168,8 @@ const ReportSalesRep: React.FC = () => {
 
   const salesRows = useMemo<SalesRow[]>(() => sales
     .filter((sale) => {
-      const status = String(sale.status || sale.saleStatus || '').trim();
-      return !status || status === 'Final';
+      const status = normalize(sale.status || sale.saleStatus || '');
+      return !status || status === 'final';
     })
     .map((sale) => {
       const total = Math.max(0, Number(sale.grandTotal ?? sale.totalAmount ?? 0) || 0);
@@ -436,7 +437,7 @@ const ReportSalesRep: React.FC = () => {
       y += rowHeight;
       doc.text(`Date Range: ${range.label || 'Selected range'}`, margin, y);
       y += rowHeight;
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
       y += rowHeight + 4;
 
       drawHeader();

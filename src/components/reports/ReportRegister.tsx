@@ -414,7 +414,7 @@ const ReportRegister: React.FC = () => {
       doc.setFontSize(9);
       doc.text(`Date Range: ${dateRange.label || 'All Time'}`, margin, y);
       y += rowHeight;
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeDisplay(new Date().toISOString())}`, margin, y);
       y += rowHeight + 4;
 
       drawHeader();

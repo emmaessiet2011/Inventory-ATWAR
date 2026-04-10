@@ -8,6 +8,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 import {
   bootstrapStockAdjustmentsFromDB,
   getStockAdjustmentStorageKey,
@@ -61,6 +62,8 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
   restrictToAddedByName = '',
 }) => {
   const { locations, settings, formatCurrency } = useGlobalContext();
+  const formatDateTimeDisplay = (value?: string) =>
+    formatDateTimeBySettings(value || '', settings.dateFormat, settings.timeFormat, settings.timeZone);
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
   const [range, setRange] = useState<DateRangeValue>(getAllTimeRange);
@@ -446,7 +449,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
                       <Eye size={12} /> View
                     </button>
                   </td>
-                  {visibleColumns.date && <td className="px-4 py-3 text-slate-600">{new Date(item.date).toLocaleString()}</td>}
+                  {visibleColumns.date && <td className="px-4 py-3 text-slate-600">{formatDateTimeDisplay(item.date)}</td>}
                   {visibleColumns.referenceNo && <td className="px-4 py-3 text-slate-600 font-medium">{item.referenceNo}</td>}
                   {visibleColumns.location && <td className="px-4 py-3 text-slate-600">{item.location}</td>}
                   {visibleColumns.adjustmentType && <td className="px-4 py-3 text-slate-600">{item.adjustmentType}</td>}
@@ -498,7 +501,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
             </div>
             <div className="p-5 space-y-4 overflow-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{new Date(viewRecord.date).toLocaleString()}</span></div>
+                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatDateTimeDisplay(viewRecord.date)}</span></div>
                 <div><span className="text-slate-500">Type:</span> <span className="font-bold text-slate-800">{viewRecord.adjustmentType}</span></div>
                 <div><span className="text-slate-500">Location:</span> <span className="font-bold text-slate-800">{viewRecord.location}</span></div>
                 <div><span className="text-slate-500">Added By:</span> <span className="font-bold text-slate-800">{viewRecord.addedBy}</span></div>

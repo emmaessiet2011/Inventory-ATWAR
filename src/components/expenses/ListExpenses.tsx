@@ -6,6 +6,7 @@ import { Expense, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
 import { formatExpenseDateTime, parseExpenseDateToMs } from '@/utils/expenses';
+import { formatDateBySettings } from '@/utils/dateTime';
 
 interface ListExpensesProps {
   onNavigate: (page: string) => void;
@@ -183,7 +184,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
   const exportCsv = () => {
     const headers = ['Date', 'Reference No', 'Recurring Details', 'Expense Category', 'Sub Category', 'Location', 'Payment Status', 'Tax', 'Total Amount', 'Payment Due', 'Expense For', 'Contact', 'Expense Note', 'Added By'];
     const rows = filteredExpenses.map((e) => [
-      toCsvCell(formatExpenseDateTime(e.date)),
+      toCsvCell(formatExpenseDateTime(e.date, settings.dateFormat, settings.timeFormat, settings.timeZone)),
       toCsvCell(e.refNo),
       toCsvCell(e.isRecurring ? `Every ${e.recurringInterval || ''} ${e.recurringUnit || ''}`.trim() : ''),
       toCsvCell(e.category),
@@ -211,7 +212,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
   const exportExcel = () => {
     const headers = ['Date', 'Reference No', 'Recurring Details', 'Expense Category', 'Sub Category', 'Location', 'Payment Status', 'Tax', 'Total Amount', 'Payment Due', 'Expense For', 'Contact', 'Expense Note', 'Added By'];
     const rows = filteredExpenses.map((e) => [
-      formatExpenseDateTime(e.date),
+      formatExpenseDateTime(e.date, settings.dateFormat, settings.timeFormat, settings.timeZone),
       e.refNo || '',
       e.isRecurring ? `Every ${e.recurringInterval || ''} ${e.recurringUnit || ''}`.trim() : '',
       e.category || '',
@@ -257,9 +258,8 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
         { label: 'Added By', width: '80px' },
       ],
       rows: filteredExpenses.map(e => {
-        const date = e.date ? (e.date.includes('T') ? new Date(e.date) : new Date(e.date + 'T00:00:00')) : null;
         return [
-          date ? date.toLocaleDateString() : (e.date || '--'),
+          formatDateBySettings(e.date || '', settings.dateFormat, settings.timeZone),
           e.refNo || '--',
           e.category || '--',
           e.subCategory || '--',
@@ -440,7 +440,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
                         </div>
                       )}
                     </td>
-                    {visibleColumns.date && <td className="px-4 py-3 whitespace-nowrap">{formatExpenseDateTime(expense.date)}</td>}
+                    {visibleColumns.date && <td className="px-4 py-3 whitespace-nowrap">{formatExpenseDateTime(expense.date, settings.dateFormat, settings.timeFormat, settings.timeZone)}</td>}
                     {visibleColumns.ref && <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">{expense.refNo || '--'}</td>}
                     {visibleColumns.recurring && <td className="px-4 py-3 whitespace-nowrap text-slate-400 italic">{expense.isRecurring ? `Every ${expense.recurringInterval || ''} ${expense.recurringUnit || ''}`.trim() : '--'}</td>}
                     {visibleColumns.category && <td className="px-4 py-3 whitespace-nowrap">{expense.category}</td>}
@@ -500,7 +500,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
             </div>
             <div className="p-5 space-y-4 overflow-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatExpenseDateTime(viewExpense.date)}</span></div>
+                <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatExpenseDateTime(viewExpense.date, settings.dateFormat, settings.timeFormat, settings.timeZone)}</span></div>
                 <div><span className="text-slate-500">Category:</span> <span className="font-bold text-slate-800">{viewExpense.category}</span></div>
                 <div><span className="text-slate-500">Sub Category:</span> <span className="font-bold text-slate-800">{viewExpense.subCategory || '--'}</span></div>
                 <div><span className="text-slate-500">Location:</span> <span className="font-bold text-slate-800">{viewExpense.location}</span></div>

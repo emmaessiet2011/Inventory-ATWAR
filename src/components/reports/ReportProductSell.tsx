@@ -19,6 +19,7 @@ import MultiSelect from '@/components/shared/MultiSelect';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { parseExpenseDateToMs } from '@/utils/expenses';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface DateRangeValue {
   startDate: Date | null;
@@ -1067,7 +1068,7 @@ const ReportProductSell: React.FC = () => {
       doc.setFontSize(9);
       doc.text(`Date Range: ${dateRange.label || 'Selected range'}`, margin, y);
       y += rowHeight;
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
       y += rowHeight + 4;
       if (activeTab === 'detailed_category') {
         const x = {
@@ -1087,7 +1088,7 @@ const ReportProductSell: React.FC = () => {
           doc.setFontSize(9);
           doc.text(`Date Range: ${dateRange.label || 'Selected range'}`, margin, y);
           y += rowHeight;
-          doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+          doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
           y += rowHeight + 4;
         };
         const drawTableHeader = () => {

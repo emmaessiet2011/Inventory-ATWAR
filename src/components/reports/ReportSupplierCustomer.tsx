@@ -113,7 +113,7 @@ const ReportSupplierCustomer: React.FC = () => {
   const customerRows = useMemo<ReportRow[]>(() => {
     return customers.map(customer => {
       const customerSales = sales.filter(sale =>
-        ((sale.status || sale.saleStatus) === 'Final') &&
+        normalizeText(sale.status || sale.saleStatus) === 'final' &&
         (String(sale.customerId) === customer.id ||
           normalizeText(sale.customerName) === normalizeText(customer.businessName) ||
           normalizeText(sale.customerName) === normalizeText(customer.name)) &&

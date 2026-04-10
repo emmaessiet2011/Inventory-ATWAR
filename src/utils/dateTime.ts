@@ -1,4 +1,5 @@
 const FALLBACK_TIMEZONE = 'Asia/Dubai';
+const ISO_DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const resolveTimeZone = (timeZone?: string): string => {
   const candidate = String(timeZone || '').trim() || FALLBACK_TIMEZONE;
@@ -20,6 +21,15 @@ const parseDateInput = (value: unknown): Date | null => {
   }
   const raw = String(value ?? '').trim();
   if (!raw) return null;
+
+  const isoDateOnly = raw.match(ISO_DATE_ONLY_RE);
+  if (isoDateOnly) {
+    const year = Number(isoDateOnly[1]);
+    const month = Number(isoDateOnly[2]) - 1;
+    const day = Number(isoDateOnly[3]);
+    const localDate = new Date(year, month, day, 0, 0, 0, 0);
+    return Number.isNaN(localDate.getTime()) ? null : localDate;
+  }
 
   const direct = new Date(raw);
   if (!Number.isNaN(direct.getTime())) return direct;
@@ -106,5 +116,25 @@ export const formatDateTimeBySettings = (
   const meridiem = hour24 >= 12 ? 'PM' : 'AM';
   const hour12 = String(hour24 % 12 || 12).padStart(2, '0');
   return `${dateOnly} ${hour12}:${parts.minute} ${meridiem}`;
+};
+
+export const formatTimeBySettings = (
+  value: unknown,
+  timeFormat: string = '12',
+  timeZone?: string,
+): string => {
+  const raw = String(value ?? '').trim();
+  const parsed = parseDateInput(value);
+  if (!parsed) return raw || '--';
+  if (!hasExplicitTime(raw) && !(value instanceof Date) && typeof value !== 'number') {
+    return '--';
+  }
+
+  const parts = getDateParts(parsed, timeZone);
+  const hour24 = Number(parts.hour);
+  if (timeFormat === '24') return `${String(hour24).padStart(2, '0')}:${parts.minute}`;
+  const meridiem = hour24 >= 12 ? 'PM' : 'AM';
+  const hour12 = String(hour24 % 12 || 12).padStart(2, '0');
+  return `${hour12}:${parts.minute} ${meridiem}`;
 };
 

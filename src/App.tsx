@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Search, X, Check, Clock, Calculator, CalendarDays, ShoppingCart, BookOpen } from 'lucide-react';
 import { NotificationProvider, useNotifications } from '@/context/NotificationContext';
 import { GlobalProvider, useGlobalContext } from '@/context/GlobalContext';
+import { formatTimeBySettings } from '@/utils/dateTime';
 import Sidebar from '@/components/layout/Sidebar';
 import Dashboard from '@/components/dashboard/Dashboard';
 import Login from '@/components/layout/Login';
@@ -1240,7 +1241,7 @@ const AppContent: React.FC = () => {
                                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{n.message}</p>
                                 <div className="flex items-center gap-2 mt-1">
                                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
-                                    {new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    {formatTimeBySettings(n.timestamp, settings.timeFormat, settings.timeZone)}
                                   </p>
                                   {n.triggeredBy && (
                                     <p className="text-[10px] text-slate-400">by {n.triggeredBy}</p>

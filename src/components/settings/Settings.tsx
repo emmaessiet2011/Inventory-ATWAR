@@ -15,6 +15,7 @@ import {
   BackupAuditTrail,
 } from '@/utils/backupRestore';
 import { buildAvailableCurrencyOptions, type CurrencyOption } from '@/utils/currencyOptions';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 const Settings: React.FC = () => {
   const { settings: globalSettings, updateSettings, taxRates, productUnits, currentUser, roles } = useGlobalContext();
@@ -179,16 +180,7 @@ const Settings: React.FC = () => {
   const formatAuditTime = (value?: string) => {
     const raw = String(value || '').trim();
     if (!raw) return '--';
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return raw;
-    return parsed.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return formatDateTimeBySettings(raw, settings.dateFormat, settings.timeFormat, settings.timeZone);
   };
 
   const handleBackupExport = () => {

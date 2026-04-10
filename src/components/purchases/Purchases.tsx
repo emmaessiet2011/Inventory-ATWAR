@@ -6,6 +6,7 @@ import {
 import { jsPDF } from 'jspdf';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { printDocument, statusBadge as printStatusBadge, paymentBadge as printPaymentBadge } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface PurchasesProps {
   onNavigate?: (page: string) => void;
@@ -195,7 +196,7 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
     let y = 44;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text('Purchases', 40, y);
     y += 18;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, 40, y);
     y += 18;
     exportRows.forEach((r, idx) => {
       const line = `${idx + 1}. ${r.referenceNo} | ${r.date} | ${r.supplier} | ${r.grandTotal} | Due ${r.paymentDue}`;

@@ -24,6 +24,7 @@ import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
+import { printElementSnapshot } from '@/utils/printUtils';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 
 interface AddSaleProps {
@@ -1751,23 +1752,19 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       if (shouldPrint) {
         setShowPreview(true);
         setTimeout(() => {
-          let completed = false;
-          const finish = () => {
-            if (completed) return;
-            completed = true;
-            setShowPreview(false);
-            if (onNavigate) onNavigate(targetPage);
-          };
-          const handleAfterPrint = () => finish();
-          window.addEventListener('afterprint', handleAfterPrint, { once: true });
           notifyReceiptPrintFallback({
             location: selectedLocation,
             printers,
             addNotification,
             documentLabel: recordLabel,
           });
-          window.print();
-          setTimeout(finish, 1400);
+          printElementSnapshot({
+            elementId: 'sale-invoice-preview-root',
+            title: `${recordLabel} ${newSale.invoiceNo || ''}`.trim(),
+            extraStyles: '@media print { @page { size: A4; margin: 5mm; } }',
+          });
+          setShowPreview(false);
+          if (onNavigate) onNavigate(targetPage);
         }, 180);
         return;
       }
@@ -1783,7 +1780,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       addNotification,
       documentLabel: previewDocumentHeading,
     });
-    window.print();
+    printElementSnapshot({
+      elementId: 'sale-invoice-preview-root',
+      title: previewDocumentTitle,
+      extraStyles: '@media print { @page { size: A4; margin: 5mm; } }',
+    });
   };
 
   // --- Formatting Helper (uses settings currency) ---
@@ -3191,6 +3192,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           isOpen={isStockHistoryOpen}
           onClose={() => setIsStockHistoryOpen(false)}
           product={stockHistoryProduct}
+          pageMode={true}
         />
 
         {showMultiPicker && (

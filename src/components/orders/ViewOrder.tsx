@@ -4,6 +4,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { useNotifications } from '@/context/NotificationContext';
 import { findLocationByIdOrName, notifyReceiptPrintFallback, resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
+import { printElementSnapshot } from '@/utils/printUtils';
 
 interface ViewOrderProps {
   onClose: () => void;
@@ -97,7 +98,11 @@ const ViewOrder: React.FC<ViewOrderProps> = ({ onClose, invoiceNo, orderId, sale
       addNotification,
       documentLabel: order ? 'Order Invoice' : 'Invoice',
     });
-    window.print();
+    printElementSnapshot({
+      elementId: 'view-order-print-root',
+      title: `${order ? 'Order Invoice' : 'Invoice'} ${documentNo}`.trim(),
+      extraStyles: '@media print { @page { size: A4; margin: 10mm; } }',
+    });
   };
 
   return (

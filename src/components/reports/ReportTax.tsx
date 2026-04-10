@@ -198,7 +198,7 @@ const ReportTax: React.FC = () => {
 
   const salesTaxData = useMemo<TaxTransaction[]>(() => {
     return sales
-      .filter((sale) => String(sale.status || sale.saleStatus || '').trim() === 'Final')
+      .filter((sale) => normalizeText(String(sale.status || sale.saleStatus || '')) === 'final')
       .map((sale) => {
         const subTotal = Number(sale.subTotal || 0);
         const shipping = Number(sale.shippingCharges || 0);

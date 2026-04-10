@@ -4,7 +4,7 @@ import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import MultiSelect from '@/components/shared/MultiSelect';
 import { Sale, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { formatDateBySettings } from '@/utils/dateTime';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import { printDocument } from '@/utils/printUtils';
 
 interface DateRangeValue {
@@ -176,7 +176,7 @@ const VatBills: React.FC = () => {
 
   const invoices = useMemo<VatInvoiceRow[]>(() => {
     return sales
-      .filter((sale) => String(sale.status || sale.saleStatus || '').trim() === 'Final')
+      .filter((sale) => normalizeText(String(sale.status || sale.saleStatus || '')) === 'final')
       .map((sale) => {
         const customerName = String(sale.customerName || 'Direct Customer').trim() || 'Direct Customer';
         const customerById = customers.find(
@@ -502,7 +502,7 @@ const VatBills: React.FC = () => {
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(8);
-        doc.text(`Generated ${new Date().toLocaleString()}`, left, 287);
+        doc.text(`Generated ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, left, 287);
       });
 
       const fileDate = new Date().toISOString().slice(0, 10);

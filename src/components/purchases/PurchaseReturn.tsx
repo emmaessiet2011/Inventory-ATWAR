@@ -10,6 +10,7 @@ import {
   PurchaseReturnItem,
 } from '@/context/GlobalContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface PurchaseReturnItemForm extends PurchaseReturnItem {
   rowId: string;
@@ -422,7 +423,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
   const exportPDF = () => {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     doc.setFont('helvetica', 'bold'); doc.setFontSize(18); doc.text('Purchase Returns', 40, 42);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 40, 58);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, 40, 58);
     let y = 78;
     exportRows.forEach((r, i) => {
       const line = `${i + 1}. ${r.referenceNo} | ${r.date} | ${r.supplier} | ${r.grandTotal}`;

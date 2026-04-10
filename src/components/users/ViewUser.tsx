@@ -9,6 +9,7 @@ import {
 
 import { ContactDocument, useGlobalContext } from '@/context/GlobalContext';
 import { printDocument } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 const TabButton = ({ id, label, icon: Icon, activeTab, setActiveTab }: { id: string, label: string, icon: any, activeTab: string, setActiveTab: (id: string) => void }) => (
     <button
@@ -49,7 +50,7 @@ const downloadBlob = (filename: string, content: string, type: string) => {
 };
 
 const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
-    const { users, updateUser, currentUser, activityLogs } = useGlobalContext();
+    const { users, updateUser, currentUser, activityLogs, settings } = useGlobalContext();
     const [activeTab, setActiveTab] = useState('user_info');
     const [selectedUserId, setSelectedUserId] = useState(userId);
     const [newDocHeading, setNewDocHeading] = useState('');
@@ -276,7 +277,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         y += 18;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, left, y);
+        doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, left, y);
         y += 18;
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
@@ -307,7 +308,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         y += 18;
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, left, y);
+        doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, left, y);
         y += 18;
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');

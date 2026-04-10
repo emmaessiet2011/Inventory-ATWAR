@@ -8,6 +8,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances } from '@/utils/stockLots';
 import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
@@ -73,14 +74,13 @@ const parseInputDate = (value: string | undefined): Date | null => {
   return Number.isNaN(fallback.getTime()) ? null : fallback;
 };
 
-const formatExpiryDate = (value: string | undefined): string => {
-  const parsed = parseInputDate(value);
-  if (!parsed) return '--';
-  return parsed.toLocaleDateString('en-GB');
-};
-
 const ReportLot: React.FC = () => {
   const { products, sales, locations, settings } = useGlobalContext();
+  const formatExpiryDate = (value: string | undefined): string => {
+    const parsed = parseInputDate(value);
+    if (!parsed) return '--';
+    return formatDateBySettings(parsed, settings.dateFormat, settings.timeZone);
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
@@ -151,8 +151,8 @@ const ReportLot: React.FC = () => {
     const byId = new Map<string, number>();
     const byName = new Map<string, number>();
     sales.forEach((sale) => {
-      const status = String(sale.status || sale.saleStatus || '').trim();
-      if (status !== 'Final') return;
+      const status = normalize(sale.status || sale.saleStatus || '');
+      if (status !== 'final') return;
       (sale.items || []).forEach((item) => {
         const key = String(item.id || '').trim();
         const qty = Number(item.qty || 0);
@@ -436,7 +436,7 @@ const ReportLot: React.FC = () => {
       doc.text('Lot Report', margin, y);
       y += rowHeight + 2;
       doc.setFontSize(9);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
       y += rowHeight + 4;
 
       const x = {

@@ -11,6 +11,7 @@ import {
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface PurchaseOrderProps {
   onNavigate?: (page: string) => void;
@@ -559,7 +560,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
     y += 18;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString('en-GB')}`, marginX, y);
+    doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, marginX, y);
     y += 18;
     exportRows.forEach((row, idx) => {
       const line = `${idx + 1}. ${row.referenceNo} | ${row.date} | ${row.supplier} | ${row.status} | ${row.quantity} | ${row.total}`;

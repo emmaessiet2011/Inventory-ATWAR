@@ -9,6 +9,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
 import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances, type StockLotBalance } from '@/utils/stockLots';
+import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 
 type StockStatus = 'Expired' | 'Expiring' | 'Good';
 type ColumnKey =
@@ -84,7 +85,7 @@ const parseInputDate = (value: string | undefined): Date | null => {
 const toDateOnlyTimestamp = (date: Date): number =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0).getTime();
 
-const formatDate = (date: Date): string => date.toLocaleDateString('en-GB');
+const formatDate = (date: Date): string => formatDateBySettings(date);
 
 const resolveExpiryStatus = (expiryTimestamp: number, alertDays: number, today: number): StockStatus => {
   const diffDays = Math.floor((expiryTimestamp - today) / DAY_MS);
@@ -457,7 +458,7 @@ const ReportStockExpiry: React.FC = () => {
       doc.text('Stock Expiry Report', margin, y);
       y += rowHeight + 2;
       doc.setFontSize(9);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, margin, y);
+      doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, margin, y);
       y += rowHeight + 4;
       const pageWidth = doc.internal.pageSize.getWidth();
       const tableWidth = pageWidth - margin * 2;

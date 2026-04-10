@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, ShieldCheck, RefreshCcw } from 'lucide-react';
+import { useGlobalContext } from '@/context/GlobalContext';
 import {
   BackupAuditTrail,
   createLocalBackupSnapshot,
@@ -11,8 +12,10 @@ import {
   serializeLocalBackup,
   validateLocalBackup,
 } from '@/utils/backupRestore';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 const BackupRestore: React.FC = () => {
+  const { settings } = useGlobalContext();
   const backupInputRef = useRef<HTMLInputElement>(null);
   const [backupMode, setBackupMode] = useState<'validate' | 'restore'>('restore');
   const [backupNotice, setBackupNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -25,16 +28,7 @@ const BackupRestore: React.FC = () => {
   const formatAuditTime = (value?: string) => {
     const raw = String(value || '').trim();
     if (!raw) return '--';
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return raw;
-    return parsed.toLocaleString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
+    return formatDateTimeBySettings(raw, settings.dateFormat, settings.timeFormat, settings.timeZone);
   };
 
   const handleBackupExport = () => {

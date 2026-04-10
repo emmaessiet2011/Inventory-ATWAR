@@ -4633,11 +4633,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deleteSale = (id: string) => {
     if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Delete Sell'], 'Delete sale')) return;
-    const existingSale = sales.find(s => s.id === id);
+    const normalizedSaleId = String(id || '').trim();
+    const hasLinkedSellReturn = (saleId: string) =>
+      sellReturns.some(ret => String(ret.parentSaleId || '').trim() === saleId);
+    const existingSale = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
     setSales(prev => {
-      const saleToDelete = prev.find(s => s.id === id);
-      if (!saleToDelete) return prev.filter(s => s.id !== id);
-      if (sellReturns.some(ret => ret.parentSaleId === id)) return prev;
+      const saleToDelete = prev.find(s => String(s.id || '').trim() === normalizedSaleId);
+      if (!saleToDelete) return prev.filter(s => String(s.id || '').trim() !== normalizedSaleId);
+      if (hasLinkedSellReturn(normalizedSaleId)) return prev;
 
       if (isFinalizedSale(saleToDelete)) {
         applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
@@ -4655,17 +4658,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       }
 
-      return prev.filter(s => s.id !== id);
+      return prev.filter(s => String(s.id || '').trim() !== normalizedSaleId);
     });
     // Remove the auto-generated payment record for this sale
-    setPayments(prev => prev.filter(p => p.id !== `pay-${id}`));
-    deleteRecord('sales', id);
-    deleteRecord('payments', `pay-${id}`);
-    if (!sellReturns.some(ret => ret.parentSaleId === id)) {
+    setPayments(prev => prev.filter(p => p.id !== `pay-${normalizedSaleId}`));
+    deleteRecord('sales', normalizedSaleId);
+    deleteRecord('payments', `pay-${normalizedSaleId}`);
+    if (!hasLinkedSellReturn(normalizedSaleId)) {
       recordActivity({
         action: 'Deleted',
         module: 'Sales',
-        description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || id}`,
+        description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId}`,
       });
     }
   };
@@ -4705,10 +4708,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const applySellReturnFinancialEffects = (sellReturn: SellReturn, factor: 1 | -1) => {
     const appliedDelta = Number((Number(sellReturn.appliedToSaleDue || 0) * factor).toFixed(3));
     const creditDelta = Number((Number(sellReturn.creditedToAdvance || 0) * factor).toFixed(3));
+    const targetSaleId = String(sellReturn.parentSaleId || '').trim();
+    const targetCustomerId = String(sellReturn.customerId || '').trim();
+    const targetCustomerName = normalizeText(sellReturn.customerName);
 
-    if (Math.abs(appliedDelta) > 0.0005) {
+    if (Math.abs(appliedDelta) > 0.0005 && targetSaleId) {
       setSales(prev => prev.map(sale => {
-        if (sale.id !== sellReturn.parentSaleId) return sale;
+        if (String(sale.id || '').trim() !== targetSaleId) return sale;
         const currentDue = typeof sale.sellDue === 'number'
           ? Math.max(0, Number(sale.sellDue))
           : Math.max(0, (sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0));
@@ -4728,8 +4734,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (Math.abs(appliedDelta) > 0.0005 || Math.abs(creditDelta) > 0.0005) {
       setCustomers(prev => prev.map(customer => {
         if (
-          customer.id !== sellReturn.customerId &&
-          customer.businessName !== sellReturn.customerName
+          String(customer.id || '').trim() !== targetCustomerId &&
+          normalizeText(customer.businessName) !== targetCustomerName
         ) {
           return customer;
         }

@@ -8,6 +8,7 @@ import {
 import { useGlobalContext } from '@/context/GlobalContext';
 import type { ProductUnit } from '@/context/GlobalContext';
 import { buildPaginationItems } from '@/utils/pagination';
+import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const escapeHtml = (value: string) =>
@@ -132,7 +133,7 @@ const Units: React.FC = () => {
     y += 20;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, marginX, y);
+    doc.text(`Generated: ${formatDateTimeBySettings(new Date().toISOString(), settings.dateFormat, settings.timeFormat, settings.timeZone)}`, marginX, y);
     y += 18;
 
     filtered.forEach((u, idx) => {

@@ -634,7 +634,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
       doc.text('POS Sales Export', 14, y);
       y += 7;
       doc.setFontSize(9);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 14, y);
+      doc.text(`Generated: ${formatDateTimeDisplay(new Date().toISOString())}`, 14, y);
       y += 8;
 
       const headers = ['Date', 'Invoice', 'Customer', 'Status', 'Total', 'Paid', 'Due'];

@@ -12,6 +12,7 @@ import ViewPaymentModal from './ViewPaymentModal';
 import EditPaymentModal from './EditPaymentModal';
 import { clampPrecision } from '@/utils/paymentUtils';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
+import { formatDateBySettings, formatTimeBySettings } from '@/utils/dateTime';
 
 interface ListPaymentsProps {
   onNavigate?: (page: string) => void;
@@ -68,6 +69,10 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
   } = useGlobalContext();
   const { addNotification } = useNotifications();
   const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
+  const formatDateDisplay = (value?: string) =>
+    formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
+  const formatTimeDisplay = (value?: string) =>
+    formatTimeBySettings(value || '', settings.timeFormat, settings.timeZone);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -389,7 +394,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
         { label: 'Note' },
       ],
       rows: filteredPayments.map(p => [
-        parseDateSafe(p.date)?.toLocaleDateString() || p.date,
+        formatDateDisplay(p.date),
         p.referenceNo,
         p.customerName,
         p.location || '--',
@@ -569,9 +574,9 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                 <tr key={payment.id} className="group hover:bg-slate-50/80 transition-colors">
                   <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                     <div className="font-bold text-slate-700 text-sm">
-                      {parseDateSafe(payment.date)?.toLocaleDateString() || payment.date}
+                      {formatDateDisplay(payment.date)}
                       <span className="block text-[10px] text-slate-400 font-medium">
-                        {parseDateSafe(payment.date)?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || '--'}
+                        {formatTimeDisplay(payment.date)}
                       </span>
                     </div>
                   </td>

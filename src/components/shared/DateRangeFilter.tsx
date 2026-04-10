@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 
@@ -69,6 +70,26 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   const [customEnd, setCustomEnd] = useState('');
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
+
+  const updateMenuPosition = () => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const width = Math.max(224, Math.round(rect.width));
+    const maxLeft = Math.max(8, viewportWidth - width - 8);
+    const left = Math.min(Math.max(8, Math.round(rect.left)), maxLeft);
+    setMenuStyle({
+      position: 'fixed',
+      top: Math.round(rect.bottom + 6),
+      left,
+      width,
+      zIndex: 10000,
+    });
+  };
 
   const applyRange = (label: string, start: Date | null, end: Date | null) => {
     const formattedRange = start && end
@@ -155,7 +176,12 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(target) &&
+        (menuRef.current ? !menuRef.current.contains(target) : true)
+      ) {
         setIsOpen(false);
         setShowCustomRange(false);
       }
@@ -163,6 +189,18 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    updateMenuPosition();
+    const handleReposition = () => updateMenuPosition();
+    window.addEventListener('resize', handleReposition);
+    window.addEventListener('scroll', handleReposition, true);
+    return () => {
+      window.removeEventListener('resize', handleReposition);
+      window.removeEventListener('scroll', handleReposition, true);
+    };
+  }, [isOpen, showCustomRange]);
 
   useEffect(() => {
     const today = new Date();
@@ -190,7 +228,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   return (
     <div className={`relative group ${className}`} ref={containerRef}>
       <label className="block text-xs font-bold text-slate-700 mb-1">Date Range:</label>
-      <div 
+      <div
+        ref={triggerRef}
         className="flex items-center justify-between w-full px-3 py-2 bg-white border border-slate-300 rounded cursor-pointer hover:border-blue-400 transition-colors"
         onClick={() => setIsOpen(!isOpen)}
       >
@@ -200,8 +239,12 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
         <ChevronDown size={14} className="text-slate-400" />
       </div>
 
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-slate-200 rounded shadow-xl z-[100] animate-in fade-in zoom-in-95 duration-100 overflow-hidden">
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          style={menuStyle}
+          className="bg-white border border-slate-200 rounded shadow-xl animate-in fade-in zoom-in-95 duration-100 overflow-hidden"
+        >
             {!showCustomRange ? (
                 <div className="py-1">
                     {[
@@ -259,7 +302,8 @@ const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
                     </div>
                 </div>
             )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
