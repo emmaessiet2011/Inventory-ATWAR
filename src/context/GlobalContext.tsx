@@ -1530,6 +1530,12 @@ const REQUIRED_ROLE_TEMPLATES: Array<Omit<Role, 'id' | 'userCount' | 'permission
     isSystem: false,
     permissions: permissionKeys('Field Payment', ['View field payment', 'Approval field payment']),
   },
+  {
+    name: 'Payment Ledger Viewer',
+    description: 'Can view customer payment ledger summary without payment edit access.',
+    isSystem: false,
+    permissions: permissionKeys('Sell', ['View customer payment ledger']),
+  },
 ];
 
 const normalizeRoleNameKey = (value: unknown): string => String(value || '').trim().toLowerCase();

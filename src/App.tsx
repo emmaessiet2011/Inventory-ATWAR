@@ -85,6 +85,7 @@ import AddSellReturn from '@/components/sales/AddSellReturn';
 import NewPayment from '@/components/payments/NewPayment';
 import FieldPayments from '@/components/payments/FieldPayments';
 import ListPayments from '@/components/payments/ListPayments';
+import PaymentLedger from '@/components/payments/Ledger';
 import ListAccounts from '@/components/accounts/ListAccounts';
 import BalanceSheet from '@/components/reports/BalanceSheet';
 import TrialBalance from '@/components/reports/TrialBalance';
@@ -154,6 +155,7 @@ const AppContent: React.FC = () => {
     { label: 'Expenses', page: 'list-expenses' },
     { label: 'Add Expense', page: 'add-expense' },
     { label: 'Payments', page: 'list-payments' },
+    { label: 'Payment Ledger', page: 'payment-ledger' },
     { label: 'Customers', page: 'customers' },
     { label: 'Suppliers', page: 'suppliers' },
     { label: 'Settings', page: 'settings' },
@@ -418,6 +420,9 @@ const AppContent: React.FC = () => {
     hasRolePermission('Sell', 'Edit sell payment') ||
     hasRolePermission('Sell', 'Delete sell payment') ||
     hasRolePermission('POS', 'Add/Edit Payment');
+  const canViewPaymentLedger =
+    hasRolePermission('Sell', 'View customer payment ledger') ||
+    canViewSellPayments;
   const canAddSellPayments =
     hasRolePermission('Sell', 'Add sell payment') ||
     hasRolePermission('POS', 'Add/Edit Payment');
@@ -794,6 +799,9 @@ const AppContent: React.FC = () => {
       case 'list-payments':
         if (!canViewSellPayments) return renderAccessDenied('Payments');
         return <ListPayments onNavigate={handleNavigate} onContactSelect={handleContactSelect} />;
+      case 'payment-ledger':
+        if (!canViewPaymentLedger) return renderAccessDenied('Payments Ledger');
+        return <PaymentLedger onNavigate={setCurrentPage} />;
       case 'field-payments':
         if (!settings.enableFieldPayments) return renderModuleDisabled('Field Payments');
         if (!canViewFieldPayments) return renderAccessDenied('Field Payments');

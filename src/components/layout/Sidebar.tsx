@@ -173,6 +173,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       icon: Banknote,
       subItems: [
         { title: 'List Payments', path: 'list-payments' },
+        { title: 'Ledger', path: 'payment-ledger' },
         { title: 'New Payment', path: 'new-payment' },
         { title: 'Field Payments', path: 'field-payments' }
       ]
@@ -385,6 +386,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           hasRolePermission('Sell', 'Edit sell payment') ||
           hasRolePermission('Sell', 'Delete sell payment') ||
           hasRolePermission('POS', 'Add/Edit Payment');
+        const canViewPaymentLedger =
+          hasRolePermission('Sell', 'View customer payment ledger') ||
+          canViewSellPayments;
         const canAddSellPayments =
           hasRolePermission('Sell', 'Add sell payment') ||
           hasRolePermission('POS', 'Add/Edit Payment');
@@ -397,6 +401,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         subItems = subItems.filter((s) => {
           if (s.path === 'list-payments') return canViewSellPayments;
+          if (s.path === 'payment-ledger') return canViewPaymentLedger;
           if (s.path === 'new-payment') return canAddSellPayments;
           if (s.path === 'field-payments') return settings.enableFieldPayments && canViewFieldPayments;
           return true;
