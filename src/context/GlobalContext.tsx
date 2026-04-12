@@ -2838,6 +2838,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remotePurchaseReturns,
           remoteOrders,
           remoteActivityLogs,
+          remoteTaxRates,
+          remoteProductCategories,
+          remoteProductBrands,
+          remoteProductUnits,
           remotePurchaseReqs,
           remotePurchaseOrders,
           remoteContacts,
@@ -2856,6 +2860,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<PurchaseReturn>('purchaseReturns'),
           apiFetchAllWithRetry<GlobalOrder>('salesOrders'),
           apiFetchAllWithRetry<ActivityLogEntry>('activityLogs'),
+          apiFetchAllWithRetry<TaxRate>('taxRates'),
+          apiFetchAllWithRetry<ProductCategory>('productCategories'),
+          apiFetchAllWithRetry<ProductBrand>('productBrands'),
+          apiFetchAllWithRetry<ProductUnit>('productUnits'),
           fetchCollection<PurchaseRequisition>('purchaseRequisitions'),
           fetchCollection<PurchaseOrder>('purchaseOrders'),
           fetchCollection<Contact>('contacts'),
@@ -2878,6 +2886,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remotePurchaseReturns,
           remoteOrders,
           remoteActivityLogs,
+          remoteTaxRates,
+          remoteProductCategories,
+          remoteProductBrands,
+          remoteProductUnits,
           remotePurchaseReqs,
           remotePurchaseOrders,
           remoteContacts,
@@ -2920,6 +2932,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remotePurchaseReturns) setPurchaseReturns(remotePurchaseReturns);
         if (remoteOrders) setOrders(remoteOrders);
         if (remoteActivityLogs) setActivityLogs(remoteActivityLogs);
+        if (remoteTaxRates) setTaxRates(normalizeTaxRates(remoteTaxRates as TaxRate[]));
+        if (remoteProductCategories) setProductCategories(remoteProductCategories as ProductCategory[]);
+        if (remoteProductBrands) setProductBrands(remoteProductBrands as ProductBrand[]);
+        if (remoteProductUnits) setProductUnits(remoteProductUnits as ProductUnit[]);
         if (remotePurchaseReqs) setPurchaseRequisitions(remotePurchaseReqs);
         if (remotePurchaseOrders) setPurchaseOrders(remotePurchaseOrders);
         if (remoteContacts) setContacts(remoteContacts);
@@ -3002,6 +3018,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const [
           freshProducts, freshSales, freshPayments, freshCustomers, freshLocations,
           freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
+          freshTaxRates, freshProductCategories, freshProductBrands, freshProductUnits,
         ] = await Promise.all([
           apiFetchAll<Product>('products').catch(() => null),
           apiFetchAll<Sale>('sales').catch(() => null),
@@ -3014,6 +3031,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<PurchaseReturn>('purchaseReturns').catch(() => null),
           apiFetchAll<GlobalOrder>('salesOrders').catch(() => null),
           apiFetchAll<ActivityLogEntry>('activityLogs').catch(() => null),
+          apiFetchAll<TaxRate>('taxRates').catch(() => null),
+          apiFetchAll<ProductCategory>('productCategories').catch(() => null),
+          apiFetchAll<ProductBrand>('productBrands').catch(() => null),
+          apiFetchAll<ProductUnit>('productUnits').catch(() => null),
         ]);
         if (freshProducts) setProducts(freshProducts);
         if (freshSales) setSales(freshSales);
@@ -3030,6 +3051,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (freshPurchaseReturns) setPurchaseReturns(freshPurchaseReturns);
         if (freshOrders) setOrders(freshOrders);
         if (freshActivityLogs) setActivityLogs(freshActivityLogs);
+        if (freshTaxRates) setTaxRates(normalizeTaxRates(freshTaxRates as TaxRate[]));
+        if (freshProductCategories) setProductCategories(freshProductCategories as ProductCategory[]);
+        if (freshProductBrands) setProductBrands(freshProductBrands as ProductBrand[]);
+        if (freshProductUnits) setProductUnits(freshProductUnits as ProductUnit[]);
       } catch {
         // polling failure is non-fatal — the user keeps their current data
       }
@@ -3054,11 +3079,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       'invoiceSchemes',
       'invoiceLayouts',
       'barcodeSettings',
-      'taxRates',
       'customerGroups',
-      'productCategories',
-      'productBrands',
-      'productUnits',
       'warranties',
       'productVariations',
       'sellingPriceGroups',
@@ -3124,39 +3145,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setBarcodeSettings(normalized);
       }
 
-      const remoteTaxRates = getRows('taxRates');
-      if (remoteTaxRates.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setTaxRates(normalizeTaxRates(remoteTaxRates as TaxRate[]));
-      }
-
       const remoteCustomerGroups = getRows('customerGroups');
       if (remoteCustomerGroups.length > 0) {
         hasRemoteData = true;
         dropdownSyncApplyingRemoteRef.current = true;
         setCustomerGroups(remoteCustomerGroups as CustomerGroup[]);
-      }
-
-      const remoteProductCategories = getRows('productCategories');
-      if (remoteProductCategories.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setProductCategories(remoteProductCategories as ProductCategory[]);
-      }
-
-      const remoteProductBrands = getRows('productBrands');
-      if (remoteProductBrands.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setProductBrands(remoteProductBrands as ProductBrand[]);
-      }
-
-      const remoteProductUnits = getRows('productUnits');
-      if (remoteProductUnits.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setProductUnits(remoteProductUnits as ProductUnit[]);
       }
 
       const remoteWarranties = getRows('warranties');
@@ -3208,11 +3201,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             .map((row, index) => normalizeBarcodeSettingRecord(row, initialBarcodeSettings[index] || initialBarcodeSettings[0]))
             .filter((row) => row.id && row.name)
         ));
-        setTaxRates(normalizeTaxRates(remoteTaxRates as TaxRate[]));
         setCustomerGroups(remoteCustomerGroups as CustomerGroup[]);
-        setProductCategories(remoteProductCategories as ProductCategory[]);
-        setProductBrands(remoteProductBrands as ProductBrand[]);
-        setProductUnits(remoteProductUnits as ProductUnit[]);
         setWarranties(remoteWarranties as ProductWarranty[]);
         setProductVariations(remoteProductVariations as ProductVariation[]);
         setSellingPriceGroups(remoteSellingPriceGroups as SellingPriceGroup[]);
@@ -3227,11 +3216,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         invoiceSchemes: remoteInvoiceSchemes.length > 0 ? remoteInvoiceSchemes : invoiceSchemes,
         invoiceLayouts: remoteInvoiceLayouts.length > 0 ? remoteInvoiceLayouts : invoiceLayouts,
         barcodeSettings: remoteBarcodeSettings.length > 0 ? remoteBarcodeSettings : barcodeSettings,
-        taxRates: remoteTaxRates.length > 0 ? remoteTaxRates : taxRates,
         customerGroups: remoteCustomerGroups.length > 0 ? remoteCustomerGroups : customerGroups,
-        productCategories: remoteProductCategories.length > 0 ? remoteProductCategories : productCategories,
-        productBrands: remoteProductBrands.length > 0 ? remoteProductBrands : productBrands,
-        productUnits: remoteProductUnits.length > 0 ? remoteProductUnits : productUnits,
         warranties: remoteWarranties.length > 0 ? remoteWarranties : warranties,
         productVariations: remoteProductVariations.length > 0 ? remoteProductVariations : productVariations,
         sellingPriceGroups: remoteSellingPriceGroups.length > 0 ? remoteSellingPriceGroups : sellingPriceGroups,
@@ -3266,11 +3251,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       invoiceSchemes,
       invoiceLayouts,
       barcodeSettings,
-      taxRates,
       customerGroups,
-      productCategories,
-      productBrands,
-      productUnits,
       warranties,
       productVariations,
       sellingPriceGroups,
@@ -3301,11 +3282,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     invoiceSchemes,
     invoiceLayouts,
     barcodeSettings,
-    taxRates,
     customerGroups,
-    productCategories,
-    productBrands,
-    productUnits,
     warranties,
     productVariations,
     sellingPriceGroups,
