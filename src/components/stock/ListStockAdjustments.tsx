@@ -1,18 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Search, FileText, FileSpreadsheet, Printer,
-  Columns, ChevronDown, Filter, ArrowUpDown, Eye, Edit, Trash2, X,SlidersHorizontal} from 'lucide-react';
+  Columns, ChevronDown, Filter, ArrowUpDown, Eye, Edit, Trash2, X, SlidersHorizontal, CheckCircle2} from 'lucide-react';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import MultiSelect from '@/components/shared/MultiSelect';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
-import { appendStockLedgerEntries } from '@/utils/stockTransfers';
-import { applyStockLotAdjustments } from '@/utils/stockLots';
+import {
+  appendStockLedgerEntries,
+  bootstrapStockTransfersFromDB,
+  makeNextStockTransferRef,
+  readStockTransfers,
+  simulateStockTransfer,
+  writeStockTransfers,
+} from '@/utils/stockTransfers';
+import { applyStockLotAdjustments, StockLotAdjustment } from '@/utils/stockLots';
 import {
   bootstrapStockAdjustmentsFromDB,
+  normalizeStockAdjustmentDamageDisposition,
   StockAdjustmentRecord,
+  normalizeStockAdjustmentStatus,
   readStockAdjustments,
   simulateStockAdjustment,
   writeStockAdjustments,
@@ -23,6 +32,7 @@ interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
   canAdd?: boolean;
   canEdit?: boolean;
+  canApprove?: boolean;
   canManage?: boolean;
   canDelete?: boolean;
   restrictToAddedById?: string;
@@ -40,12 +50,20 @@ type ColumnKey =
   | 'referenceNo'
   | 'location'
   | 'adjustmentType'
+  | 'status'
   | 'totalAmount'
   | 'totalRecovered'
   | 'reason'
   | 'addedBy';
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const round3 = (value: number) => Math.round(value * 1000) / 1000;
+const toIsoDate = (value: string) => {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
+};
+const buildExpenseRefNo = (prefix: string) =>
+  `${String(prefix || 'EP').trim() || 'EP'}${new Date().getFullYear()}-${Math.floor(Math.random() * 9000 + 1000)}`;
 const isAdjustmentOwnerMatch = (
   adjustment: StockAdjustmentRecord,
   ownerIdFilter: string,
@@ -69,17 +87,31 @@ const getCurrentYearRange = (): DateRangeValue => {
     label: 'This Year',
   };
 };
+const sortAdjustments = (rows: StockAdjustmentRecord[]) =>
+  [...rows].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
 
 const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   onNavigate,
   canAdd,
   canEdit,
+  canApprove = false,
   canManage = true,
   canDelete,
   restrictToAddedById = '',
   restrictToAddedByName = '',
 }) => {
-  const { locations, products, setProducts, currentUser, formatCurrency, addActivityLog, settings } = useGlobalContext();
+  const {
+    locations,
+    products,
+    setProducts,
+    currentUser,
+    formatCurrency,
+    addActivityLog,
+    addExpense,
+    deleteExpense,
+    generateId,
+    settings,
+  } = useGlobalContext();
   const { addNotification } = useNotifications();
   const formatDateDisplay = (value?: string) =>
     formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
@@ -101,6 +133,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
     referenceNo: true,
     location: true,
     adjustmentType: true,
+    status: true,
     totalAmount: true,
     totalRecovered: true,
     reason: true,
@@ -110,11 +143,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   const [filters, setFilters] = useState({
     location: [] as string[],
     adjustmentType: [] as string[],
+    status: [] as string[],
     user: [] as string[],
   });
 
   const resolvedCanAdd = canAdd ?? canManage;
   const resolvedCanEdit = canEdit ?? canManage;
+  const resolvedCanApprove = canApprove;
   const resolvedCanDelete = canDelete ?? resolvedCanEdit;
   const ownerIdFilter = normalize(restrictToAddedById);
   const ownerNameFilter = normalize(restrictToAddedByName);
@@ -180,6 +215,9 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             adjustment.referenceNo,
             adjustment.location,
             adjustment.adjustmentType,
+            adjustment.status,
+            adjustment.damageDisposition,
+            adjustment.damageSellableLocation,
             adjustment.reason,
             adjustment.addedBy,
             itemNames,
@@ -188,6 +226,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         }
         if (filters.location.length > 0 && !filters.location.includes(adjustment.location)) return false;
         if (filters.adjustmentType.length > 0 && !filters.adjustmentType.includes(adjustment.adjustmentType)) return false;
+        if (filters.status.length > 0 && !filters.status.includes(normalizeStockAdjustmentStatus(adjustment.status))) return false;
         if (filters.user.length > 0 && !filters.user.includes(adjustment.addedBy)) return false;
         if (startMs != null || endMs != null) {
           const adjustmentMs = Date.parse(adjustment.date);
@@ -239,7 +278,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
   const exportCsv = () => {
     const headers = [
-      'Date', 'Reference No', 'Location', 'Type',
+      'Date', 'Reference No', 'Location', 'Type', 'Status',
       'Total Amount', 'Recovered', 'Reason', 'Added By',
     ];
     const escape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -248,6 +287,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       escape(adjustment.referenceNo),
       escape(adjustment.location),
       escape(adjustment.adjustmentType),
+      escape(normalizeStockAdjustmentStatus(adjustment.status)),
       escape(Number(adjustment.totalAmount || 0).toFixed(3)),
       escape(Number(adjustment.totalRecovered || 0).toFixed(3)),
       escape(adjustment.reason || ''),
@@ -265,7 +305,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
   const exportExcel = () => {
     const headers = [
-      'Date', 'Reference No', 'Location', 'Type',
+      'Date', 'Reference No', 'Location', 'Type', 'Status',
       'Total Amount', 'Recovered', 'Reason', 'Added By',
     ];
     const lines = visibleAdjustments.map((adjustment) => [
@@ -273,6 +313,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       adjustment.referenceNo,
       adjustment.location,
       adjustment.adjustmentType,
+      normalizeStockAdjustmentStatus(adjustment.status),
       Number(adjustment.totalAmount || 0).toFixed(3),
       Number(adjustment.totalRecovered || 0).toFixed(3),
       adjustment.reason || '',
@@ -291,6 +332,8 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   const handlePrint = () => {
     const totalAmount = visibleAdjustments.reduce((sum, a) => sum + Number(a.totalAmount || 0), 0);
     const totalRecovered = visibleAdjustments.reduce((sum, a) => sum + Number(a.totalRecovered || 0), 0);
+    const pendingCount = visibleAdjustments.filter((a) => normalizeStockAdjustmentStatus(a.status) === 'Pending').length;
+    const approvedCount = visibleAdjustments.filter((a) => normalizeStockAdjustmentStatus(a.status) === 'Approved').length;
     printDocument({
       title: 'Stock Adjustments',
       subtitle: range?.label ? `Period: ${range.label}` : undefined,
@@ -302,6 +345,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         { label: 'Reference No', width: '100px' },
         { label: 'Location' },
         { label: 'Type', width: '100px' },
+        { label: 'Status', width: '80px' },
         { label: 'Total Amount', align: 'right', width: '90px' },
         { label: 'Recovered', align: 'right', width: '90px' },
         { label: 'Reason' },
@@ -312,6 +356,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         a.referenceNo,
         a.location,
         statusBadge(a.adjustmentType),
+        statusBadge(normalizeStockAdjustmentStatus(a.status)),
         formatCurrency(Number(a.totalAmount || 0)),
         formatCurrency(Number(a.totalRecovered || 0)),
         a.reason || '--',
@@ -319,20 +364,314 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       ]),
       stats: [
         { label: 'Total Adjustments', value: String(visibleAdjustments.length), color: 'blue' },
+        { label: 'Pending', value: String(pendingCount), color: 'amber' },
+        { label: 'Approved', value: String(approvedCount), color: 'green' },
         { label: 'Total Amount', value: formatCurrency(totalAmount), color: 'amber' },
         { label: 'Total Recovered', value: formatCurrency(totalRecovered), color: 'green' },
       ],
-      totalRow: ['TOTAL', '', '', '',
+      totalRow: ['TOTAL', '', '', '', '',
         formatCurrency(totalAmount),
         formatCurrency(totalRecovered),
         '', ''],
     });
   };
 
-  const startEdit = (adjustmentId: string) => {
+  const findProductBySkuLocation = (rows: typeof products, sku: string, locationName: string) => (
+    rows.find((product) => (
+      normalize(product.sku) === normalize(sku)
+      && normalize(product.businessLocation) === normalize(locationName)
+    ))
+  );
+
+  const buildTransferLotAdjustments = (
+    workingProducts: typeof products,
+    sourceLocation: string,
+    targetLocation: string,
+    items: Array<{ sku: string; qty: number; unit?: string; unitCost?: number; productName?: string }>,
+    direction: 1 | -1,
+    updatedAt: string,
+  ): StockLotAdjustment[] => {
+    const lotAdjustments: StockLotAdjustment[] = [];
+    items.forEach((item) => {
+      const qty = round3(Math.abs(Number(item.qty || 0)));
+      if (!qty) return;
+
+      const sourceProduct = findProductBySkuLocation(workingProducts, item.sku, sourceLocation);
+      const targetProduct = findProductBySkuLocation(workingProducts, item.sku, targetLocation);
+      const outQty = round3(-qty * direction);
+      const inQty = round3(qty * direction);
+
+      if (sourceProduct) {
+        lotAdjustments.push({
+          productId: sourceProduct.id,
+          productName: sourceProduct.name || item.productName || '',
+          sku: sourceProduct.sku || item.sku || '',
+          location: sourceLocation,
+          lotNumber: String(sourceProduct.lotNumber || '--').trim() || '--',
+          expiryDate: String(sourceProduct.expiryDate || '').trim(),
+          unit: sourceProduct.unit || item.unit || '',
+          unitCost: round3(Number(item.unitCost ?? sourceProduct.unitPurchasePrice ?? 0)),
+          qtyChange: outQty,
+          updatedAt,
+        });
+      }
+
+      if (targetProduct) {
+        lotAdjustments.push({
+          productId: targetProduct.id,
+          productName: targetProduct.name || item.productName || '',
+          sku: targetProduct.sku || item.sku || '',
+          location: targetLocation,
+          lotNumber: String(targetProduct.lotNumber || '--').trim() || '--',
+          expiryDate: String(targetProduct.expiryDate || '').trim(),
+          unit: targetProduct.unit || item.unit || '',
+          unitCost: round3(Number(item.unitCost ?? targetProduct.unitPurchasePrice ?? 0)),
+          qtyChange: inQty,
+          updatedAt,
+        });
+      }
+    });
+    return lotAdjustments;
+  };
+
+  const buildLinkedTransferRecordFromAdjustment = (adjustment: StockAdjustmentRecord, actorName: string) => {
+    const targetLocation = String(adjustment.damageSellableLocation || '').trim();
+    if (!targetLocation) {
+      throw new Error('Sellable damage location is missing on this adjustment.');
+    }
+    const transferItems = (adjustment.items || [])
+      .map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        sku: item.sku,
+        qty: round3(Math.abs(Number(item.quantity || 0))),
+        unit: item.unit || '',
+        unitCost: round3(Number(item.unitCost || 0)),
+      }))
+      .filter((item) => item.qty > 0);
+    if (transferItems.length === 0) {
+      throw new Error('No transferable items found in this sellable damage adjustment.');
+    }
+
+    const nowIso = new Date().toISOString();
+    const existingTransfers = readStockTransfers();
+    return {
+      transfer: {
+        id: generateId('ST'),
+        date: toIsoDate(adjustment.date || nowIso),
+        refNo: makeNextStockTransferRef(settings.stockTransferPrefix || 'ST', existingTransfers),
+        locationFrom: adjustment.location,
+        locationTo: targetLocation,
+        status: 'Completed' as const,
+        shippingCharges: 0,
+        totalAmount: round3(Number(adjustment.totalAmount || 0)),
+        notes: `Sellable damage transfer for ${adjustment.referenceNo}${adjustment.reason ? ` - ${adjustment.reason}` : ''}`,
+        items: transferItems,
+        addedBy: actorName || 'System',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      },
+      transferItems,
+      existingTransfers,
+      targetLocation,
+    };
+  };
+
+  const startEdit = (adjustment: StockAdjustmentRecord) => {
     if (!resolvedCanEdit) return;
+    if (normalizeStockAdjustmentStatus(adjustment.status) !== 'Pending') {
+      addNotification({
+        title: 'Action Blocked',
+        message: 'Approved stock adjustments cannot be edited.',
+        type: 'error',
+      });
+      setActiveActionId(null);
+      return;
+    }
     setActiveActionId(null);
-    onNavigate(`add-stock-adjustment/${adjustmentId}`);
+    onNavigate(`add-stock-adjustment/${adjustment.id}`);
+  };
+
+  const approveAdjustment = (adjustment: StockAdjustmentRecord) => {
+    if (!resolvedCanApprove) return;
+    setActiveActionId(null);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Approve Adjustment',
+      message: `Approve stock adjustment ${adjustment.referenceNo}? Stock will update immediately after approval.`,
+      onConfirm: () => {
+        setConfirmModal(null);
+        void executeApproveAdjustment(adjustment.id);
+      },
+    });
+  };
+
+  const executeApproveAdjustment = async (adjustmentId: string) => {
+    if (!resolvedCanApprove) return;
+
+    try {
+      await bootstrapStockAdjustmentsFromDB().catch(() => {});
+      const latestAdjustments = readStockAdjustments();
+      const adjustment = latestAdjustments.find((row) => row.id === adjustmentId);
+      if (!adjustment) {
+        setAdjustments(sortAdjustments(latestAdjustments));
+        addNotification({
+          title: 'Adjustment Not Found',
+          message: 'The selected stock adjustment no longer exists.',
+          type: 'error',
+        });
+        return;
+      }
+
+      const status = normalizeStockAdjustmentStatus(adjustment.status);
+      if (status !== 'Pending') {
+        setAdjustments(sortAdjustments(latestAdjustments));
+        addNotification({
+          title: 'Already Approved',
+          message: `${adjustment.referenceNo} is already approved.`,
+          type: 'warning',
+        });
+        return;
+      }
+
+      const actorName = currentUser?.name || 'System';
+      const nowIso = new Date().toISOString();
+      let linkedTransferId = '';
+      let linkedExpenseId = '';
+
+      if (
+        adjustment.adjustmentType === 'Damage'
+        && normalizeStockAdjustmentDamageDisposition(adjustment.damageDisposition) === 'Sellable'
+      ) {
+        await bootstrapStockTransfersFromDB().catch(() => {});
+        const { transfer, transferItems, existingTransfers, targetLocation } = buildLinkedTransferRecordFromAdjustment(adjustment, actorName);
+        const destinationActive = locations.some(
+          (row) => normalize(row.name) === normalize(targetLocation) && row.isActive !== false,
+        );
+        if (!destinationActive) {
+          throw new Error(`Sellable damage location "${targetLocation}" is inactive or missing.`);
+        }
+        const appliedTransfer = simulateStockTransfer({
+          transfer,
+          direction: 1,
+          products,
+          generateId,
+          actorName,
+          notePrefix: `Damage approval ${adjustment.referenceNo}`,
+        });
+        setProducts(appliedTransfer.productsAfter);
+        appendStockLedgerEntries(appliedTransfer.ledgerEntries);
+        const lotAdjustments = buildTransferLotAdjustments(
+          appliedTransfer.productsAfter,
+          transfer.locationFrom,
+          transfer.locationTo,
+          transferItems,
+          1,
+          toIsoDate(transfer.date),
+        );
+        if (lotAdjustments.length > 0) {
+          applyStockLotAdjustments(lotAdjustments);
+        }
+        const nextTransfers = [
+          transfer,
+          ...existingTransfers.filter((row) => row.id !== transfer.id),
+        ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        writeStockTransfers(nextTransfers, transfer.id);
+        linkedTransferId = transfer.id;
+      } else {
+        const applied = simulateStockAdjustment({
+          adjustment: { ...adjustment, status: 'Approved' },
+          direction: 1,
+          products,
+          actorName,
+          notePrefix: 'Approval',
+        });
+        setProducts(applied.productsAfter);
+        appendStockLedgerEntries(applied.ledgerEntries);
+        if (applied.lotAdjustments.length > 0) {
+          applyStockLotAdjustments(applied.lotAdjustments);
+        }
+
+        if (
+          adjustment.adjustmentType === 'Damage'
+          && normalizeStockAdjustmentDamageDisposition(adjustment.damageDisposition) === 'Unsellable'
+        ) {
+          const writeOffAmount = round3(
+            Math.max(0, Number(adjustment.totalAmount || 0) - Number(adjustment.totalRecovered || 0)),
+          );
+          if (writeOffAmount > 0) {
+            const expenseId = generateId('EXP');
+            addExpense({
+              id: expenseId,
+              refNo: buildExpenseRefNo(settings.expensesPrefix || 'EP'),
+              date: toIsoDate(adjustment.date || nowIso),
+              category: 'Damage / Write-off',
+              subCategory: 'Unsellable Damage',
+              location: adjustment.location || '',
+              amount: writeOffAmount,
+              tax: 0,
+              totalAmount: writeOffAmount,
+              paymentStatus: 'Due',
+              paymentDue: writeOffAmount,
+              expenseFor: 'Stock Damage Write-off',
+              contact: '',
+              paymentAccount: '',
+              paymentMethod: 'Cash',
+              note: `Auto-posted from stock adjustment ${adjustment.referenceNo}${adjustment.reason ? `: ${adjustment.reason}` : ''}`,
+              paidAmount: 0,
+              paidOn: '',
+              paymentNote: '',
+              addedById: currentUser?.id || '',
+              addedBy: actorName,
+              isRefund: false,
+              isRecurring: false,
+              recurringInterval: '',
+              recurringUnit: '',
+              recurringRepetitions: '',
+            });
+            linkedExpenseId = expenseId;
+          }
+        }
+      }
+
+      const approvedRecord: StockAdjustmentRecord = {
+        ...adjustment,
+        status: 'Approved',
+        approvedBy: actorName,
+        approvedById: currentUser?.id || '',
+        approvedAt: nowIso,
+        linkedTransferId,
+        linkedExpenseId,
+        updatedAt: nowIso,
+      };
+      const nextAdjustments = latestAdjustments.map((row) => (
+        row.id === approvedRecord.id ? approvedRecord : row
+      ));
+      const sorted = sortAdjustments(nextAdjustments);
+      setAdjustments(sorted);
+      writeStockAdjustments(sorted, approvedRecord.id);
+      addNotification({
+        title: 'Adjustment Approved',
+        message:
+          approvedRecord.adjustmentType === 'Damage' && normalizeStockAdjustmentDamageDisposition(approvedRecord.damageDisposition) === 'Sellable'
+            ? `${approvedRecord.referenceNo} approved. Stock moved to sellable-damage location.`
+            : approvedRecord.linkedExpenseId
+            ? `${approvedRecord.referenceNo} approved. Stock written off and damage expense posted.`
+            : `${approvedRecord.referenceNo} approved and stock updated successfully.`,
+        type: 'success',
+      });
+      addActivityLog({
+        action: 'Approved',
+        module: 'Stock Adjustments',
+        description: `${approvedRecord.referenceNo} approved`,
+      });
+    } catch (error) {
+      addNotification({
+        title: 'Unable to Approve Adjustment',
+        message: error instanceof Error ? error.message : 'Unexpected error while approving stock adjustment.',
+        type: 'error',
+      });
+    }
   };
 
   const deleteAdjustment = (adjustment: StockAdjustmentRecord) => {
@@ -342,28 +681,83 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       isOpen: true,
       title: 'Delete Adjustment',
       message: `Delete stock adjustment ${adjustment.referenceNo}?`,
-      onConfirm: () => { setConfirmModal(null); executeDeleteAdjustment(adjustment); },
+      onConfirm: () => { setConfirmModal(null); void executeDeleteAdjustment(adjustment); },
     });
   };
 
-  const executeDeleteAdjustment = (adjustment: StockAdjustmentRecord) => {
+  const executeDeleteAdjustment = async (adjustment: StockAdjustmentRecord) => {
     if (!resolvedCanDelete) return;
 
     try {
-      const rollback = simulateStockAdjustment({
-        adjustment,
-        direction: -1,
-        products,
-        actorName: currentUser?.name || 'System',
-        notePrefix: 'Delete rollback',
-      });
-      setProducts(rollback.productsAfter);
-      appendStockLedgerEntries(rollback.ledgerEntries);
-      if (rollback.lotAdjustments.length > 0) {
-        applyStockLotAdjustments(rollback.lotAdjustments);
+      const status = normalizeStockAdjustmentStatus(adjustment.status);
+      if (status === 'Approved') {
+        const actorName = currentUser?.name || 'System';
+        const isSellableDamage =
+          adjustment.adjustmentType === 'Damage'
+          && normalizeStockAdjustmentDamageDisposition(adjustment.damageDisposition) === 'Sellable';
+
+        if (isSellableDamage) {
+          await bootstrapStockTransfersFromDB().catch(() => {});
+          const allTransfers = readStockTransfers();
+          const linkedTransfer = allTransfers.find((row) => row.id === adjustment.linkedTransferId);
+          const fallback = buildLinkedTransferRecordFromAdjustment(adjustment, actorName);
+          const transfer = linkedTransfer || fallback.transfer;
+          const transferItems = transfer.items.map((item) => ({
+            sku: item.sku,
+            qty: item.qty,
+            unit: item.unit,
+            unitCost: item.unitCost,
+            productName: item.productName,
+          }));
+
+          const rollbackTransfer = simulateStockTransfer({
+            transfer,
+            direction: -1,
+            products,
+            generateId,
+            actorName,
+            notePrefix: `Delete rollback ${adjustment.referenceNo}`,
+          });
+          setProducts(rollbackTransfer.productsAfter);
+          appendStockLedgerEntries(rollbackTransfer.ledgerEntries);
+          const lotAdjustments = buildTransferLotAdjustments(
+            rollbackTransfer.productsAfter,
+            transfer.locationFrom,
+            transfer.locationTo,
+            transferItems,
+            -1,
+            toIsoDate(adjustment.date),
+          );
+          if (lotAdjustments.length > 0) {
+            applyStockLotAdjustments(lotAdjustments);
+          }
+
+          const transferIdToDelete = linkedTransfer?.id || adjustment.linkedTransferId || '';
+          if (transferIdToDelete) {
+            const nextTransfers = allTransfers.filter((row) => row.id !== transferIdToDelete);
+            writeStockTransfers(nextTransfers, undefined, transferIdToDelete);
+          }
+        } else {
+          const rollback = simulateStockAdjustment({
+            adjustment,
+            direction: -1,
+            products,
+            actorName,
+            notePrefix: 'Delete rollback',
+          });
+          setProducts(rollback.productsAfter);
+          appendStockLedgerEntries(rollback.ledgerEntries);
+          if (rollback.lotAdjustments.length > 0) {
+            applyStockLotAdjustments(rollback.lotAdjustments);
+          }
+        }
+
+        if (adjustment.linkedExpenseId) {
+          deleteExpense(adjustment.linkedExpenseId);
+        }
       }
 
-      const nextAdjustments = adjustments.filter((row) => row.id !== adjustment.id);
+      const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
       setAdjustments(nextAdjustments);
       writeStockAdjustments(nextAdjustments);
       deleteDedicated('/api/sync/stock-adjustments', adjustment.id);
@@ -377,7 +771,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       addActivityLog({
         action: 'Deleted',
         module: 'Stock Adjustments',
-        description: `${adjustment.referenceNo} deleted`,
+        description: `${adjustment.referenceNo} deleted (${status.toLowerCase()})`,
       });
     } catch (error) {
       addNotification({
@@ -423,7 +817,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         </div>
 
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-in slide-in-from-top-2">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 animate-in slide-in-from-top-2">
             <div className="group">
               <MultiSelect
                 label="Business Location"
@@ -435,9 +829,17 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             <div className="group">
               <MultiSelect
                 label="Adjustment Type"
-                options={['Normal', 'Abnormal']}
+                options={['Normal', 'Abnormal', 'Damage']}
                 selected={filters.adjustmentType}
                 onChange={(val) => setFilters({ ...filters, adjustmentType: val })}
+              />
+            </div>
+            <div className="group">
+              <MultiSelect
+                label="Status"
+                options={['Pending', 'Approved']}
+                selected={filters.status}
+                onChange={(val) => setFilters({ ...filters, status: val })}
               />
             </div>
             <div className="group">
@@ -498,6 +900,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
                     ['referenceNo', 'Reference No'],
                     ['location', 'Location'],
                     ['adjustmentType', 'Type'],
+                    ['status', 'Status'],
                     ['totalAmount', 'Total Amount'],
                     ['totalRecovered', 'Recovered'],
                     ['reason', 'Reason'],
@@ -540,6 +943,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
                 {visibleColumns.referenceNo && <th className="px-4 py-3 whitespace-nowrap">Reference No <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.location && <th className="px-4 py-3 whitespace-nowrap">Location</th>}
                 {visibleColumns.adjustmentType && <th className="px-4 py-3 whitespace-nowrap">Type</th>}
+                {visibleColumns.status && <th className="px-4 py-3 whitespace-nowrap">Status</th>}
                 {visibleColumns.totalAmount && <th className="px-4 py-3 whitespace-nowrap text-right">Total Amount</th>}
                 {visibleColumns.totalRecovered && <th className="px-4 py-3 whitespace-nowrap text-right">Recovered</th>}
                 {visibleColumns.reason && <th className="px-4 py-3 whitespace-nowrap">Reason</th>}
@@ -559,10 +963,21 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                         adjustment.adjustmentType === 'Normal'
                           ? 'bg-blue-100 text-blue-700'
-                          : 'bg-amber-100 text-amber-700'
+                          : adjustment.adjustmentType === 'Abnormal'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-rose-100 text-rose-700'
                       }`}>
                         {adjustment.adjustmentType}
                       </span>
+                      </td>
+                    )}
+                    {visibleColumns.status && (
+                      <td className="px-4 py-3">
+                        {normalizeStockAdjustmentStatus(adjustment.status) === 'Pending' ? (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">Pending</span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-700">Approved</span>
+                        )}
                       </td>
                     )}
                     {visibleColumns.totalAmount && <td className="px-4 py-3 text-right">{Number(adjustment.totalAmount || 0).toFixed(3)}</td>}
@@ -582,8 +997,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
                           <button onClick={() => { setViewAdjustmentId(adjustment.id); setActiveActionId(null); }} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
                             <Eye size={12} /> View
                           </button>
-                          {resolvedCanEdit && (
-                            <button onClick={() => startEdit(adjustment.id)} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
+                          {resolvedCanApprove && normalizeStockAdjustmentStatus(adjustment.status) === 'Pending' && (
+                            <button onClick={() => approveAdjustment(adjustment)} className="w-full text-left px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50 flex items-center gap-2">
+                              <CheckCircle2 size={12} /> Approve
+                            </button>
+                          )}
+                          {resolvedCanEdit && normalizeStockAdjustmentStatus(adjustment.status) === 'Pending' && (
+                            <button onClick={() => startEdit(adjustment)} className="w-full text-left px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-2">
                               <Edit size={12} /> Edit
                             </button>
                           )}
@@ -646,10 +1066,35 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatDateTimeDisplay(viewAdjustment.date)}</span></div>
                 <div><span className="text-slate-500">Type:</span> <span className="font-bold text-slate-800">{viewAdjustment.adjustmentType}</span></div>
+                <div><span className="text-slate-500">Status:</span> <span className="font-bold text-slate-800">{normalizeStockAdjustmentStatus(viewAdjustment.status)}</span></div>
                 <div><span className="text-slate-500">Location:</span> <span className="font-bold text-slate-800">{viewAdjustment.location}</span></div>
+                {viewAdjustment.adjustmentType === 'Damage' && (
+                  <div>
+                    <span className="text-slate-500">Damage Bucket:</span>{' '}
+                    <span className="font-bold text-slate-800">{normalizeStockAdjustmentDamageDisposition(viewAdjustment.damageDisposition)}</span>
+                  </div>
+                )}
+                {viewAdjustment.adjustmentType === 'Damage' && normalizeStockAdjustmentDamageDisposition(viewAdjustment.damageDisposition) === 'Sellable' && (
+                  <div>
+                    <span className="text-slate-500">Sellable Location:</span>{' '}
+                    <span className="font-bold text-slate-800">{viewAdjustment.damageSellableLocation || '--'}</span>
+                  </div>
+                )}
                 <div><span className="text-slate-500">Added By:</span> <span className="font-bold text-slate-800">{viewAdjustment.addedBy}</span></div>
+                {normalizeStockAdjustmentStatus(viewAdjustment.status) === 'Approved' && (
+                  <div><span className="text-slate-500">Approved By:</span> <span className="font-bold text-slate-800">{viewAdjustment.approvedBy || '--'}</span></div>
+                )}
                 <div><span className="text-slate-500">Total:</span> <span className="font-bold text-slate-800">{formatCurrency(Number(viewAdjustment.totalAmount || 0))}</span></div>
                 <div><span className="text-slate-500">Recovered:</span> <span className="font-bold text-slate-800">{formatCurrency(Number(viewAdjustment.totalRecovered || 0))}</span></div>
+                {normalizeStockAdjustmentStatus(viewAdjustment.status) === 'Approved' && (
+                  <div><span className="text-slate-500">Approved At:</span> <span className="font-bold text-slate-800">{viewAdjustment.approvedAt ? formatDateTimeDisplay(viewAdjustment.approvedAt) : '--'}</span></div>
+                )}
+                {viewAdjustment.linkedTransferId && (
+                  <div><span className="text-slate-500">Linked Transfer:</span> <span className="font-bold text-slate-800">{viewAdjustment.linkedTransferId}</span></div>
+                )}
+                {viewAdjustment.linkedExpenseId && (
+                  <div><span className="text-slate-500">Linked Expense:</span> <span className="font-bold text-slate-800">{viewAdjustment.linkedExpenseId}</span></div>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-700 mb-2">Items</h4>

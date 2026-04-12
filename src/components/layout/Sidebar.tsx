@@ -334,6 +334,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         const canViewStockAdjustments =
           hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
           hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
+          hasRolePermission('Stock Adjustment', 'Approve stock adjustment') ||
           canViewLegacyStockOperations;
         const canAddStockAdjustments =
           hasRolePermission('Stock Adjustment', 'Add stock adjustment') ||

@@ -11,6 +11,7 @@ import { printActiveReportTable } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import {
   bootstrapStockAdjustmentsFromDB,
+  normalizeStockAdjustmentStatus,
   readStockAdjustments,
   StockAdjustmentRecord,
 } from '@/utils/stockAdjustments';
@@ -31,6 +32,7 @@ type ColumnKey =
   | 'referenceNo'
   | 'location'
   | 'adjustmentType'
+  | 'status'
   | 'totalAmount'
   | 'totalRecovered'
   | 'reason'
@@ -78,6 +80,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
     referenceNo: true,
     location: true,
     adjustmentType: true,
+    status: true,
     totalAmount: true,
     totalRecovered: true,
     reason: true,
@@ -86,6 +89,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
   const [filters, setFilters] = useState({
     location: [] as string[],
     adjustmentType: [] as string[],
+    status: [] as string[],
     user: [] as string[],
   });
   const [viewId, setViewId] = useState<string | null>(null);
@@ -148,6 +152,9 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
             item.location,
             item.addedBy,
             item.adjustmentType,
+            item.status,
+            item.damageDisposition,
+            item.damageSellableLocation,
             itemNames,
             itemSkus,
           ].map(normalize);
@@ -155,6 +162,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
         }
         if (filters.location.length > 0 && !filters.location.includes(item.location)) return false;
         if (filters.adjustmentType.length > 0 && !filters.adjustmentType.includes(item.adjustmentType)) return false;
+        if (filters.status.length > 0 && !filters.status.includes(normalizeStockAdjustmentStatus(item.status))) return false;
         if (filters.user.length > 0 && !filters.user.includes(item.addedBy)) return false;
         if (startMs != null || endMs != null) {
           const rowMs = Date.parse(item.date);
@@ -216,9 +224,21 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
     () => filteredData.filter((row) => row.adjustmentType === 'Abnormal').reduce((acc, curr) => acc + Number(curr.totalAmount || 0), 0),
     [filteredData],
   );
-  const totalAdjustment = useMemo(() => totalNormal + totalAbnormal, [totalNormal, totalAbnormal]);
+  const totalDamage = useMemo(
+    () => filteredData.filter((row) => row.adjustmentType === 'Damage').reduce((acc, curr) => acc + Number(curr.totalAmount || 0), 0),
+    [filteredData],
+  );
+  const totalAdjustment = useMemo(() => totalNormal + totalAbnormal + totalDamage, [totalNormal, totalAbnormal, totalDamage]);
   const totalRecovered = useMemo(
     () => filteredData.reduce((acc, curr) => acc + Number(curr.totalRecovered || 0), 0),
+    [filteredData],
+  );
+  const pendingCount = useMemo(
+    () => filteredData.filter((row) => normalizeStockAdjustmentStatus(row.status) === 'Pending').length,
+    [filteredData],
+  );
+  const approvedCount = useMemo(
+    () => filteredData.filter((row) => normalizeStockAdjustmentStatus(row.status) === 'Approved').length,
     [filteredData],
   );
 
@@ -227,13 +247,14 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
   };
 
   const exportCsv = () => {
-    const headers = ['Date', 'Reference No', 'Location', 'Adjustment Type', 'Total Amount', 'Recovered', 'Reason', 'Added By'];
+    const headers = ['Date', 'Reference No', 'Location', 'Adjustment Type', 'Status', 'Total Amount', 'Recovered', 'Reason', 'Added By'];
     const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const lines = filteredData.map((item) => [
       escape(item.date),
       escape(item.referenceNo),
       escape(item.location),
       escape(item.adjustmentType),
+      escape(normalizeStockAdjustmentStatus(item.status)),
       escape(Number(item.totalAmount || 0).toFixed(3)),
       escape(Number(item.totalRecovered || 0).toFixed(3)),
       escape(item.reason || ''),
@@ -250,12 +271,13 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
   };
 
   const exportExcel = () => {
-    const headers = ['Date', 'Reference No', 'Location', 'Adjustment Type', 'Total Amount', 'Recovered', 'Reason', 'Added By'];
+    const headers = ['Date', 'Reference No', 'Location', 'Adjustment Type', 'Status', 'Total Amount', 'Recovered', 'Reason', 'Added By'];
     const lines = filteredData.map((item) => [
       item.date,
       item.referenceNo,
       item.location,
       item.adjustmentType,
+      normalizeStockAdjustmentStatus(item.status),
       Number(item.totalAmount || 0).toFixed(3),
       Number(item.totalRecovered || 0).toFixed(3),
       item.reason || '',
@@ -293,12 +315,24 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
             <span>Total Abnormal:</span>
             <span>{formatCurrency(totalAbnormal)}</span>
           </div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 border-b border-slate-200 pb-2">
+            <span>Total Damage:</span>
+            <span>{formatCurrency(totalDamage)}</span>
+          </div>
           <div className="flex justify-between text-xs font-bold text-slate-700 pb-2">
             <span>Total Stock Adjustment:</span>
             <span>{formatCurrency(totalAdjustment)}</span>
           </div>
         </div>
         <div className="space-y-2">
+          <div className="flex justify-between text-xs font-bold text-slate-700 border-b border-slate-200 pb-2">
+            <span>Pending Count:</span>
+            <span>{pendingCount}</span>
+          </div>
+          <div className="flex justify-between text-xs font-bold text-slate-700 border-b border-slate-200 pb-2">
+            <span>Approved Count:</span>
+            <span>{approvedCount}</span>
+          </div>
           <div className="flex justify-between text-xs font-bold text-slate-700 border-b border-slate-200 pb-2">
             <span>Total Amount Recovered:</span>
             <span>{formatCurrency(totalRecovered)}</span>
@@ -313,7 +347,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
           <span className="text-sm font-medium">Filters</span>
         </div>
         {showFilters && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="group">
               <MultiSelect
                 label="Business Location"
@@ -325,9 +359,17 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
             <div className="group">
               <MultiSelect
                 label="Adjustment Type"
-                options={['Normal', 'Abnormal']}
+                options={['Normal', 'Abnormal', 'Damage']}
                 selected={filters.adjustmentType}
                 onChange={(val) => setFilters({ ...filters, adjustmentType: val })}
+              />
+            </div>
+            <div className="group">
+              <MultiSelect
+                label="Status"
+                options={['Pending', 'Approved']}
+                selected={filters.status}
+                onChange={(val) => setFilters({ ...filters, status: val })}
               />
             </div>
             <div className="group">
@@ -390,6 +432,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
                     ['referenceNo', 'Reference No'],
                     ['location', 'Location'],
                     ['adjustmentType', 'Type'],
+                    ['status', 'Status'],
                     ['totalAmount', 'Total Amount'],
                     ['totalRecovered', 'Recovered'],
                     ['reason', 'Reason'],
@@ -430,6 +473,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
                 {visibleColumns.referenceNo && <th className="px-4 py-3 whitespace-nowrap">Reference No <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.location && <th className="px-4 py-3 whitespace-nowrap">Location <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.adjustmentType && <th className="px-4 py-3 whitespace-nowrap">Adjustment Type <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
+                {visibleColumns.status && <th className="px-4 py-3 whitespace-nowrap">Status <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.totalAmount && <th className="px-4 py-3 whitespace-nowrap text-right">Total Amount <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.totalRecovered && <th className="px-4 py-3 whitespace-nowrap text-right">Total Recovered <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
                 {visibleColumns.reason && <th className="px-4 py-3 whitespace-nowrap">Reason <ArrowUpDown size={10} className="inline ml-1 text-slate-400" /></th>}
@@ -448,6 +492,7 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
                   {visibleColumns.referenceNo && <td className="px-4 py-3 text-slate-600 font-medium">{item.referenceNo}</td>}
                   {visibleColumns.location && <td className="px-4 py-3 text-slate-600">{item.location}</td>}
                   {visibleColumns.adjustmentType && <td className="px-4 py-3 text-slate-600">{item.adjustmentType}</td>}
+                  {visibleColumns.status && <td className="px-4 py-3 text-slate-600">{normalizeStockAdjustmentStatus(item.status)}</td>}
                   {visibleColumns.totalAmount && <td className="px-4 py-3 text-right text-slate-800 font-bold">{Number(item.totalAmount || 0).toFixed(3)}</td>}
                   {visibleColumns.totalRecovered && <td className="px-4 py-3 text-right text-slate-600">{Number(item.totalRecovered || 0).toFixed(3)}</td>}
                   {visibleColumns.reason && <td className="px-4 py-3 text-slate-600">{item.reason || '--'}</td>}
@@ -498,10 +543,17 @@ const ReportStockAdjustment: React.FC<ReportStockAdjustmentProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div><span className="text-slate-500">Date:</span> <span className="font-bold text-slate-800">{formatDateTimeDisplay(viewRecord.date)}</span></div>
                 <div><span className="text-slate-500">Type:</span> <span className="font-bold text-slate-800">{viewRecord.adjustmentType}</span></div>
+                <div><span className="text-slate-500">Status:</span> <span className="font-bold text-slate-800">{normalizeStockAdjustmentStatus(viewRecord.status)}</span></div>
                 <div><span className="text-slate-500">Location:</span> <span className="font-bold text-slate-800">{viewRecord.location}</span></div>
                 <div><span className="text-slate-500">Added By:</span> <span className="font-bold text-slate-800">{viewRecord.addedBy}</span></div>
+                {normalizeStockAdjustmentStatus(viewRecord.status) === 'Approved' && (
+                  <div><span className="text-slate-500">Approved By:</span> <span className="font-bold text-slate-800">{viewRecord.approvedBy || '--'}</span></div>
+                )}
                 <div><span className="text-slate-500">Total:</span> <span className="font-bold text-slate-800">{formatCurrency(Number(viewRecord.totalAmount || 0))}</span></div>
                 <div><span className="text-slate-500">Recovered:</span> <span className="font-bold text-slate-800">{formatCurrency(Number(viewRecord.totalRecovered || 0))}</span></div>
+                {normalizeStockAdjustmentStatus(viewRecord.status) === 'Approved' && (
+                  <div><span className="text-slate-500">Approved At:</span> <span className="font-bold text-slate-800">{viewRecord.approvedAt ? formatDateTimeDisplay(viewRecord.approvedAt) : '--'}</span></div>
+                )}
               </div>
               <div>
                 <h4 className="text-sm font-bold text-slate-700 mb-2">Items</h4>

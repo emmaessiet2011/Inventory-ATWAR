@@ -3,7 +3,9 @@ import { syncDedicated, fetchDedicated } from '@/utils/apiClient';
 
 import type { StockLotAdjustment } from './stockLots';
 
-export type StockAdjustmentType = 'Normal' | 'Abnormal';
+export type StockAdjustmentType = 'Normal' | 'Abnormal' | 'Damage';
+export type StockAdjustmentStatus = 'Pending' | 'Approved';
+export type StockAdjustmentDamageDisposition = 'Sellable' | 'Unsellable';
 
 export interface StockAdjustmentItem {
   productId: string;
@@ -21,12 +23,20 @@ export interface StockAdjustmentRecord {
   referenceNo: string;
   location: string;
   adjustmentType: StockAdjustmentType;
+  status: StockAdjustmentStatus;
+  damageDisposition?: StockAdjustmentDamageDisposition;
+  damageSellableLocation?: string;
   reason: string;
   totalAmount: number;
   totalRecovered: number;
   items: StockAdjustmentItem[];
   addedById?: string;
   addedBy: string;
+  approvedById?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  linkedTransferId?: string;
+  linkedExpenseId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +70,25 @@ const toIsoDate = (value: string): string => {
 };
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
 
+export const normalizeStockAdjustmentType = (value: unknown): StockAdjustmentType => {
+  const normalized = normalize(value);
+  if (normalized === 'abnormal') return 'Abnormal';
+  if (normalized === 'damage') return 'Damage';
+  return 'Normal';
+};
+
+export const normalizeStockAdjustmentStatus = (value: unknown): StockAdjustmentStatus => {
+  const normalized = normalize(value);
+  return normalized === 'pending' ? 'Pending' : 'Approved';
+};
+
+export const normalizeStockAdjustmentDamageDisposition = (
+  value: unknown,
+): StockAdjustmentDamageDisposition => {
+  const normalized = normalize(value);
+  return normalized === 'sellable' ? 'Sellable' : 'Unsellable';
+};
+
 let stockAdjustmentsCache: StockAdjustmentRecord[] = [];
 
 const notify = () => {
@@ -89,13 +118,23 @@ const parseRows = (raw: unknown): StockAdjustmentRecord[] => {
         date: String((row as any)?.date || ''),
         referenceNo: String((row as any)?.referenceNo || ''),
         location: String((row as any)?.location || ''),
-        adjustmentType: (String((row as any)?.adjustmentType || 'Normal') as StockAdjustmentType),
+        adjustmentType: normalizeStockAdjustmentType((row as any)?.adjustmentType),
+        status: normalizeStockAdjustmentStatus((row as any)?.status),
+        damageDisposition: normalizeStockAdjustmentType((row as any)?.adjustmentType) === 'Damage'
+          ? normalizeStockAdjustmentDamageDisposition((row as any)?.damageDisposition)
+          : undefined,
+        damageSellableLocation: String((row as any)?.damageSellableLocation || ''),
         reason: String((row as any)?.reason || ''),
         totalAmount: round3(Number((row as any)?.totalAmount || 0)),
         totalRecovered: round3(Number((row as any)?.totalRecovered || 0)),
         items,
         addedById: String((row as any)?.addedById || ''),
         addedBy: String((row as any)?.addedBy || 'System'),
+        approvedById: String((row as any)?.approvedById || ''),
+        approvedBy: String((row as any)?.approvedBy || ''),
+        approvedAt: String((row as any)?.approvedAt || ''),
+        linkedTransferId: String((row as any)?.linkedTransferId || ''),
+        linkedExpenseId: String((row as any)?.linkedExpenseId || ''),
         createdAt: String((row as any)?.createdAt || ''),
         updatedAt: String((row as any)?.updatedAt || ''),
       } as StockAdjustmentRecord;
@@ -201,7 +240,8 @@ export const simulateStockAdjustment = ({
     product.stock = Math.max(0, next);
 
     const reasonText = adjustment.reason ? ` | ${adjustment.reason}` : '';
-    const note = `${notePrefix ? `${notePrefix}: ` : ''}${adjustment.adjustmentType}${reasonText}`;
+    const statusText = adjustment.status ? ` | ${adjustment.status}` : '';
+    const note = `${notePrefix ? `${notePrefix}: ` : ''}${adjustment.adjustmentType}${statusText}${reasonText}`;
     ledgerEntries.push({
       id: `STK-ADJ-${now}-${index}-${ledgerSeq += 1}`,
       productId: product.id,

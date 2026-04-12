@@ -1,6 +1,6 @@
 {
   "summary": {
-    "routes": 94,
+    "routes": 95,
     "dynamicPrefixes": [
       "edit-sale/",
       "view-user/",

@@ -2,16 +2,17 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, SlidersHorizontal } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { appendStockLedgerEntries } from '@/utils/stockTransfers';
-import { applyStockLotAdjustments } from '@/utils/stockLots';
 import {
   bootstrapStockAdjustmentsFromDB,
+  StockAdjustmentDamageDisposition,
   StockAdjustmentItem,
   StockAdjustmentRecord,
+  StockAdjustmentStatus,
+  normalizeStockAdjustmentDamageDisposition,
   StockAdjustmentType,
   makeNextStockAdjustmentRef,
+  normalizeStockAdjustmentStatus,
   readStockAdjustments,
-  simulateStockAdjustment,
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
 
@@ -24,7 +25,9 @@ interface AddStockAdjustmentProps {
   restrictToAddedByName?: string;
 }
 
-const TYPE_OPTIONS: StockAdjustmentType[] = ['Normal', 'Abnormal'];
+const TYPE_OPTIONS: StockAdjustmentType[] = ['Normal', 'Abnormal', 'Damage'];
+const DAMAGE_DISPOSITION_OPTIONS: StockAdjustmentDamageDisposition[] = ['Unsellable', 'Sellable'];
+const DEFAULT_DAMAGE_SELLABLE_LOCATION = 'DMG-SALEABLE';
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
@@ -73,18 +76,21 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   restrictToAddedById = '',
   restrictToAddedByName = '',
 }) => {
-  const { locations, products, setProducts, generateId, settings, currentUser, formatCurrency, addActivityLog } = useGlobalContext();
+  const { locations, products, generateId, settings, currentUser, formatCurrency, addActivityLog } = useGlobalContext();
   const { addNotification } = useNotifications();
 
   const [date, setDate] = useState(getNowLocalDateTime());
   const [referenceNo, setReferenceNo] = useState('');
   const [location, setLocation] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<StockAdjustmentType>('Normal');
+  const [damageDisposition, setDamageDisposition] = useState<StockAdjustmentDamageDisposition>('Unsellable');
+  const [damageSellableLocation, setDamageSellableLocation] = useState('');
   const [reason, setReason] = useState('');
   const [totalRecovered, setTotalRecovered] = useState('0');
   const [productSearch, setProductSearch] = useState('');
   const [rows, setRows] = useState<StockAdjustmentItem[]>([]);
   const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
+  const [editingStatus, setEditingStatus] = useState<StockAdjustmentStatus>('Pending');
   const [isEditMode, setIsEditMode] = useState(false);
   const permissionRedirectedRef = useRef(false);
   const ownerIdFilter = normalize(restrictToAddedById);
@@ -105,6 +111,19 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     }
     return activeLocations;
   }, [activeLocations, locations, location]);
+  const sellableDamageLocations = useMemo(
+    () => activeLocations.filter((row) => normalize(row.name) !== normalize(location)),
+    [activeLocations, location],
+  );
+  const preferredDamageSellableLocation = useMemo(() => {
+    const exact = sellableDamageLocations.find(
+      (row) => normalize(row.name) === normalize(DEFAULT_DAMAGE_SELLABLE_LOCATION),
+    );
+    if (exact) return exact.name;
+    const keyword = sellableDamageLocations.find((row) => normalize(row.name).includes('damage'));
+    if (keyword) return keyword.name;
+    return sellableDamageLocations[0]?.name || '';
+  }, [sellableDamageLocations]);
 
   useEffect(() => {
     let isMounted = true;
@@ -115,6 +134,17 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       const editId = String(editAdjustmentId || '').trim();
       setIsEditMode(!!editId);
       if (!editId) {
+        setEditingAdjustmentId(null);
+        setEditingStatus('Pending');
+        setDate(getNowLocalDateTime());
+        setReferenceNo('');
+        setLocation('');
+        setAdjustmentType('Normal');
+        setDamageDisposition('Unsellable');
+        setDamageSellableLocation('');
+        setReason('');
+        setTotalRecovered('0');
+        setRows([]);
         if (!canAdd) {
           addNotification({
             title: 'Access Denied',
@@ -155,11 +185,24 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
         onNavigate?.('list-stock-adjustments');
         return;
       }
+      const status = normalizeStockAdjustmentStatus(existing.status);
+      if (status === 'Approved') {
+        addNotification({
+          title: 'Action Blocked',
+          message: 'Approved stock adjustments cannot be edited. Create a new adjustment or delete this one with permission.',
+          type: 'error',
+        });
+        onNavigate?.('list-stock-adjustments');
+        return;
+      }
       setEditingAdjustmentId(existing.id);
+      setEditingStatus(status);
       setDate(toDateTimeInput(existing.date));
       setReferenceNo(existing.referenceNo || '');
       setLocation(existing.location || '');
       setAdjustmentType(existing.adjustmentType);
+      setDamageDisposition(normalizeStockAdjustmentDamageDisposition(existing.damageDisposition));
+      setDamageSellableLocation(String(existing.damageSellableLocation || ''));
       setReason(existing.reason || '');
       setTotalRecovered(String(existing.totalRecovered ?? 0));
       setRows(
@@ -203,6 +246,24 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       onNavigate?.('list-stock-adjustments');
     }
   }, [isEditMode, canAdd, canEdit, addNotification, onNavigate]);
+
+  useEffect(() => {
+    if (adjustmentType !== 'Damage') return;
+    if (damageDisposition !== 'Sellable') return;
+    const selectedIsValid = sellableDamageLocations.some(
+      (row) => normalize(row.name) === normalize(damageSellableLocation),
+    );
+    if (selectedIsValid) return;
+    if (preferredDamageSellableLocation) {
+      setDamageSellableLocation(preferredDamageSellableLocation);
+    }
+  }, [
+    adjustmentType,
+    damageDisposition,
+    damageSellableLocation,
+    sellableDamageLocations,
+    preferredDamageSellableLocation,
+  ]);
 
   const locationProducts = useMemo(
     () => products.filter((p) => !location || normalize(p.businessLocation) === normalize(location)),
@@ -269,6 +330,19 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
         ? { ...row, unitCost: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0 }
         : row
     )));
+  };
+
+  const handleAdjustmentTypeChange = (nextType: StockAdjustmentType) => {
+    setAdjustmentType(nextType);
+    if (nextType !== 'Damage') {
+      setDamageDisposition('Unsellable');
+      setDamageSellableLocation('');
+      return;
+    }
+    if (damageDisposition !== 'Sellable') return;
+    if (preferredDamageSellableLocation) {
+      setDamageSellableLocation(preferredDamageSellableLocation);
+    }
   };
 
   const handleLocationChange = (nextLocation: string) => {
@@ -429,6 +503,54 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       });
       return;
     }
+    if (adjustmentType === 'Damage' && !reason.trim()) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Reason is required for damage adjustments.',
+        type: 'error',
+      });
+      return;
+    }
+    if (adjustmentType === 'Damage') {
+      const invalidDamageQty = resolvedRows.some((row) => Number(row.quantity || 0) >= 0);
+      if (invalidDamageQty) {
+        addNotification({
+          title: 'Validation Error',
+          message: 'Damage quantities must be negative (stock-out values).',
+          type: 'error',
+        });
+        return;
+      }
+      if (damageDisposition === 'Sellable') {
+        if (!damageSellableLocation) {
+          addNotification({
+            title: 'Validation Error',
+            message: 'Select the sellable damage location.',
+            type: 'error',
+          });
+          return;
+        }
+        if (normalize(damageSellableLocation) === normalize(location)) {
+          addNotification({
+            title: 'Validation Error',
+            message: 'Sellable damage location must be different from the source location.',
+            type: 'error',
+          });
+          return;
+        }
+        const destination = activeLocations.find(
+          (row) => normalize(row.name) === normalize(damageSellableLocation),
+        );
+        if (!destination) {
+          addNotification({
+            title: 'Validation Error',
+            message: 'Selected sellable damage location is inactive or does not exist.',
+            type: 'error',
+          });
+          return;
+        }
+      }
+    }
 
     await bootstrapStockAdjustmentsFromDB().catch(() => {});
     const allAdjustments = readStockAdjustments();
@@ -451,6 +573,15 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       addNotification({
         title: 'Access Denied',
         message: 'You can edit only your own stock adjustments.',
+        type: 'error',
+      });
+      onNavigate?.('list-stock-adjustments');
+      return;
+    }
+    if (editingRecord && normalizeStockAdjustmentStatus(editingRecord.status) !== 'Pending') {
+      addNotification({
+        title: 'Action Blocked',
+        message: 'Approved stock adjustments cannot be edited.',
         type: 'error',
       });
       onNavigate?.('list-stock-adjustments');
@@ -484,65 +615,45 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       referenceNo: resolvedRef,
       location,
       adjustmentType,
+      status: 'Pending',
+      damageDisposition: adjustmentType === 'Damage' ? damageDisposition : undefined,
+      damageSellableLocation: adjustmentType === 'Damage' && damageDisposition === 'Sellable'
+        ? damageSellableLocation
+        : '',
       reason: reason.trim(),
       totalAmount: totals.totalAmount,
       totalRecovered: recovered,
       items: resolvedRows,
       addedById: editingRecord ? (editingRecord.addedById || '') : (currentUser?.id || ''),
       addedBy: editingRecord?.addedBy || currentUser?.name || 'System',
+      approvedById: '',
+      approvedBy: '',
+      approvedAt: '',
+      linkedTransferId: '',
+      linkedExpenseId: '',
       createdAt: editingRecord?.createdAt || nowIso,
       updatedAt: nowIso,
     };
 
     try {
-      let workingProducts = products.map((product) => ({ ...product }));
-      const ledgerEntries = [];
-      const lotAdjustments = [];
-      const actorName = currentUser?.name || 'System';
-
-      if (editingRecord) {
-        const rollback = simulateStockAdjustment({
-          adjustment: editingRecord,
-          direction: -1,
-          products: workingProducts,
-          actorName,
-          notePrefix: 'Edit rollback',
-        });
-        workingProducts = rollback.productsAfter;
-        ledgerEntries.push(...rollback.ledgerEntries);
-        lotAdjustments.push(...rollback.lotAdjustments);
-      }
-
-      const applied = simulateStockAdjustment({
-        adjustment: nextRecord,
-        direction: 1,
-        products: workingProducts,
-        actorName,
-      });
-      workingProducts = applied.productsAfter;
-      ledgerEntries.push(...applied.ledgerEntries);
-      lotAdjustments.push(...applied.lotAdjustments);
-
-      setProducts(workingProducts);
-      appendStockLedgerEntries(ledgerEntries);
-      if (lotAdjustments.length > 0) {
-        applyStockLotAdjustments(lotAdjustments);
-      }
-
       const mergedAdjustments = editingRecord
         ? allAdjustments.map((row) => (row.id === editingRecord.id ? nextRecord : row))
         : [nextRecord, ...allAdjustments];
       writeStockAdjustments(mergedAdjustments.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)), nextRecord.id);
 
       addNotification({
-        title: editingRecord ? 'Adjustment Updated' : 'Adjustment Saved',
-        message: `${nextRecord.referenceNo} has been ${editingRecord ? 'updated' : 'created'} successfully.`,
+        title: editingRecord ? 'Pending Adjustment Updated' : 'Pending Adjustment Saved',
+        message: `${nextRecord.referenceNo} has been ${editingRecord ? 'updated' : 'created'} as pending. ${
+          nextRecord.adjustmentType === 'Damage' && nextRecord.damageDisposition === 'Sellable'
+            ? 'Approval will transfer stock to sellable-damage location.'
+            : 'Stock updates will apply after approval.'
+        }`,
         type: 'success',
       });
       addActivityLog({
         action: editingRecord ? 'Updated' : 'Created',
         module: 'Stock Adjustments',
-        description: `${nextRecord.referenceNo} ${editingRecord ? 'updated' : 'created'}`,
+        description: `${nextRecord.referenceNo} ${editingRecord ? 'updated' : 'created'} as pending`,
       });
       onNavigate?.('list-stock-adjustments');
     } catch (error) {
@@ -571,7 +682,11 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">
             {editingAdjustmentId ? 'Edit Stock Adjustment' : 'Add Stock Adjustment'}
           </h2>
-          <p className="text-slate-500 mt-0.5 text-sm">Adjust stock quantities up or down for a location</p>
+          <p className="text-slate-500 mt-0.5 text-sm">
+            {editingAdjustmentId
+              ? `Edit pending adjustment (${editingStatus}) before approval`
+              : 'Adjust stock quantities up or down for a location'}
+          </p>
         </div>
       </div>
 
@@ -615,7 +730,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
               <select
                 className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
                 value={adjustmentType}
-                onChange={(e) => setAdjustmentType(e.target.value as StockAdjustmentType)}
+                onChange={(e) => handleAdjustmentTypeChange(e.target.value as StockAdjustmentType)}
               >
                 {TYPE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
               </select>
@@ -652,6 +767,47 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
             />
           </div>
         </div>
+        {adjustmentType === 'Damage' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Damage Bucket *</label>
+              <div className="relative">
+                <select
+                  className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
+                  value={damageDisposition}
+                  onChange={(e) => setDamageDisposition(e.target.value as StockAdjustmentDamageDisposition)}
+                >
+                  {DAMAGE_DISPOSITION_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1">
+                Sellable damage transfers to a dedicated location. Unsellable damage is written off as loss.
+              </p>
+            </div>
+            {damageDisposition === 'Sellable' && (
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Sellable Damage Location *</label>
+                <div className="relative">
+                  <select
+                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700 appearance-none cursor-pointer"
+                    value={damageSellableLocation}
+                    onChange={(e) => setDamageSellableLocation(e.target.value)}
+                  >
+                    <option value="">Please Select</option>
+                    {sellableDamageLocations.map((loc) => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Recommended location name: {DEFAULT_DAMAGE_SELLABLE_LOCATION}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Products Card */}
@@ -755,7 +911,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
         </div>
 
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 mb-6">
-          Use negative quantity to reduce stock and positive quantity to increase stock.
+          Use negative quantity to reduce stock and positive quantity to increase stock. Changes are saved as pending and apply to stock only after approval.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -790,7 +946,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
             onClick={handleSave}
             className="bg-blue-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-blue-700 transition shadow-md flex items-center gap-2 active:scale-95"
           >
-            <Save size={14} /> Save Adjustment
+            <Save size={14} /> {editingAdjustmentId ? 'Update Pending Adjustment' : 'Save as Pending'}
           </button>
         </div>
       </div>

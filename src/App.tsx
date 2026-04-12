@@ -346,6 +346,7 @@ const AppContent: React.FC = () => {
   const canViewStockAdjustments =
     hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
     hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
+    hasRolePermission('Stock Adjustment', 'Approve stock adjustment') ||
     canViewLegacyStockOperations;
   const canViewAllStockAdjustments =
     hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
@@ -359,6 +360,9 @@ const AppContent: React.FC = () => {
   const canEditStockAdjustments =
     hasRolePermission('Stock Adjustment', 'Edit stock adjustment') ||
     canManageLegacyStockOperations;
+  const canApproveStockAdjustments =
+    hasRolePermission('Stock Adjustment', 'Approve stock adjustment') ||
+    hasRolePermission('Purchase & Stock Adjustment', 'Update Status');
   const canDeleteStockAdjustments =
     hasRolePermission('Stock Adjustment', 'Delete stock adjustment') ||
     hasRolePermission('Purchase & Stock Adjustment', 'Delete purchase & Stock Adjustment');
@@ -744,6 +748,7 @@ const AppContent: React.FC = () => {
             onNavigate={setCurrentPage}
             canAdd={canAddStockAdjustments}
             canEdit={canEditStockAdjustments}
+            canApprove={canApproveStockAdjustments}
             canDelete={canDeleteStockAdjustments}
             restrictToAddedById={stockAdjustmentOwnerScopeId}
             restrictToAddedByName={stockAdjustmentOwnerScopeName}

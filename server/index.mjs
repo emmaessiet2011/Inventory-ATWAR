@@ -1167,7 +1167,7 @@ app.put('/api/sync/stock-adjustments/:id', requireAuth, async (req, res) => {
       referenceNo: String(raw.referenceNo || id),
       date: normDate(raw.date),
       locationId,
-      adjustmentType: String(raw.adjustmentType || 'NORMAL').toUpperCase() === 'ABNORMAL' ? 'ABNORMAL' : 'NORMAL',
+      adjustmentType: ['ABNORMAL', 'DAMAGE'].includes(String(raw.adjustmentType || 'NORMAL').toUpperCase()) ? 'ABNORMAL' : 'NORMAL',
       reason: raw.reason ? String(raw.reason) : null,
       totalAmount: toFiniteNumber(raw.totalAmount, 0),
       totalRecovered: toFiniteNumber(raw.totalRecovered, 0),
