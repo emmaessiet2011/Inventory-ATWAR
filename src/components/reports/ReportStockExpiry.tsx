@@ -8,7 +8,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
-import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances, type StockLotBalance } from '@/utils/stockLots';
+import { bootstrapStockLotsFromDB, readStockLotBalances, type StockLotBalance } from '@/utils/stockLots';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 
 type StockStatus = 'Expired' | 'Expiring' | 'Good';
@@ -207,7 +207,6 @@ const ReportStockExpiry: React.FC = () => {
   });
   const columnMenuRef = useRef<HTMLDivElement | null>(null);
   const lotTrackingEnabled = settings.enableLotNumber || settings.enableLotNumbers;
-  const stockLotsStorageKey = getStockLotsStorageKey();
 
   useEffect(() => {
     if (!lotTrackingEnabled) {
@@ -227,24 +226,22 @@ const ReportStockExpiry: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const refreshLots = () => setLotVersion((prev) => prev + 1);
     let isMounted = true;
-    const bootstrap = async () => {
+    const refreshFromDB = async () => {
       await bootstrapStockLotsFromDB().catch(() => {});
-      if (isMounted) refreshLots();
+      if (isMounted) setLotVersion((prev) => prev + 1);
     };
-    bootstrap();
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === stockLotsStorageKey) refreshLots();
-    };
-    window.addEventListener('focus', refreshLots);
-    window.addEventListener('storage', onStorage);
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    const onLotsUpdated = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-lots-updated', onLotsUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', refreshLots);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-lots-updated', onLotsUpdated);
     };
-  }, [stockLotsStorageKey]);
+  }, []);
 
   const alertDays = useMemo(() => {
     const parsed = Number(settings.stockExpiryAlertDays);

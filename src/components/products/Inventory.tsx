@@ -13,8 +13,6 @@ import { useGlobalContext, Product } from '@/context/GlobalContext';
 import {
   appendStockLedgerEntries,
   bootstrapStockTransfersFromDB,
-  getStockLedgerStorageKey,
-  getStockTransferStorageKey,
   readStockLedger,
 } from '@/utils/stockTransfers';
 import { useNotifications } from '@/context/NotificationContext';
@@ -136,29 +134,26 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const [stockLedgerVersion, setStockLedgerVersion] = useState(0);
 
   useEffect(() => {
-    const transferKey = getStockTransferStorageKey();
-    const ledgerKey = getStockLedgerStorageKey();
     const refreshLedger = () => setStockLedgerVersion((prev) => prev + 1);
     let isMounted = true;
 
-    const bootstrap = async () => {
+    const refreshFromDB = async () => {
       await bootstrapStockTransfersFromDB().catch(() => {});
       if (isMounted) refreshLedger();
     };
-    bootstrap();
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === transferKey || event.key === ledgerKey) {
-        refreshLedger();
-      }
-    };
-
-    window.addEventListener('focus', refreshLedger);
-    window.addEventListener('storage', onStorage);
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    const onTransfersUpdated = () => { void refreshFromDB(); };
+    const onLedgerUpdated = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
+    window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', refreshLedger);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
+      window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
     };
   }, []);
 

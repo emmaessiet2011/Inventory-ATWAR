@@ -8,79 +8,196 @@ interface LoginProps {
   onLogin: () => void;
 }
 
+const LOGIN_TIMEOUT_MS = 6000;
+const LOGIN_RETRY_TIMEOUT_MS = 12000;
+const BACKEND_WARMUP_BUDGET_MS = 18000;
+const BACKEND_WARMUP_INTERVAL_MS = 1500;
+
+const resolveApiBase = () =>
+  String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+
+const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms));
+
+const fetchWithTimeout = async (
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
+type LoginAttemptResult = {
+  ok: boolean;
+  shouldRetry: boolean;
+  payload: any;
+  token: string;
+  user: any;
+};
+
+const attemptApiLogin = async (
+  apiBase: string,
+  identifier: string,
+  password: string,
+  rememberMe: boolean,
+  timeoutMs: number,
+): Promise<LoginAttemptResult> => {
+  try {
+    const response = await fetchWithTimeout(
+      `${apiBase}/api/auth/login`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email: identifier, password, rememberMe }),
+      },
+      timeoutMs,
+    );
+
+    let payload: any = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    const token = typeof payload?.token === 'string' ? payload.token.trim() : '';
+    const user = payload?.user || null;
+    const ok = Boolean(response.ok && payload?.ok && token && user);
+
+    return {
+      ok,
+      shouldRetry: response.status >= 500,
+      payload,
+      token,
+      user,
+    };
+  } catch {
+    return {
+      ok: false,
+      shouldRetry: true,
+      payload: null,
+      token: '',
+      user: null,
+    };
+  }
+};
+
+const warmUpBackend = async (apiBase: string): Promise<void> => {
+  const deadline = Date.now() + BACKEND_WARMUP_BUDGET_MS;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetchWithTimeout(
+        `${apiBase}/api/health`,
+        { method: 'GET', headers: { Accept: 'application/json' } },
+        4000,
+      );
+      if (response.ok) return;
+    } catch {
+      // keep trying until deadline
+    }
+    await delay(BACKEND_WARMUP_INTERVAL_MS);
+  }
+};
+
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const REMEMBER_IDENTIFIER_KEY = 'atwar_login_identifier';
   const { users, setCurrentUser, updateUser, settings } = useGlobalContext();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem(REMEMBER_IDENTIFIER_KEY) || '';
+    } catch {
+      return '';
+    }
+  });
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem(REMEMBER_IDENTIFIER_KEY));
+    } catch {
+      return false;
+    }
+  });
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError('');
+    setIsSubmitting(true);
+    const identifier = email.trim();
+    const liveSyncEnabled = isLiveSyncEnabled();
+    const apiBase = resolveApiBase();
 
-    // --- Try the backend API first (production path) ---
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const response = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'}/api/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-          signal: controller.signal,
+      const persistRememberIdentifier = () => {
+        try {
+          if (rememberMe && identifier) localStorage.setItem(REMEMBER_IDENTIFIER_KEY, identifier);
+          if (!rememberMe) localStorage.removeItem(REMEMBER_IDENTIFIER_KEY);
+        } catch {
+          // ignore browser storage failures
         }
-      );
-      clearTimeout(timeoutId);
+      };
 
-      const payload = await response.json();
-      const token = typeof payload?.token === 'string' ? payload.token.trim() : '';
-      if (!response.ok || !payload.ok || !token || !payload?.user) {
-        setError(payload.error || 'Invalid email or password. Please try again.');
+      // --- Production path: API login with warm-up + retry for cold starts ---
+      if (liveSyncEnabled) {
+        let result = await attemptApiLogin(apiBase, identifier, password, rememberMe, LOGIN_TIMEOUT_MS);
+        if (!result.ok && result.shouldRetry) {
+          await warmUpBackend(apiBase);
+          result = await attemptApiLogin(apiBase, identifier, password, rememberMe, LOGIN_RETRY_TIMEOUT_MS);
+        }
+        if (result.ok) {
+          persistRememberIdentifier();
+          localStorage.setItem('atwar_auth_token', result.token);
+          updateUser(result.user);
+          setCurrentUser(result.user);
+          onLogin();
+          return;
+        }
+        setError(
+          result.payload?.error
+            || (result.shouldRetry
+              ? 'Server is waking up. Please wait a few seconds and sign in again.'
+              : 'Invalid email or password. Please try again.'),
+        );
         return;
       }
 
-      localStorage.setItem('atwar_auth_token', token);
-      updateUser(payload.user);
-      setCurrentUser(payload.user);
+      // --- Offline/dev fallback only when live DB sync is disabled ---
+      const normalizedIdentifier = identifier.toLowerCase();
+      const match = users.find(u => {
+        const emailMatch = String(u.email || '').trim().toLowerCase() === normalizedIdentifier;
+        const usernameMatch = String(u.username || '').trim().toLowerCase() === normalizedIdentifier;
+        return emailMatch || usernameMatch;
+      });
+      if (!match) {
+        setError('Invalid email or password. Please try again.');
+        return;
+      }
+      const normalizedStatus = String(match.status || '').trim().toLowerCase();
+      const isActive = normalizedStatus !== 'inactive';
+      if (!isActive || match.allowLogin === false) {
+        setError('Account is inactive or login is disabled.');
+        return;
+      }
+      const valid = verifyUserPassword(match, password);
+      if (!valid) {
+        setError('Invalid email or password. Please try again.');
+        return;
+      }
+      persistRememberIdentifier();
+      const updated = { ...match, lastLogin: new Date().toISOString() };
+      updateUser(updated);
+      setCurrentUser(updated);
       onLogin();
-      return;
-    } catch {
-      // In production DB-sync mode, do not silently fall back to local auth.
-      // A successful local fallback without token causes protected API 401s.
-      if (isLiveSyncEnabled()) {
-        setError('Unable to reach the server. Please check connection/backend and try again.');
-        return;
-      }
-      // Offline/dev fallback only when live DB sync is disabled.
+    } finally {
+      setIsSubmitting(false);
     }
-
-    // --- Offline fallback: verify against localStorage users ---
-    const normalizedIdentifier = email.trim().toLowerCase();
-    const match = users.find(u => {
-      const emailMatch = String(u.email || '').trim().toLowerCase() === normalizedIdentifier;
-      const usernameMatch = String(u.username || '').trim().toLowerCase() === normalizedIdentifier;
-      return emailMatch || usernameMatch;
-    });
-    if (!match) {
-      setError('Invalid email or password. Please try again.');
-      return;
-    }
-    const normalizedStatus = String(match.status || '').trim().toLowerCase();
-    const isActive = normalizedStatus !== 'inactive';
-    if (!isActive || match.allowLogin === false) {
-      setError('Account is inactive or login is disabled.');
-      return;
-    }
-    const valid = verifyUserPassword(match, password);
-    if (!valid) {
-      setError('Invalid email or password. Please try again.');
-      return;
-    }
-    const updated = { ...match, lastLogin: new Date().toISOString() };
-    updateUser(updated);
-    setCurrentUser(updated);
-    onLogin();
   };
 
   return (
@@ -174,6 +291,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
                   className="h-4 w-4 text-red-600 focus:ring-red-500 border-slate-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-600">
@@ -190,9 +309,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <button
               type="submit"
+              disabled={isSubmitting}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-bold rounded-lg text-white bg-slate-900 hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition shadow-lg"
             >
-              Sign In
+              {isSubmitting ? 'Signing In...' : 'Sign In'}
               <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
             </button>
           </form>

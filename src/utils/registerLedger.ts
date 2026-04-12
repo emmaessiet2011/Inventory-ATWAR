@@ -25,104 +25,160 @@ export interface RegisterTransaction {
   addedBy?: string;
 }
 
-export const REGISTER_ACTIVE_KEY = 'app_open_register';
-export const REGISTER_SESSIONS_KEY = 'app_register_sessions';
-export const REGISTER_TRANSACTIONS_KEY = 'app_register_transactions';
+const REGISTER_UPDATED_EVENT = 'app:register-updated';
 
-const safeParse = <T,>(raw: string | null, fallback: T): T => {
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
+let activeRegisterSessionCache: RegisterSessionRecord | null = null;
+let registerSessionsCache: RegisterSessionRecord[] = [];
+let registerTransactionsCache: RegisterTransaction[] = [];
+
+const notify = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(REGISTER_UPDATED_EVENT));
+};
+
+const normalizeSession = (row: RegisterSessionRecord): RegisterSessionRecord => ({
+  ...row,
+  status: row.status === 'Closed' ? 'Closed' : 'Open',
+  cashInHand: Number(row.cashInHand || 0),
+  closingBalance: row.closingBalance == null ? row.closingBalance : Number(row.closingBalance || 0),
+});
+
+const parseSessions = (rows: unknown): RegisterSessionRecord[] => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row: any): RegisterSessionRecord => {
+      const status: RegisterSessionRecord['status'] =
+        String(row?.status || 'Open') === 'Closed' ? 'Closed' : 'Open';
+      return {
+        id: String(row?.id || '').trim(),
+        openedAt: String(row?.openedAt || '').trim(),
+        openedBy: String(row?.openedBy || '').trim(),
+        locationId: String(row?.locationId || '').trim(),
+        locationName: String(row?.locationName || '').trim(),
+        cashInHand: Number(row?.cashInHand || 0),
+        status,
+        closedAt: String(row?.closedAt || '').trim() || undefined,
+        closedBy: String(row?.closedBy || '').trim() || undefined,
+        closingBalance: row?.closingBalance == null ? undefined : Number(row?.closingBalance || 0),
+      };
+    })
+    .filter((row): row is RegisterSessionRecord => Boolean(row.id && row.locationId))
+    .map(normalizeSession);
+};
+
+const parseTransactions = (rows: unknown): RegisterTransaction[] => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .map((row: any): RegisterTransaction => ({
+      id: String(row?.id || '').trim(),
+      sessionId: String(row?.sessionId || '').trim(),
+      date: String(row?.date || '').trim(),
+      type: String(row?.type || '').trim() as RegisterTransaction['type'],
+      amount: Number(row?.amount || 0),
+      method: String(row?.method || '').trim() || undefined,
+      invoiceNo: String(row?.invoiceNo || '').trim() || undefined,
+      note: String(row?.note || '').trim() || undefined,
+      addedBy: String(row?.addedBy || '').trim() || undefined,
+    }))
+    .filter((row) => Boolean(row.id && row.sessionId));
+};
+
+const cloneSession = (row: RegisterSessionRecord): RegisterSessionRecord => ({ ...row });
+const cloneTransaction = (row: RegisterTransaction): RegisterTransaction => ({ ...row });
+
+const syncActiveFromSessions = () => {
+  const openSession = registerSessionsCache.find((session) => session.status === 'Open') || null;
+  activeRegisterSessionCache = openSession ? cloneSession(openSession) : null;
+};
+
+export const getActiveRegisterSession = (): RegisterSessionRecord | null => (
+  activeRegisterSessionCache ? cloneSession(activeRegisterSessionCache) : null
+);
+
+export const getRegisterSessions = (): RegisterSessionRecord[] => (
+  registerSessionsCache.map(cloneSession)
+);
+
+export const getRegisterTransactions = (): RegisterTransaction[] => (
+  registerTransactionsCache.map(cloneTransaction)
+);
+
+export const fetchRegisterSessionsFromDB = async (): Promise<RegisterSessionRecord[]> => {
+  const remoteSessions = await fetchDedicated<RegisterSessionRecord>('/api/sync/register-sessions');
+  if (remoteSessions) {
+    registerSessionsCache = parseSessions(remoteSessions);
+    syncActiveFromSessions();
   }
+  return getRegisterSessions();
 };
 
-export const getActiveRegisterSession = (): RegisterSessionRecord | null => {
-  if (typeof window === 'undefined') return null;
-  const raw = localStorage.getItem(REGISTER_ACTIVE_KEY);
-  const parsed = safeParse<RegisterSessionRecord | null>(raw, null);
-  if (!parsed || !parsed.id || !parsed.locationId) return null;
-  const normalized: RegisterSessionRecord = {
-    ...parsed,
-    status: parsed.status === 'Closed' ? 'Closed' : 'Open',
-  };
-  const sessions = getRegisterSessions();
-  if (!sessions.some(session => session.id === normalized.id)) {
-    upsertRegisterSession(normalized);
+export const fetchRegisterTransactionsFromDB = async (): Promise<RegisterTransaction[]> => {
+  const remoteTxs = await fetchDedicated<RegisterTransaction>('/api/sync/register-transactions');
+  if (remoteTxs) {
+    registerTransactionsCache = parseTransactions(remoteTxs);
   }
-  return normalized;
-};
-
-export const getRegisterSessions = (): RegisterSessionRecord[] => {
-  if (typeof window === 'undefined') return [];
-  return safeParse<RegisterSessionRecord[]>(
-    localStorage.getItem(REGISTER_SESSIONS_KEY),
-    []
-  );
-};
-
-export const getRegisterTransactions = (): RegisterTransaction[] => {
-  if (typeof window === 'undefined') return [];
-  return safeParse<RegisterTransaction[]>(
-    localStorage.getItem(REGISTER_TRANSACTIONS_KEY),
-    []
-  );
+  return getRegisterTransactions();
 };
 
 export const setActiveRegisterSession = (session: RegisterSessionRecord | null): void => {
-  if (typeof window === 'undefined') return;
   if (!session) {
-    localStorage.removeItem(REGISTER_ACTIVE_KEY);
+    activeRegisterSessionCache = null;
+    notify();
     return;
   }
-  localStorage.setItem(REGISTER_ACTIVE_KEY, JSON.stringify(session));
-  syncDedicated('/api/sync/register-sessions', session.id, session);
+  const normalized = normalizeSession(session);
+  activeRegisterSessionCache = cloneSession(normalized);
+  syncDedicated('/api/sync/register-sessions', normalized.id, normalized);
+  notify();
 };
 
 export const setRegisterSessions = (sessions: RegisterSessionRecord[]): void => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(REGISTER_SESSIONS_KEY, JSON.stringify(sessions));
-  // Sync each session individually so the server has all records
-  sessions.forEach(s => syncDedicated('/api/sync/register-sessions', s.id, s));
+  registerSessionsCache = parseSessions(sessions);
+  syncActiveFromSessions();
+  registerSessionsCache.forEach((session) => syncDedicated('/api/sync/register-sessions', session.id, session));
+  notify();
 };
 
 export const setRegisterTransactions = (transactions: RegisterTransaction[]): void => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(REGISTER_TRANSACTIONS_KEY, JSON.stringify(transactions));
-  // Sync each transaction individually
-  transactions.forEach(tx => syncDedicated('/api/sync/register-transactions', tx.id, tx));
+  registerTransactionsCache = parseTransactions(transactions);
+  registerTransactionsCache.forEach((tx) => syncDedicated('/api/sync/register-transactions', tx.id, tx));
+  notify();
 };
 
 export const upsertRegisterSession = (session: RegisterSessionRecord): void => {
+  const normalized = normalizeSession(session);
   const sessions = getRegisterSessions();
-  const idx = sessions.findIndex(s => s.id === session.id);
-  if (idx >= 0) sessions[idx] = session;
-  else sessions.unshift(session);
-  localStorage.setItem(REGISTER_SESSIONS_KEY, JSON.stringify(sessions));
-  syncDedicated('/api/sync/register-sessions', session.id, session);
+  const idx = sessions.findIndex((entry) => entry.id === normalized.id);
+  if (idx >= 0) sessions[idx] = normalized;
+  else sessions.unshift(normalized);
+  setRegisterSessions(sessions);
 };
 
 export const addRegisterTransaction = (tx: RegisterTransaction): void => {
+  const nextTx: RegisterTransaction = {
+    ...tx,
+    id: String(tx.id || '').trim(),
+    sessionId: String(tx.sessionId || '').trim(),
+    date: String(tx.date || '').trim(),
+    amount: Number(tx.amount || 0),
+  };
+  if (!nextTx.id || !nextTx.sessionId) return;
   const all = getRegisterTransactions();
-  const idx = all.findIndex(entry => entry.id === tx.id);
-  if (idx >= 0) {
-    all[idx] = tx;
-  } else {
-    all.unshift(tx);
-  }
-  localStorage.setItem(REGISTER_TRANSACTIONS_KEY, JSON.stringify(all));
-  syncDedicated('/api/sync/register-transactions', tx.id, tx);
+  const idx = all.findIndex((entry) => entry.id === nextTx.id);
+  if (idx >= 0) all[idx] = nextTx;
+  else all.unshift(nextTx);
+  setRegisterTransactions(all);
 };
 
 export const deleteRegisterTransaction = (id: string): void => {
   const key = String(id || '').trim();
   if (!key) return;
   const all = getRegisterTransactions();
-  const next = all.filter(entry => entry.id !== key);
+  const next = all.filter((entry) => entry.id !== key);
   if (next.length === all.length) return;
-  localStorage.setItem(REGISTER_TRANSACTIONS_KEY, JSON.stringify(next));
+  registerTransactionsCache = next;
   deleteDedicated('/api/sync/register-transactions', key);
+  notify();
 };
 
 export const closeRegisterSession = (
@@ -131,32 +187,33 @@ export const closeRegisterSession = (
   closingBalance: number
 ): RegisterSessionRecord | null => {
   const sessions = getRegisterSessions();
-  const idx = sessions.findIndex(s => s.id === sessionId);
+  const idx = sessions.findIndex((session) => session.id === sessionId);
   if (idx < 0) return null;
+
   const current = sessions[idx];
-  const closed: RegisterSessionRecord = {
+  const closed: RegisterSessionRecord = normalizeSession({
     ...current,
     status: 'Closed',
     closedAt: new Date().toISOString(),
     closedBy,
     closingBalance,
-  };
+  });
   sessions[idx] = closed;
-  localStorage.setItem(REGISTER_SESSIONS_KEY, JSON.stringify(sessions));
-  syncDedicated('/api/sync/register-sessions', closed.id, closed);
+  setRegisterSessions(sessions);
 
-  const active = getActiveRegisterSession();
-  if (active?.id === sessionId) {
-    localStorage.removeItem(REGISTER_ACTIVE_KEY);
+  if (activeRegisterSessionCache?.id === sessionId) {
+    activeRegisterSessionCache = null;
   }
+  syncDedicated('/api/sync/register-sessions', closed.id, closed);
+  notify();
   return closed;
 };
 
 export const startRegisterSession = (session: RegisterSessionRecord): void => {
-  const normalized: RegisterSessionRecord = {
+  const normalized = normalizeSession({
     ...session,
     status: 'Open',
-  };
+  });
   setActiveRegisterSession(normalized);
   upsertRegisterSession(normalized);
   addRegisterTransaction({
@@ -171,25 +228,11 @@ export const startRegisterSession = (session: RegisterSessionRecord): void => {
 };
 
 /**
- * Bootstrap: load register sessions and transactions from DB into localStorage.
- * Call once on app mount (e.g. in POS component).
+ * Bootstrap: load register sessions and transactions from DB.
  */
 export const bootstrapRegisterFromDB = async (): Promise<void> => {
-  const [remoteSessions, remoteTxs] = await Promise.all([
-    fetchDedicated<RegisterSessionRecord>('/api/sync/register-sessions'),
-    fetchDedicated<RegisterTransaction>('/api/sync/register-transactions'),
+  await Promise.all([
+    fetchRegisterSessionsFromDB(),
+    fetchRegisterTransactionsFromDB(),
   ]);
-  if (remoteSessions) {
-    localStorage.setItem(REGISTER_SESSIONS_KEY, JSON.stringify(remoteSessions));
-    // Restore active session from DB if present
-    const openSession = remoteSessions.find(s => s.status === 'Open');
-    if (openSession) {
-      localStorage.setItem(REGISTER_ACTIVE_KEY, JSON.stringify(openSession));
-    } else {
-      localStorage.removeItem(REGISTER_ACTIVE_KEY);
-    }
-  }
-  if (remoteTxs) {
-    localStorage.setItem(REGISTER_TRANSACTIONS_KEY, JSON.stringify(remoteTxs));
-  }
 };

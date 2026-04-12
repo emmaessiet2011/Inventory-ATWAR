@@ -220,7 +220,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     onNavigate?.('list-stock-transfers');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const cleanRows = rows
       .map(row => ({
         ...row,
@@ -248,6 +248,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       return;
     }
 
+    await bootstrapStockTransfersFromDB().catch(() => {});
     const allTransfers = readStockTransfers();
     const editingRecord = editingTransferId
       ? allTransfers.find(row => row.id === editingTransferId)

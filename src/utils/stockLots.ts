@@ -27,10 +27,17 @@ export interface StockLotAdjustment {
   updatedAt?: string;
 }
 
-const STOCK_LOTS_KEY = 'app_stock_lot_balances_v1';
+const STOCK_LOTS_UPDATED_EVENT = 'app:stock-lots-updated';
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+
+let stockLotsCache: StockLotBalance[] = [];
+
+const notify = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(STOCK_LOTS_UPDATED_EVENT));
+};
 
 const normalizeExpiryDate = (value: unknown): string => {
   const raw = String(value || '').trim();
@@ -99,20 +106,21 @@ const parseRows = (raw: unknown): StockLotBalance[] => {
     .filter((row): row is StockLotBalance => !!row);
 };
 
-export const getStockLotsStorageKey = (): string => STOCK_LOTS_KEY;
-
 export const readStockLotBalances = (): StockLotBalance[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LOTS_KEY);
-    if (!raw) return [];
-    return parseRows(JSON.parse(raw));
-  } catch {
-    return [];
+  return stockLotsCache.map((row) => ({ ...row }));
+};
+
+export const fetchStockLotsFromDB = async (): Promise<StockLotBalance[]> => {
+  const remoteLots = await fetchDedicated<StockLotBalance>('/api/sync/stock-lots');
+  if (remoteLots) {
+    stockLotsCache = parseRows(remoteLots);
   }
+  return readStockLotBalances();
 };
 
 export const writeStockLotBalances = (rows: StockLotBalance[], prevRows?: StockLotBalance[]) => {
-  localStorage.setItem(STOCK_LOTS_KEY, JSON.stringify(rows));
+  stockLotsCache = parseRows(rows);
+  notify();
   // Sync changed/added rows
   const prevIds = new Set((prevRows || []).map(r => r.id));
   rows.forEach(r => syncDedicated('/api/sync/stock-lots', r.id, r));
@@ -130,10 +138,7 @@ export const writeStockLotBalances = (rows: StockLotBalance[], prevRows?: StockL
  * Empty DB responses clear local cache so DB remains the source of truth.
  */
 export const bootstrapStockLotsFromDB = async (): Promise<void> => {
-  const remoteLots = await fetchDedicated<StockLotBalance>('/api/sync/stock-lots');
-  if (remoteLots) {
-    localStorage.setItem(STOCK_LOTS_KEY, JSON.stringify(remoteLots));
-  }
+  await fetchStockLotsFromDB();
 };
 
 const compareExpiryAsc = (left: string, right: string): number => {

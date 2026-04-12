@@ -58,6 +58,17 @@ function esc(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+type RuntimeSettingsShape = Record<string, unknown> & {
+  business?: Record<string, unknown>;
+};
+
+const getRuntimeSettings = (): RuntimeSettingsShape => {
+  if (typeof window === 'undefined') return {};
+  const payload = (window as Window & { __ATWAR_RUNTIME_SETTINGS__?: unknown }).__ATWAR_RUNTIME_SETTINGS__;
+  if (!payload || typeof payload !== 'object') return {};
+  return payload as RuntimeSettingsShape;
+};
+
 /** Creates a coloured badge HTML string for use inside a print cell. */
 export function badge(
   text: string,
@@ -88,14 +99,13 @@ export function statusBadge(status: string): string {
 }
 
 function resolveLogoFromStorage(): string {
-  try {
-    const raw = localStorage.getItem('app_settings');
-    if (raw) {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      return (parsed.businessLogo as string) || '';
-    }
-  } catch { /* ignore */ }
-  return '';
+  const settings = getRuntimeSettings();
+  return String(
+    settings.businessLogo
+    || settings.logo
+    || settings.business?.logo
+    || '',
+  ).trim();
 }
 
 function resolvePrintDateSettings(): { dateFormat: string; timeFormat: string; timeZone: string } {
@@ -104,18 +114,12 @@ function resolvePrintDateSettings(): { dateFormat: string; timeFormat: string; t
     timeFormat: '12',
     timeZone: 'Asia/Dubai',
   };
-  try {
-    const raw = localStorage.getItem('app_settings');
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      dateFormat: String(parsed.dateFormat || fallback.dateFormat),
-      timeFormat: String(parsed.timeFormat || fallback.timeFormat),
-      timeZone: String(parsed.timeZone || fallback.timeZone),
-    };
-  } catch {
-    return fallback;
-  }
+  const settings = getRuntimeSettings();
+  return {
+    dateFormat: String(settings.dateFormat || fallback.dateFormat),
+    timeFormat: String(settings.timeFormat || fallback.timeFormat),
+    timeZone: String(settings.timeZone || fallback.timeZone),
+  };
 }
 
 function getGeneratedTimestamp(): string {
@@ -322,32 +326,25 @@ function resolveBusinessMeta(config: Pick<PrintActiveReportTableConfig, 'busines
     };
   }
 
-  try {
-    const raw = localStorage.getItem('app_settings');
-    if (raw) {
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
-      const nameCandidates = [
-        parsed.businessName,
-        parsed.shopName,
-        parsed.companyName,
-        (parsed.business as Record<string, unknown> | undefined)?.name,
-      ];
-      const addressCandidates = [
-        parsed.businessAddress,
-        parsed.address,
-        (parsed.business as Record<string, unknown> | undefined)?.address,
-      ];
-      const resolvedName = compactText(nameCandidates.find(Boolean) || '');
-      const resolvedAddress = compactText(addressCandidates.find(Boolean) || '');
-      if (resolvedName) {
-        return {
-          businessName: resolvedName,
-          businessAddress: resolvedAddress || undefined,
-        };
-      }
-    }
-  } catch {
-    // Ignore storage parse issues and fall back to defaults.
+  const runtimeSettings = getRuntimeSettings();
+  const nameCandidates = [
+    runtimeSettings.businessName,
+    runtimeSettings.shopName,
+    runtimeSettings.companyName,
+    runtimeSettings.business?.name,
+  ];
+  const addressCandidates = [
+    runtimeSettings.businessAddress,
+    runtimeSettings.address,
+    runtimeSettings.business?.address,
+  ];
+  const resolvedName = compactText(nameCandidates.find(Boolean) || '');
+  const resolvedAddress = compactText(addressCandidates.find(Boolean) || '');
+  if (resolvedName) {
+    return {
+      businessName: resolvedName,
+      businessAddress: resolvedAddress || undefined,
+    };
   }
 
   return {

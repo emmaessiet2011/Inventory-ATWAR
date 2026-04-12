@@ -329,7 +329,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     onNavigate?.('list-stock-adjustments');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const editContextId = editingAdjustmentId;
     if (editContextId && !canEdit) {
       addNotification({
@@ -430,6 +430,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       return;
     }
 
+    await bootstrapStockAdjustmentsFromDB().catch(() => {});
     const allAdjustments = readStockAdjustments();
     const editingRecord = editContextId
       ? allAdjustments.find((row) => row.id === editContextId)

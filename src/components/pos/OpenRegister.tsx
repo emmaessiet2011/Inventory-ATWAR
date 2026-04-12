@@ -39,10 +39,13 @@ const OpenRegister: React.FC<OpenRegisterProps> = ({ onNavigate }) => {
     };
     void refreshActiveSession();
     const onFocus = () => { void refreshActiveSession(); };
+    const onRegisterUpdated = () => { void refreshActiveSession(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener('app:register-updated', onRegisterUpdated);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:register-updated', onRegisterUpdated);
     };
   }, []);
 

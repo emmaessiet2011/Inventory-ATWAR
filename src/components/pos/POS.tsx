@@ -14,6 +14,7 @@ import {
   addRegisterTransaction,
   bootstrapRegisterFromDB,
   closeRegisterSession,
+  fetchRegisterTransactionsFromDB,
   getActiveRegisterSession,
   getRegisterTransactions,
   RegisterSessionRecord,
@@ -662,7 +663,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleCloseRegister = () => {
+  const handleCloseRegister = async () => {
     if (!registerSession) {
       addNotification({
         title: 'No open register',
@@ -673,6 +674,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       return;
     }
 
+    await fetchRegisterTransactionsFromDB().catch(() => {});
     const tx = getRegisterTransactions().filter(entry => entry.sessionId === registerSession.id);
     const cashNet = tx.reduce((sum, entry) => {
       if (entry.type === 'open') return sum + entry.amount;
@@ -752,11 +754,14 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
 
     void refreshActiveSession();
     const onFocus = () => { void refreshActiveSession(); };
+    const onRegisterUpdated = () => { void refreshActiveSession(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener('app:register-updated', onRegisterUpdated);
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:register-updated', onRegisterUpdated);
     };
   }, []);
 

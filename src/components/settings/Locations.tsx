@@ -7,7 +7,7 @@ import {
   PaymentMethod,
 } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { getActiveRegisterSession } from '@/utils/registerLedger';
+import { bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import { buildPaymentAccountOptions, resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 
 const cloneDefaultPaymentMethods = (): PaymentMethod[] =>
@@ -205,7 +205,7 @@ const Locations: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = String(formData.name || '').trim();
     const city = String(formData.city || '').trim();
     const zipCode = String(formData.zipCode || '').trim();
@@ -273,7 +273,7 @@ const Locations: React.FC = () => {
         });
         return;
       }
-      updateLocation({
+      const result = await updateLocation({
         ...existing,
         ...formData,
         id: existing.id,
@@ -284,6 +284,14 @@ const Locations: React.FC = () => {
         country,
         paymentMethods: methods,
       } as Location);
+      if (!result.success) {
+        addNotification({
+          title: 'Unable to update location',
+          message: result.message || 'Failed to save location changes.',
+          type: 'error',
+        });
+        return;
+      }
     } else {
       const newLoc: Location = {
         id: locationId || `LOC-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -311,7 +319,15 @@ const Locations: React.FC = () => {
             ? String(formData.receiptPrinterId || '').trim()
             : '',
       };
-      addLocation(newLoc);
+      const result = await addLocation(newLoc);
+      if (!result.success) {
+        addNotification({
+          title: 'Unable to add location',
+          message: result.message || 'Failed to save location.',
+          type: 'error',
+        });
+        return;
+      }
     }
     setIsModalOpen(false);
     setEditingLocationId(null);
@@ -333,9 +349,9 @@ const Locations: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this location?')) {
-      const result = deleteLocation(id);
+      const result = await deleteLocation(id);
       if (!result.success) {
         addNotification({
           title: 'Unable to delete location',
@@ -346,7 +362,7 @@ const Locations: React.FC = () => {
     }
   };
 
-  const handleToggleLocationStatus = (location: Location) => {
+  const handleToggleLocationStatus = async (location: Location) => {
     const nextActiveState = location.isActive === false;
     if (!nextActiveState) {
       if (activeLocationCount <= 1) {
@@ -357,6 +373,7 @@ const Locations: React.FC = () => {
         });
         return;
       }
+      await bootstrapRegisterFromDB().catch(() => {});
       const activeRegister = getActiveRegisterSession();
       if (
         activeRegister &&
@@ -373,10 +390,17 @@ const Locations: React.FC = () => {
         return;
       }
     }
-    updateLocation({
+    const result = await updateLocation({
       ...location,
       isActive: nextActiveState,
     });
+    if (!result.success) {
+      addNotification({
+        title: 'Unable to update location',
+        message: result.message || 'Failed to update location status.',
+        type: 'error',
+      });
+    }
   };
 
   const openSettingsModal = (location: Location) => {
@@ -392,7 +416,7 @@ const Locations: React.FC = () => {
     setIsSettingsModalOpen(true);
   };
 
-  const handleSaveLocationSettings = () => {
+  const handleSaveLocationSettings = async () => {
     if (!selectedLocationForSettings) return;
     if (settingsForm.receiptPrinterType === 'network' && !String(settingsForm.receiptPrinterId || '').trim()) {
       addNotification({
@@ -438,7 +462,7 @@ const Locations: React.FC = () => {
       updateInvoiceLayout({ ...selectedLayout, isDefault: true });
     }
 
-    updateLocation({
+    const result = await updateLocation({
       ...selectedLocationForSettings,
       autoPrintInvoiceAfterFinalizing: settingsForm.autoPrintInvoiceAfterFinalizing,
       receiptPrinterType: settingsForm.receiptPrinterType,
@@ -447,6 +471,14 @@ const Locations: React.FC = () => {
       invoiceLayoutPos: selectedPosLayoutName,
       invoiceLayoutSale: selectedSaleLayoutName,
     });
+    if (!result.success) {
+      addNotification({
+        title: 'Unable to save location settings',
+        message: result.message || 'Failed to update location settings.',
+        type: 'error',
+      });
+      return;
+    }
     setIsSettingsModalOpen(false);
     setSelectedLocationForSettings(null);
   };

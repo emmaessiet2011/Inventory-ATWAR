@@ -19,11 +19,26 @@ export interface BackupAuditTrail {
 }
 
 const BACKUP_VERSION = 1;
-const BACKUP_PREFIXES = ['app_', 'atwar_secure_'];
 const BACKUP_FILE_PREFIX = 'atwar-bss-backup';
 export const BACKUP_AUDIT_STORAGE_KEY = 'app_backup_audit_v1';
 
-const includeKey = (key: string) => BACKUP_PREFIXES.some((prefix) => key.startsWith(prefix));
+const BACKUP_ALLOWED_KEYS = new Set<string>([
+  BACKUP_AUDIT_STORAGE_KEY,
+  'app_customer_custom_columns',
+  'app_supplier_custom_columns',
+  'app_cheque_reminder_date',
+  'app_notifications_v2',
+  'atwar_login_identifier',
+]);
+
+const BACKUP_ALLOWED_PREFIXES = [
+  'app_dashboard_sticky_',
+  'app_dashboard_views_',
+];
+
+const includeKey = (key: string) =>
+  BACKUP_ALLOWED_KEYS.has(key) ||
+  BACKUP_ALLOWED_PREFIXES.some((prefix) => key.startsWith(prefix));
 
 export const getBackupFilename = (now: Date = new Date()): string => {
   const stamp = now.toISOString().replace(/[:.]/g, '-');

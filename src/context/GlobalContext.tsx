@@ -1,12 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import {
   applyStockLotAdjustments,
+  bootstrapStockLotsFromDB,
   readStockLotBalances,
   writeStockLotBalances,
 } from '../utils/stockLots';
-import { readStockTransfers, writeStockTransfers } from '../utils/stockTransfers';
-import { readStockAdjustments, writeStockAdjustments } from '../utils/stockAdjustments';
 import {
+  bootstrapStockTransfersFromDB,
+  readStockTransfers,
+  writeStockTransfers,
+} from '../utils/stockTransfers';
+import {
+  bootstrapStockAdjustmentsFromDB,
+  readStockAdjustments,
+  writeStockAdjustments,
+} from '../utils/stockAdjustments';
+import {
+  bootstrapRegisterFromDB,
   getActiveRegisterSession,
   getRegisterSessions,
   setActiveRegisterSession,
@@ -29,9 +39,6 @@ import {
 } from '../utils/authSecurity';
 import {
   AUTH_SESSION_STORAGE_KEY,
-  CORE_PAYMENTS_STORAGE_KEY,
-  CORE_SALES_STORAGE_KEY,
-  CORE_USERS_STORAGE_KEY,
   readHardenedState,
   removeLegacyKeys,
   writeHardenedState,
@@ -46,6 +53,7 @@ import {
   hasValidAuthToken,
   isLiveSyncEnabled,
   syncRecord,
+  syncRecordStrict,
   deleteRecord,
   deleteRecordStrict,
   syncStockDelta,
@@ -1193,9 +1201,9 @@ interface GlobalContextType {
   // --- Locations ---
   locations: Location[];
   setLocations: React.Dispatch<React.SetStateAction<Location[]>>;
-  addLocation: (location: Location) => void;
-  updateLocation: (location: Location) => void;
-  deleteLocation: (id: string) => LocationMutationResult;
+  addLocation: (location: Location) => Promise<LocationMutationResult>;
+  updateLocation: (location: Location) => Promise<LocationMutationResult>;
+  deleteLocation: (id: string) => Promise<LocationMutationResult>;
 
   // --- Receipt Printers ---
   printers: ReceiptPrinter[];
@@ -2118,15 +2126,6 @@ const toPositiveNumber = (value: unknown, fallback: number): number => {
   return parsed;
 };
 
-const removeLegacyMockPayments = (rows: Payment[]): Payment[] =>
-  rows.filter((payment) => {
-    const id = String(payment?.id || '').trim();
-    const referenceNo = String(payment?.referenceNo || '').trim();
-    if (/^pay-SALE-MOCK-/i.test(id)) return false;
-    if (referenceNo === 'SP-INV-2025-0001') return false;
-    return true;
-  });
-
 const normalizeTaxRateRecord = (
   raw: Partial<TaxRate>,
   fallback: TaxRate = initialTaxRates[0],
@@ -2296,12 +2295,6 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   return merged;
 };
 
-const CUSTOMER_GROUP_LINK_MIGRATION_KEY = 'app_customer_group_links_migrated_v1';
-const SALE_CUSTOMER_GROUP_SNAPSHOT_MIGRATION_KEY = 'app_sale_customer_group_snapshot_migrated_v1';
-const PRODUCT_CATEGORY_LINK_MIGRATION_KEY = 'app_product_category_links_migrated_v1';
-const PRODUCT_BRAND_LINK_MIGRATION_KEY = 'app_product_brand_links_migrated_v1';
-const PRODUCT_WARRANTY_LINK_MIGRATION_KEY = 'app_product_warranty_links_migrated_v1';
-
 // ============================================================
 //  CONTEXT
 // ============================================================
@@ -2450,234 +2443,62 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
-  // Treat DB sync mode as source-of-truth mode for initial hydration.
-  const dbSourceOfTruth = isLiveSyncEnabled();
+  // Hard-lock business state to DB/API as the only source of truth.
+  // Local business-data hydration/writes are intentionally disabled.
+  const dbSourceOfTruth = true;
 
   // ---- Products ----
-  const [products, setProducts] = useState<Product[]>(() => {
-    if (dbSourceOfTruth) return initialProducts;
-    try { const s = localStorage.getItem('app_products_v2'); return s ? JSON.parse(s) : initialProducts; } catch { return initialProducts; }
-  });
+  const [products, setProducts] = useState<Product[]>(initialProducts);
 
   // ---- Customers ----
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    if (dbSourceOfTruth) return initialCustomers;
-    try { const s = localStorage.getItem('app_customers_v2'); return s ? JSON.parse(s) : initialCustomers; } catch { return initialCustomers; }
-  });
+  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
 
   // ---- Suppliers ----
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
-    if (dbSourceOfTruth) return initialSuppliers;
-    try { const s = localStorage.getItem('app_suppliers_v2'); return s ? JSON.parse(s) : initialSuppliers; } catch { return initialSuppliers; }
-  });
+  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
 
   // ---- Legacy contacts ----
-  const [contacts, setContacts] = useState<Contact[]>(() => {
-    if (dbSourceOfTruth) return initialContacts;
-    try { const s = localStorage.getItem('app_contacts'); return s ? JSON.parse(s) : initialContacts; } catch { return initialContacts; }
-  });
+  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
 
   // ---- Sales ----
-  const [sales, setSales] = useState<Sale[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const parsed = readHardenedState<Sale[]>(
-        localStorage,
-        CORE_SALES_STORAGE_KEY,
-        [],
-        ['app_sales'],
-      );
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
-  });
+  const [sales, setSales] = useState<Sale[]>([]);
 
   // ---- Sell Returns ----
-  const [sellReturns, setSellReturns] = useState<SellReturn[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const stored = localStorage.getItem('app_sell_returns');
-      const parsed = stored ? JSON.parse(stored) : null;
-      if (Array.isArray(parsed)) {
-        return parsed.map((record, index) =>
-          normalizeSellReturnRecord(record, { id: `SELL-RET-${index + 1}` })
-        );
-      }
-    } catch {
-      // fall through to legacy migration
-    }
-
-    try {
-      const sourceSales = readHardenedState<any[]>(
-        localStorage,
-        CORE_SALES_STORAGE_KEY,
-        [],
-        ['app_sales'],
-      );
-      if (!Array.isArray(sourceSales)) return [];
-
-      const migrated: SellReturn[] = [];
-      sourceSales.forEach((sale: any, saleIndex: number) => {
-        const saleFallback = {
-          parentSaleId: String(sale?.id || ''),
-          parentInvoiceNo: String(sale?.invoiceNo || ''),
-          customerId: String(sale?.customerId || ''),
-          customerName: String(sale?.customerName || 'Walk-in Customer'),
-          location: String(sale?.location || '--'),
-          date: String(sale?.date || new Date().toISOString().slice(0, 16)),
-          addedBy: String(sale?.addedBy || 'System'),
-        };
-        const legacyReturns = Array.isArray(sale?.sellReturns) ? sale.sellReturns : [];
-
-        if (legacyReturns.length > 0) {
-          legacyReturns.forEach((record: any, index: number) => {
-            migrated.push(normalizeSellReturnRecord(record, {
-              ...saleFallback,
-              id: `SELL-RET-MIG-${saleIndex + 1}-${index + 1}`,
-              referenceNo: String(record?.referenceNo || `${defaultSettings.sellReturnPrefix || 'CN'}-${sale?.invoiceNo || `${saleIndex + 1}-${index + 1}`}`),
-            }));
-          });
-          return;
-        }
-
-        const legacyDue = Math.max(0, toNumber(sale?.sellReturnDue));
-        if (legacyDue > 0) {
-          migrated.push(normalizeSellReturnRecord({
-            id: `SELL-RET-MIG-${saleIndex + 1}-LEGACY`,
-            referenceNo: `${defaultSettings.sellReturnPrefix || 'CN'}-${sale?.invoiceNo || saleIndex + 1}`,
-            ...saleFallback,
-            discountType: 'None',
-            discountAmount: 0,
-            tax: 'None',
-            subTotal: legacyDue,
-            taxAmount: 0,
-            total: legacyDue,
-            paymentDue: legacyDue,
-            note: 'Migrated from legacy sell return due balance.',
-            items: [],
-          }));
-        }
-      });
-      return migrated;
-    } catch {
-      return [];
-    }
-  });
+  const [sellReturns, setSellReturns] = useState<SellReturn[]>([]);
 
   // ---- Purchases ----
-  const [purchases, setPurchases] = useState<Purchase[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try { const s = localStorage.getItem('app_purchases'); return s ? JSON.parse(s) : initialPurchases; } catch { return initialPurchases; }
-  });
+  const [purchases, setPurchases] = useState<Purchase[]>(initialPurchases);
 
   // ---- Purchase Requisitions ----
-  const [purchaseRequisitions, setPurchaseRequisitions] = useState<PurchaseRequisition[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const s = localStorage.getItem('app_purchase_requisitions');
-      return s ? JSON.parse(s) : initialPurchaseRequisitions;
-    } catch {
-      return initialPurchaseRequisitions;
-    }
-  });
+  const [purchaseRequisitions, setPurchaseRequisitions] = useState<PurchaseRequisition[]>(initialPurchaseRequisitions);
 
   // ---- Purchase Orders ----
-  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const s = localStorage.getItem('app_purchase_orders');
-      return s ? JSON.parse(s) : initialPurchaseOrders;
-    } catch {
-      return initialPurchaseOrders;
-    }
-  });
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>(initialPurchaseOrders);
 
   // ---- Purchase Returns ----
-  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const s = localStorage.getItem('app_purchase_returns');
-      return s ? JSON.parse(s) : initialPurchaseReturns;
-    } catch {
-      return initialPurchaseReturns;
-    }
-  });
+  const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>(initialPurchaseReturns);
 
   // ---- Orders ----
-  const [orders, setOrders] = useState<GlobalOrder[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try { const s = localStorage.getItem('app_orders'); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
+  const [orders, setOrders] = useState<GlobalOrder[]>([]);
 
   // ---- Payments ----
-  const [payments, setPayments] = useState<Payment[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const parsed = readHardenedState<Payment[]>(
-        localStorage,
-        CORE_PAYMENTS_STORAGE_KEY,
-        [],
-        ['app_payments'],
-      );
-      const rows = Array.isArray(parsed) ? parsed : [];
-      return removeLegacyMockPayments(rows);
-    } catch { return []; }
-  });
+  const [payments, setPayments] = useState<Payment[]>([]);
 
   // ---- Expenses ----
-  const [expenses, setExpenses] = useState<Expense[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try { const s = localStorage.getItem('app_expenses'); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   // ---- Expense Categories ----
-  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(() => {
-    if (dbSourceOfTruth) return initialExpenseCategories;
-    try { const s = localStorage.getItem('app_expense_categories'); return s ? JSON.parse(s) : initialExpenseCategories; } catch { return initialExpenseCategories; }
-  });
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(initialExpenseCategories);
 
   // ---- Users ----
-  const [users, setUsers] = useState<AppUser[]>(() => {
-    if (dbSourceOfTruth) return initialUsers.map(normalizeUserRecord);
-    try {
-      const parsed = readHardenedState<AppUser[]>(
-        localStorage,
-        CORE_USERS_STORAGE_KEY,
-        initialUsers,
-        ['app_users'],
-      );
-      return Array.isArray(parsed) ? parsed.map(normalizeUserRecord) : initialUsers.map(normalizeUserRecord);
-    } catch {
-      return initialUsers.map(normalizeUserRecord);
-    }
-  });
+  const [users, setUsers] = useState<AppUser[]>(initialUsers.map(normalizeUserRecord));
 
   // ---- Roles ----
-  const [roles, setRoles] = useState<Role[]>(() => {
-    if (dbSourceOfTruth) return ensureRequiredRoles(initialRoles);
-    try {
-      const s = localStorage.getItem('app_roles');
-      if (!s) return ensureRequiredRoles(initialRoles);
-      const parsed = JSON.parse(s);
-      return Array.isArray(parsed) ? ensureRequiredRoles(parsed as Role[]) : ensureRequiredRoles(initialRoles);
-    } catch {
-      return ensureRequiredRoles(initialRoles);
-    }
-  });
+  const [roles, setRoles] = useState<Role[]>(ensureRequiredRoles(initialRoles));
 
   // ---- Commission Agents ----
-  const [commissionAgents, setCommissionAgents] = useState<CommissionAgent[]>(() => {
-    if (dbSourceOfTruth) return initialCommissionAgents.map(normalizeCommissionAgentRecord);
-    try {
-      const s = localStorage.getItem('app_commission_agents');
-      if (!s) return initialCommissionAgents.map(normalizeCommissionAgentRecord);
-      const parsed = JSON.parse(s);
-      return Array.isArray(parsed)
-        ? parsed.map(normalizeCommissionAgentRecord)
-        : initialCommissionAgents.map(normalizeCommissionAgentRecord);
-    } catch {
-      return initialCommissionAgents.map(normalizeCommissionAgentRecord);
-    }
-  });
+  const [commissionAgents, setCommissionAgents] = useState<CommissionAgent[]>(
+    initialCommissionAgents.map(normalizeCommissionAgentRecord)
+  );
 
   useEffect(() => {
     setCommissionAgents((prev) => {
@@ -2714,196 +2535,57 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalizedFallback = initialLocations.map((location) =>
       normalizeLocationRecord(location, location)
     );
-    if (dbSourceOfTruth) return normalizedFallback;
-    const normalizeRows = (rows: any[]): Location[] =>
-      rows
-        .map((row, index) =>
-          normalizeLocationRecord(
-            row,
-            normalizedFallback[index] || normalizedFallback[0]
-          )
-        )
-        .filter((row) => row.id && row.name);
-
-    try {
-      const s = localStorage.getItem('app_locations');
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = normalizeRows(parsed);
-          if (normalized.length > 0) return normalized;
-        }
-      }
-      return normalizedFallback;
-    } catch {
-      return normalizedFallback;
-    }
+    return normalizedFallback;
   });
 
   // ---- Receipt Printers ----
-  const [printers, setPrinters] = useState<ReceiptPrinter[]>(() => {
-    if (dbSourceOfTruth) {
-      return initialPrinters.map(row => normalizePrinterRecord(row, row));
-    }
-    try {
-      const s = localStorage.getItem('app_receipt_printers');
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed)) {
-          return parsed
-            .map((row, index) => normalizePrinterRecord(row, initialPrinters[index]))
-            .filter((row: ReceiptPrinter) => row.id && row.name);
-        }
-      }
-    } catch {
-      // fall through
-    }
-    return initialPrinters.map(row => normalizePrinterRecord(row, row));
-  });
+  const [printers, setPrinters] = useState<ReceiptPrinter[]>(
+    initialPrinters.map(row => normalizePrinterRecord(row, row))
+  );
 
   // ---- Invoice Schemes ----
-  const [invoiceSchemes, setInvoiceSchemes] = useState<InvoiceScheme[]>(() => {
-    if (dbSourceOfTruth) return initialInvoiceSchemes;
-    try {
-      const s = localStorage.getItem('app_invoice_schemes');
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // fall through
-    }
-    return initialInvoiceSchemes;
-  });
+  const [invoiceSchemes, setInvoiceSchemes] = useState<InvoiceScheme[]>(initialInvoiceSchemes);
 
   // ---- Invoice Layouts ----
-  const [invoiceLayouts, setInvoiceLayouts] = useState<InvoiceLayout[]>(() => {
-    if (dbSourceOfTruth) return initialInvoiceLayouts;
-    try {
-      const s = localStorage.getItem('app_invoice_layouts');
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // fall through
-    }
-    return initialInvoiceLayouts;
-  });
+  const [invoiceLayouts, setInvoiceLayouts] = useState<InvoiceLayout[]>(initialInvoiceLayouts);
 
   // ---- Barcode Settings ----
-  const [barcodeSettings, setBarcodeSettings] = useState<BarcodeStickerSetting[]>(() => {
-    if (dbSourceOfTruth) {
-      return normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)));
-    }
-    try {
-      const s = localStorage.getItem('app_barcode_settings');
-      if (s) {
-        const parsed = JSON.parse(s);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed
-            .map((row, index) => normalizeBarcodeSettingRecord(row, initialBarcodeSettings[index] || initialBarcodeSettings[0]))
-            .filter((row) => row.id && row.name);
-          if (normalized.length > 0) {
-            return normalizeBarcodeSettings(normalized);
-          }
-        }
-      }
-    } catch {
-      // fall through
-    }
-    return normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)));
-  });
+  const [barcodeSettings, setBarcodeSettings] = useState<BarcodeStickerSetting[]>(
+    normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)))
+  );
 
   // ---- Tax Rates ----
-  const [taxRates, setTaxRates] = useState<TaxRate[]>(() => {
-    if (dbSourceOfTruth) return normalizeTaxRates(initialTaxRates);
-    try {
-      const s = localStorage.getItem('app_tax_rates');
-      return normalizeTaxRates(s ? JSON.parse(s) : initialTaxRates);
-    } catch {
-      return normalizeTaxRates(initialTaxRates);
-    }
-  });
+  const [taxRates, setTaxRates] = useState<TaxRate[]>(normalizeTaxRates(initialTaxRates));
 
   // ---- Customer Groups ----
-  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(() => {
-    if (dbSourceOfTruth) return initialCustomerGroups;
-    try { const s = localStorage.getItem('app_customer_groups'); return s ? JSON.parse(s) : initialCustomerGroups; } catch { return initialCustomerGroups; }
-  });
+  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(initialCustomerGroups);
 
   // ---- Product Categories ----
-  const [productCategories, setProductCategories] = useState<ProductCategory[]>(() => {
-    if (dbSourceOfTruth) return initialProductCategories;
-    try { const s = localStorage.getItem('app_product_categories'); return s ? JSON.parse(s) : initialProductCategories; } catch { return initialProductCategories; }
-  });
+  const [productCategories, setProductCategories] = useState<ProductCategory[]>(initialProductCategories);
 
   // ---- Product Brands ----
-  const [productBrands, setProductBrands] = useState<ProductBrand[]>(() => {
-    if (dbSourceOfTruth) return initialProductBrands;
-    try { const s = localStorage.getItem('app_product_brands'); return s ? JSON.parse(s) : initialProductBrands; } catch { return initialProductBrands; }
-  });
+  const [productBrands, setProductBrands] = useState<ProductBrand[]>(initialProductBrands);
 
   // ---- Product Units ----
-  const [productUnits, setProductUnits] = useState<ProductUnit[]>(() => {
-    if (dbSourceOfTruth) return initialProductUnits;
-    try { const s = localStorage.getItem('app_product_units'); return s ? JSON.parse(s) : initialProductUnits; } catch { return initialProductUnits; }
-  });
+  const [productUnits, setProductUnits] = useState<ProductUnit[]>(initialProductUnits);
 
   // ---- Product Warranties ----
-  const [warranties, setWarranties] = useState<ProductWarranty[]>(() => {
-    if (dbSourceOfTruth) return initialWarranties;
-    try { const s = localStorage.getItem('app_warranties'); return s ? JSON.parse(s) : initialWarranties; } catch { return initialWarranties; }
-  });
+  const [warranties, setWarranties] = useState<ProductWarranty[]>(initialWarranties);
 
   // ---- Product Variations ----
-  const [productVariations, setProductVariations] = useState<ProductVariation[]>(() => {
-    if (dbSourceOfTruth) return initialProductVariations;
-    try { const s = localStorage.getItem('app_product_variations'); return s ? JSON.parse(s) : initialProductVariations; } catch { return initialProductVariations; }
-  });
+  const [productVariations, setProductVariations] = useState<ProductVariation[]>(initialProductVariations);
 
   // ---- Selling Price Groups ----
-  const [sellingPriceGroups, setSellingPriceGroups] = useState<SellingPriceGroup[]>(() => {
-    if (dbSourceOfTruth) return initialSellingPriceGroups;
-    try { const s = localStorage.getItem('app_selling_price_groups'); return s ? JSON.parse(s) : initialSellingPriceGroups; } catch { return initialSellingPriceGroups; }
-  });
+  const [sellingPriceGroups, setSellingPriceGroups] = useState<SellingPriceGroup[]>(initialSellingPriceGroups);
 
   // ---- Discounts ----
-  const [discounts, setDiscounts] = useState<Discount[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const s = localStorage.getItem('app_discounts');
-      if (!s) return [];
-      const parsed = JSON.parse(s);
-      return Array.isArray(parsed) ? parsed.map((record: any) => normalizeDiscountRecord(record)) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
 
   // ---- Activity Logs ----
-  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>(() => {
-    if (dbSourceOfTruth) return [];
-    try {
-      const s = localStorage.getItem('app_activity_logs');
-      if (!s) return [];
-      const parsed = JSON.parse(s);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
+  const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
 
   // ---- Settings ----
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    if (dbSourceOfTruth) return { ...defaultSettings };
-    try {
-      const s = localStorage.getItem('app_settings');
-      return s ? normalizeAppSettings(JSON.parse(s)) : { ...defaultSettings };
-    } catch {
-      return { ...defaultSettings };
-    }
-  });
+  const [settings, setSettings] = useState<AppSettings>({ ...defaultSettings });
 
   // ---- Auth ----
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
@@ -2915,18 +2597,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       );
       if (sessionUser) return normalizeUserRecord(sessionUser);
     } catch {
-      // fall through to legacy migration
+      // ignore storage failures
     }
-
-    if (dbSourceOfTruth) return null;
-    try {
-      const legacyRaw = localStorage.getItem('app_current_user');
-      if (!legacyRaw) return null;
-      const parsed = JSON.parse(legacyRaw);
-      return parsed ? normalizeUserRecord(parsed) : null;
-    } catch {
-      return null;
-    }
+    return null;
   });
 
   useEffect(() => {
@@ -2964,6 +2637,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const dropdownSyncPushTimerRef = useRef<number | null>(null);
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
   const fieldPaymentsCacheRef = useRef<any[]>([]);
+  const customerGroupLinkMigrationAppliedRef = useRef(false);
+  const saleCustomerGroupSnapshotMigrationAppliedRef = useRef(false);
+  const productCategoryLinkMigrationAppliedRef = useRef(false);
+  const productBrandLinkMigrationAppliedRef = useRef(false);
+  const productWarrantyLinkMigrationAppliedRef = useRef(false);
 
   useEffect(() => {
     const dueBySale: Record<string, number> = {};
@@ -3152,6 +2830,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteSales,
           remotePayments,
           remoteUsers,
+          remoteLocations,
           remoteSettings,
           remoteExpenses,
           remotePurchases,
@@ -3169,6 +2848,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<Sale>('sales'),
           apiFetchAllWithRetry<Payment>('payments'),
           apiFetchAllWithRetry<AppUser>('users'),
+          apiFetchAllWithRetry<Location>('locations'),
           apiFetchAllWithRetry<AppSettings>('settings'),
           apiFetchAllWithRetry<Expense>('expenses'),
           apiFetchAllWithRetry<Purchase>('purchases'),
@@ -3190,6 +2870,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteSales,
           remotePayments,
           remoteUsers,
+          remoteLocations,
           remoteSettings,
           remoteExpenses,
           remotePurchases,
@@ -3211,6 +2892,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remoteSales) setSales(remoteSales);
         if (remotePayments) setPayments(remotePayments);
         if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
+        if (remoteLocations) {
+          if (remoteLocations.length > 0) {
+            setLocations((remoteLocations as Location[])
+              .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+              .filter((row) => row.id && row.name));
+          } else {
+            const fallbackLocations = initialLocations
+              .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+              .filter((row) => row.id && row.name);
+            setLocations(fallbackLocations);
+            fallbackLocations.forEach((row) => syncRecord('locations', row));
+          }
+        }
         if (remoteSettings && remoteSettings.length > 0) {
           const s = remoteSettings[0];
           // Only apply settings from DB if it has more than the 3 bootstrap fields,
@@ -3242,13 +2936,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => { cancelled = true; };
   }, [currentUser?.id]);
 
-  // Keep Render free-tier server warm — ping every 10 minutes so it never sleeps.
+  // Keep Render free-tier server warm — ping every 4 minutes so it stays awake while app is open.
   useEffect(() => {
     if (!isCoreSyncEnabled()) return;
+    void pingBackend();
     const id = window.setInterval(() => {
-      if (!hasValidAuthToken()) return;
       void pingBackend();
-    }, 10 * 60 * 1000);
+    }, 4 * 60 * 1000);
     return () => window.clearInterval(id);
   }, []);
 
@@ -3306,28 +3000,36 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!hasValidAuthToken()) return;
       try {
         const [
-          freshProducts, freshSales, freshPayments, freshCustomers,
-          freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders,
+          freshProducts, freshSales, freshPayments, freshCustomers, freshLocations,
+          freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
         ] = await Promise.all([
           apiFetchAll<Product>('products').catch(() => null),
           apiFetchAll<Sale>('sales').catch(() => null),
           apiFetchAll<Payment>('payments').catch(() => null),
           apiFetchAll<Customer>('customers').catch(() => null),
+          apiFetchAll<Location>('locations').catch(() => null),
           apiFetchAll<Expense>('expenses').catch(() => null),
           apiFetchAll<Purchase>('purchases').catch(() => null),
           apiFetchAll<SellReturn>('sellReturns').catch(() => null),
           apiFetchAll<PurchaseReturn>('purchaseReturns').catch(() => null),
           apiFetchAll<GlobalOrder>('salesOrders').catch(() => null),
+          apiFetchAll<ActivityLogEntry>('activityLogs').catch(() => null),
         ]);
         if (freshProducts) setProducts(freshProducts);
         if (freshSales) setSales(freshSales);
         if (freshPayments) setPayments(freshPayments);
         if (freshCustomers) setCustomers(freshCustomers);
+        if (freshLocations) {
+          setLocations((freshLocations as Location[])
+            .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+            .filter((row) => row.id && row.name));
+        }
         if (freshExpenses) setExpenses(freshExpenses);
         if (freshPurchases) setPurchases(freshPurchases);
         if (freshSellReturns) setSellReturns(freshSellReturns);
         if (freshPurchaseReturns) setPurchaseReturns(freshPurchaseReturns);
         if (freshOrders) setOrders(freshOrders);
+        if (freshActivityLogs) setActivityLogs(freshActivityLogs);
       } catch {
         // polling failure is non-fatal — the user keeps their current data
       }
@@ -3348,7 +3050,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const keys = [
       'roles',
       'commissionAgents',
-      'locations',
       'printers',
       'invoiceSchemes',
       'invoiceLayouts',
@@ -3386,15 +3087,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         hasRemoteData = true;
         dropdownSyncApplyingRemoteRef.current = true;
         setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
-      }
-
-      const remoteLocations = getRows('locations');
-      if (remoteLocations.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setLocations((remoteLocations as Location[])
-          .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-          .filter((row) => row.id && row.name));
       }
 
       const remotePrinters = getRows('printers');
@@ -3506,9 +3198,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         dropdownSyncApplyingRemoteRef.current = true;
         setRoles(ensureRequiredRoles(remoteRoles as Role[]));
         setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
-        setLocations((remoteLocations as Location[])
-          .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-          .filter((row) => row.id && row.name));
         setPrinters((remotePrinters as ReceiptPrinter[])
           .map((row, index) => normalizePrinterRecord(row, initialPrinters[index] || initialPrinters[0]))
           .filter((row) => row.id && row.name));
@@ -3534,7 +3223,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const seedCollections = {
         roles: remoteRoles.length > 0 ? remoteRoles : roles,
         commissionAgents: remoteAgents.length > 0 ? remoteAgents : commissionAgents,
-        locations: remoteLocations.length > 0 ? remoteLocations : locations,
         printers: remotePrinters.length > 0 ? remotePrinters : printers,
         invoiceSchemes: remoteInvoiceSchemes.length > 0 ? remoteInvoiceSchemes : invoiceSchemes,
         invoiceLayouts: remoteInvoiceLayouts.length > 0 ? remoteInvoiceLayouts : invoiceLayouts,
@@ -3574,7 +3262,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const collections = {
       roles,
       commissionAgents,
-      locations,
       printers,
       invoiceSchemes,
       invoiceLayouts,
@@ -3610,7 +3297,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     dropdownSyncEnabled,
     roles,
     commissionAgents,
-    locations,
     printers,
     invoiceSchemes,
     invoiceLayouts,
@@ -3628,54 +3314,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   ]);
 
   // ============================================================
-  //  PERSIST TO LOCALSTORAGE
+  //  RUNTIME SETTINGS + AUTH SESSION STORAGE ONLY
   // ============================================================
 
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_products_v2', JSON.stringify(products)); }, [dbSourceOfTruth, products]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_customers_v2', JSON.stringify(customers)); }, [dbSourceOfTruth, customers]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_suppliers_v2', JSON.stringify(suppliers)); }, [dbSourceOfTruth, suppliers]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_contacts', JSON.stringify(contacts)); }, [dbSourceOfTruth, contacts]);
   useEffect(() => {
-    if (dbSourceOfTruth) return;
-    writeHardenedState(localStorage, CORE_SALES_STORAGE_KEY, sales);
-    removeLegacyKeys(localStorage, ['app_sales']);
-  }, [dbSourceOfTruth, sales]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_sell_returns', JSON.stringify(sellReturns)); }, [dbSourceOfTruth, sellReturns]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchases', JSON.stringify(purchases)); }, [dbSourceOfTruth, purchases]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_requisitions', JSON.stringify(purchaseRequisitions)); }, [dbSourceOfTruth, purchaseRequisitions]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_orders', JSON.stringify(purchaseOrders)); }, [dbSourceOfTruth, purchaseOrders]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_purchase_returns', JSON.stringify(purchaseReturns)); }, [dbSourceOfTruth, purchaseReturns]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_orders', JSON.stringify(orders)); }, [dbSourceOfTruth, orders]);
-  useEffect(() => {
-    if (dbSourceOfTruth) return;
-    writeHardenedState(localStorage, CORE_PAYMENTS_STORAGE_KEY, payments);
-    removeLegacyKeys(localStorage, ['app_payments']);
-  }, [dbSourceOfTruth, payments]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_expenses', JSON.stringify(expenses)); }, [dbSourceOfTruth, expenses]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_expense_categories', JSON.stringify(expenseCategories)); }, [dbSourceOfTruth, expenseCategories]);
-  useEffect(() => {
-    if (dbSourceOfTruth) return;
-    writeHardenedState(localStorage, CORE_USERS_STORAGE_KEY, users);
-    removeLegacyKeys(localStorage, ['app_users']);
-  }, [dbSourceOfTruth, users]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_roles', JSON.stringify(roles)); }, [dbSourceOfTruth, roles]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_commission_agents', JSON.stringify(commissionAgents)); }, [dbSourceOfTruth, commissionAgents]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_locations', JSON.stringify(locations)); }, [dbSourceOfTruth, locations]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_receipt_printers', JSON.stringify(printers)); }, [dbSourceOfTruth, printers]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_invoice_schemes', JSON.stringify(invoiceSchemes)); }, [dbSourceOfTruth, invoiceSchemes]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_invoice_layouts', JSON.stringify(invoiceLayouts)); }, [dbSourceOfTruth, invoiceLayouts]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_barcode_settings', JSON.stringify(barcodeSettings)); }, [dbSourceOfTruth, barcodeSettings]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_tax_rates', JSON.stringify(normalizeTaxRates(taxRates))); }, [dbSourceOfTruth, taxRates]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_customer_groups', JSON.stringify(customerGroups)); }, [dbSourceOfTruth, customerGroups]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_categories', JSON.stringify(productCategories)); }, [dbSourceOfTruth, productCategories]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_brands', JSON.stringify(productBrands)); }, [dbSourceOfTruth, productBrands]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_units', JSON.stringify(productUnits)); }, [dbSourceOfTruth, productUnits]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_warranties', JSON.stringify(warranties)); }, [dbSourceOfTruth, warranties]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_product_variations', JSON.stringify(productVariations)); }, [dbSourceOfTruth, productVariations]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_selling_price_groups', JSON.stringify(sellingPriceGroups)); }, [dbSourceOfTruth, sellingPriceGroups]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_discounts', JSON.stringify(discounts)); }, [dbSourceOfTruth, discounts]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_activity_logs', JSON.stringify(activityLogs)); }, [dbSourceOfTruth, activityLogs]);
-  useEffect(() => { if (!dbSourceOfTruth) localStorage.setItem('app_settings', JSON.stringify(settings)); }, [dbSourceOfTruth, settings]);
+    (window as Window & { __ATWAR_RUNTIME_SETTINGS__?: AppSettings }).__ATWAR_RUNTIME_SETTINGS__ = settings;
+  }, [settings]);
+
   useEffect(() => {
     if (currentUser) {
       writeHardenedState(sessionStorage, AUTH_SESSION_STORAGE_KEY, currentUser);
@@ -3911,6 +3556,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             module,
             navigateTo,
             triggeredBy: userLabel,
+            activityId: next.id,
+            sourceActivityId: next.id,
+            timestamp: next.date,
           },
         }));
       } catch {
@@ -4251,9 +3899,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // - customers.customerGroup -> customers.customerGroupId
   // - customerGroups.sellingPriceGroup -> customerGroups.sellingPriceGroupId
   useEffect(() => {
-    if (localStorage.getItem(CUSTOMER_GROUP_LINK_MIGRATION_KEY)) return;
-
-    localStorage.setItem(CUSTOMER_GROUP_LINK_MIGRATION_KEY, '1');
+    if (customerGroupLinkMigrationAppliedRef.current) return;
+    customerGroupLinkMigrationAppliedRef.current = true;
 
     const normalizedGroups = customerGroups.map(group =>
       normalizeCustomerGroupRecord(group, sellingPriceGroups)
@@ -4291,9 +3938,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // One-time safe migration for legacy sales without customer group snapshot:
   // - sales.customerGroup/customerGroupId <- customer master at migration time
   useEffect(() => {
-    if (localStorage.getItem(SALE_CUSTOMER_GROUP_SNAPSHOT_MIGRATION_KEY)) return;
-
-    localStorage.setItem(SALE_CUSTOMER_GROUP_SNAPSHOT_MIGRATION_KEY, '1');
+    if (saleCustomerGroupSnapshotMigrationAppliedRef.current) return;
+    saleCustomerGroupSnapshotMigrationAppliedRef.current = true;
 
     setSales(prev => {
       const normalized = prev.map(sale => {
@@ -4334,9 +3980,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // One-time safe migration for legacy name-only product category links:
   // - products.category -> products.categoryId
   useEffect(() => {
-    if (localStorage.getItem(PRODUCT_CATEGORY_LINK_MIGRATION_KEY)) return;
-
-    localStorage.setItem(PRODUCT_CATEGORY_LINK_MIGRATION_KEY, '1');
+    if (productCategoryLinkMigrationAppliedRef.current) return;
+    productCategoryLinkMigrationAppliedRef.current = true;
 
     setProducts(prev => {
       const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
@@ -4354,9 +3999,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // One-time safe migration for legacy name-only product brand links:
   // - products.brand -> products.brandId
   useEffect(() => {
-    if (localStorage.getItem(PRODUCT_BRAND_LINK_MIGRATION_KEY)) return;
-
-    localStorage.setItem(PRODUCT_BRAND_LINK_MIGRATION_KEY, '1');
+    if (productBrandLinkMigrationAppliedRef.current) return;
+    productBrandLinkMigrationAppliedRef.current = true;
 
     setProducts(prev => {
       const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
@@ -4374,9 +4018,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // One-time safe migration for legacy name-only product warranty links:
   // - products.warranty (name) -> products.warranty (id)
   useEffect(() => {
-    if (localStorage.getItem(PRODUCT_WARRANTY_LINK_MIGRATION_KEY)) return;
-
-    localStorage.setItem(PRODUCT_WARRANTY_LINK_MIGRATION_KEY, '1');
+    if (productWarrantyLinkMigrationAppliedRef.current) return;
+    productWarrantyLinkMigrationAppliedRef.current = true;
 
     setProducts(prev => {
       const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
@@ -6220,7 +5863,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: LOCATIONS
   // ============================================================
 
-  const addLocation = (location: Location) => {
+  const addLocation = async (location: Location): Promise<LocationMutationResult> => {
     const normalized = normalizeLocationRecord(location, location);
     const resolvedId = String(normalized.id || `BL${Date.now()}`).trim();
     const payload: Location = {
@@ -6234,7 +5877,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: 'Add blocked. Location name is required.',
       });
-      return;
+      return { success: false, message: 'Location name is required.' };
     }
     const hasDuplicateId = locations.some(existing => existing.id === payload.id);
     if (hasDuplicateId) {
@@ -6243,7 +5886,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: `Add blocked. Duplicate location id: ${payload.id}`,
       });
-      return;
+      return { success: false, message: `Location ID "${payload.id}" already exists.` };
     }
     const hasDuplicateName = locations.some(existing => normalizeText(existing.name) === normalizedName);
     if (hasDuplicateName) {
@@ -6252,16 +5895,52 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: `Add blocked. Duplicate location name: ${payload.name}`,
       });
-      return;
+      return { success: false, message: `Location name "${payload.name}" already exists.` };
     }
+
+    const saved = await syncRecordStrict('locations', payload);
+    if (!saved.ok) {
+      const message = saved.status === 401
+        ? 'Your session expired. Please sign in again.'
+        : (saved.error || 'Failed to save location to database.');
+      recordActivity({
+        action: 'Blocked',
+        module: 'Locations',
+        description: `Add blocked. Database save failed for ${payload.name || payload.id}: ${message}`,
+      });
+      return { success: false, message };
+    }
+
     setLocations(prev => [...prev, payload]);
     recordActivity({
       action: 'Created',
       module: 'Locations',
       description: `Added location: ${payload.name || payload.id}`,
     });
+    return { success: true };
   };
-  const updateLocation = (location: Location) => {
+  const refreshLocationDependencyCaches = async () => {
+    await Promise.all([
+      bootstrapStockTransfersFromDB().catch(() => {}),
+      bootstrapStockAdjustmentsFromDB().catch(() => {}),
+      bootstrapStockLotsFromDB().catch(() => {}),
+      bootstrapRegisterFromDB().catch(() => {}),
+    ]);
+
+    const [remoteFieldPayments, remotePaymentAccounts] = await Promise.all([
+      fetchDedicated<any>('/api/sync/field-payments').catch(() => null),
+      fetchDedicated<any>('/api/sync/payment-accounts').catch(() => null),
+    ]);
+
+    if (Array.isArray(remoteFieldPayments)) {
+      fieldPaymentsCacheRef.current = remoteFieldPayments;
+    }
+    if (Array.isArray(remotePaymentAccounts)) {
+      setStoredPaymentAccounts(remotePaymentAccounts);
+      dispatchPaymentAccountsUpdated();
+    }
+  };
+  const updateLocation = async (location: Location): Promise<LocationMutationResult> => {
     const existing = locations.find(l => l.id === location.id);
     if (!existing) {
       recordActivity({
@@ -6269,7 +5948,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: `Update blocked. Location not found: ${location.id}`,
       });
-      return;
+      return { success: false, message: 'Location not found.' };
     }
 
     const normalized = normalizeLocationRecord(location, existing);
@@ -6280,7 +5959,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: `Update blocked. Location name is required: ${normalized.id}`,
       });
-      return;
+      return { success: false, message: 'Location name is required.' };
     }
     const duplicateName = locations.some(
       (row) => row.id !== normalized.id && normalizeText(row.name) === normalizedName
@@ -6291,8 +5970,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Locations',
         description: `Update blocked. Duplicate location name: ${normalized.name}`,
       });
-      return;
+      return { success: false, message: `Location name "${normalized.name}" already exists.` };
     }
+
+    const saved = await syncRecordStrict('locations', normalized);
+    if (!saved.ok) {
+      const message = saved.status === 401
+        ? 'Your session expired. Please sign in again.'
+        : (saved.error || 'Failed to update location in database.');
+      recordActivity({
+        action: 'Blocked',
+        module: 'Locations',
+        description: `Update blocked. Database save failed for ${normalized.name || normalized.id}: ${message}`,
+      });
+      return { success: false, message };
+    }
+
     const previousName = String(existing.name || '').trim();
     const nextName = String(normalized.name || '').trim();
     const nameChanged = normalizeText(previousName) !== normalizeText(nextName);
@@ -6301,6 +5994,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (nameChanged && previousName && nextName) {
       const matchesOldName = (value?: string) => normalizeText(value) === normalizeText(previousName);
+      await refreshLocationDependencyCaches();
 
       setProducts(prev => prev.map(product => {
         const businessLocation = matchesOldName(product.businessLocation) ? nextName : product.businessLocation;
@@ -6455,8 +6149,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       module: 'Locations',
       description: `Updated location: ${normalized.name || normalized.id}`,
     });
+    return { success: true };
   };
-  const deleteLocation = (id: string): LocationMutationResult => {
+  const deleteLocation = async (id: string): Promise<LocationMutationResult> => {
     const existing = locations.find(l => l.id === id);
     if (!existing) {
       return { success: false, message: 'Location not found.' };
@@ -6497,6 +6192,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       usageParts.push('Current User Session (1)');
     }
 
+    await refreshLocationDependencyCaches();
+
     try {
       pushUsage('Stock Transfers', readStockTransfers().filter(row => matchesLocationName(row.locationFrom) || matchesLocationName(row.locationTo)).length);
       pushUsage('Stock Adjustments', readStockAdjustments().filter(row => matchesLocationName(row.location)).length);
@@ -6533,6 +6230,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Delete blocked for ${existing.name}: ${usageParts.join(', ')}`,
       });
       return { success: false, message };
+    }
+
+    const deleted = await deleteRecordStrict('locations', id);
+    if (!deleted.ok) {
+      return {
+        success: false,
+        message: deleted.status === 401
+          ? 'Your session expired. Please sign in again.'
+          : (deleted.error || 'Failed to delete location from database.'),
+      };
     }
 
     setLocations(prev => prev.filter(l => l.id !== id));

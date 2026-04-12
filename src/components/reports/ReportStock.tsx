@@ -55,8 +55,6 @@ type ColumnKey =
   | 'totalUnitTransferred'
   | 'totalUnitAdjusted';
 
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
-
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const hasStatus = (value: unknown, expected: string) => normalize(value) === normalize(expected);
 const stockKey = (left: unknown, right: unknown) => `${normalize(left)}@@${normalize(right)}`;
@@ -150,17 +148,18 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true })
       if (cancelled) return;
       setLedgerVersion((prev) => prev + 1);
     };
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === STOCK_LEDGER_KEY) void refreshLedger();
-    };
     void refreshLedger();
     const onFocus = () => { void refreshLedger(); };
+    const onTransfersUpdated = () => { void refreshLedger(); };
+    const onLedgerUpdated = () => { void refreshLedger(); };
     window.addEventListener('focus', onFocus);
-    window.addEventListener('storage', onStorage);
+    window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
+    window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
+      window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
     };
   }, []);
 

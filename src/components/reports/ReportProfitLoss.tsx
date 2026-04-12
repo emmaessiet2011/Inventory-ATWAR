@@ -23,12 +23,10 @@ import MultiSelect from '@/components/shared/MultiSelect';
 import { printActiveReportTable } from '@/utils/printUtils';
 import {
   bootstrapStockTransfersFromDB,
-  getStockTransferStorageKey,
   readStockTransfers,
 } from '@/utils/stockTransfers';
 import {
   bootstrapStockAdjustmentsFromDB,
-  getStockAdjustmentStorageKey,
   readStockAdjustments,
 } from '@/utils/stockAdjustments';
 import { parseExpenseDateToMs } from '@/utils/expenses';
@@ -165,32 +163,29 @@ const ReportProfitLoss: React.FC = () => {
   const columnMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const transfersKey = getStockTransferStorageKey();
-    const adjustmentsKey = getStockAdjustmentStorageKey();
     const refreshStockOps = () => setStockOpsVersion((prev) => prev + 1);
     let isMounted = true;
 
-    const bootstrap = async () => {
+    const refreshFromDB = async () => {
       await Promise.all([
         bootstrapStockTransfersFromDB().catch(() => {}),
         bootstrapStockAdjustmentsFromDB().catch(() => {}),
       ]);
       if (isMounted) refreshStockOps();
     };
-    bootstrap();
 
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === transfersKey || event.key === adjustmentsKey) {
-        refreshStockOps();
-      }
-    };
-
-    window.addEventListener('focus', refreshStockOps);
-    window.addEventListener('storage', onStorage);
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    const onTransfersUpdated = () => { void refreshFromDB(); };
+    const onAdjustmentsUpdated = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
+    window.addEventListener('app:stock-adjustments-updated', onAdjustmentsUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', refreshStockOps);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
+      window.removeEventListener('app:stock-adjustments-updated', onAdjustmentsUpdated);
     };
   }, []);
 

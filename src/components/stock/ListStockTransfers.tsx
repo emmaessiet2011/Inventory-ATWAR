@@ -13,7 +13,6 @@ import {
   StockTransferRecord,
   appendStockLedgerEntries,
   bootstrapStockTransfersFromDB,
-  getStockTransferStorageKey,
   readStockTransfers,
   simulateStockTransfer,
   writeStockTransfers,
@@ -50,7 +49,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
-  const [transfers, setTransfers] = useState<StockTransferRecord[]>(() => readStockTransfers());
+  const [transfers, setTransfers] = useState<StockTransferRecord[]>([]);
   const [entriesPerPage, setEntriesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
@@ -65,25 +64,22 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
   });
 
   useEffect(() => {
-    const storageKey = getStockTransferStorageKey();
-    const refresh = () => setTransfers(readStockTransfers());
     let isMounted = true;
 
-    const bootstrap = async () => {
+    const refreshFromDB = async () => {
       await bootstrapStockTransfersFromDB().catch(() => {});
-      if (isMounted) refresh();
+      if (isMounted) setTransfers(readStockTransfers());
     };
 
-    bootstrap();
-    window.addEventListener('focus', refresh);
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === storageKey) refresh();
-    };
-    window.addEventListener('storage', onStorage);
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    const onUpdated = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-transfers-updated', onUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-transfers-updated', onUpdated);
     };
   }, []);
 

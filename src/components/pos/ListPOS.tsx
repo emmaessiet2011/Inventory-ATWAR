@@ -20,7 +20,7 @@ import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import { useNotifications } from '@/context/NotificationContext';
 import { Sale as GlobalSale, useGlobalContext } from '@/context/GlobalContext';
 import { printActiveReportTable } from '@/utils/printUtils';
-import { getActiveRegisterSession } from '@/utils/registerLedger';
+import { bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { buildPaginationItems } from '@/utils/pagination';
 
@@ -867,7 +867,10 @@ const ListPOS: React.FC<ListPOSProps> = ({
                       />
                   </div>
                   <button 
-                    onClick={() => onNavigate(getActiveRegisterSession() ? 'pos' : 'open-register')}
+                    onClick={async () => {
+                      await bootstrapRegisterFromDB().catch(() => {});
+                      onNavigate(getActiveRegisterSession() ? 'pos' : 'open-register');
+                    }}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full shadow-md text-xs font-bold transition-all flex-shrink-0 flex items-center gap-1"
                     title="Add POS Sale"
                   >

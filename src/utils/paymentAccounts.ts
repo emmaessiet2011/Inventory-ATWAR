@@ -1,5 +1,3 @@
-export const PAYMENT_ACCOUNTS_STORAGE_KEY = 'app_payment_accounts';
-export const PAYMENT_ACCOUNT_TYPES_STORAGE_KEY = 'app_payment_account_types';
 export const PAYMENT_ACCOUNTS_UPDATED_EVENT = 'app:payment-accounts-updated';
 let paymentAccountsCache: StoredPaymentAccount[] = [];
 let paymentAccountTypesCache: string[] = ['Cash', 'Bank'];

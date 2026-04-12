@@ -12,7 +12,6 @@ import { appendStockLedgerEntries } from '@/utils/stockTransfers';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
 import {
   bootstrapStockAdjustmentsFromDB,
-  getStockAdjustmentStorageKey,
   StockAdjustmentRecord,
   readStockAdjustments,
   simulateStockAdjustment,
@@ -89,7 +88,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
-  const [adjustments, setAdjustments] = useState<StockAdjustmentRecord[]>(() => readStockAdjustments());
+  const [adjustments, setAdjustments] = useState<StockAdjustmentRecord[]>([]);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [viewAdjustmentId, setViewAdjustmentId] = useState<string | null>(null);
   const [showColumnMenu, setShowColumnMenu] = useState(false);
@@ -121,24 +120,20 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   const ownerNameFilter = normalize(restrictToAddedByName);
 
   useEffect(() => {
-    const storageKey = getStockAdjustmentStorageKey();
-    const refresh = () => setAdjustments(readStockAdjustments());
     let isMounted = true;
-    const bootstrap = async () => {
+    const refreshFromDB = async () => {
       await bootstrapStockAdjustmentsFromDB().catch(() => {});
-      if (isMounted) refresh();
+      if (isMounted) setAdjustments(readStockAdjustments());
     };
-    bootstrap();
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === storageKey) refresh();
-    };
-    refresh();
-    window.addEventListener('focus', refresh);
-    window.addEventListener('storage', onStorage);
+    void refreshFromDB();
+    const onFocus = () => { void refreshFromDB(); };
+    const onUpdated = () => { void refreshFromDB(); };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-adjustments-updated', onUpdated);
     return () => {
       isMounted = false;
-      window.removeEventListener('focus', refresh);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-adjustments-updated', onUpdated);
     };
   }, []);
 

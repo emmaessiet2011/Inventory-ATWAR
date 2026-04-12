@@ -141,11 +141,14 @@ const ReportRegister: React.FC = () => {
 
     void refreshFromDB();
     const onFocus = () => { void refreshFromDB(); };
+    const onRegisterUpdated = () => { void refreshFromDB(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener('app:register-updated', onRegisterUpdated);
 
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:register-updated', onRegisterUpdated);
     };
   }, []);
 

@@ -152,6 +152,51 @@ export function syncRecord(resource: string, data: object): void {
 }
 
 /**
+ * Awaited upsert helper for critical flows where UI must reflect
+ * true server state (e.g., business settings that must not disappear).
+ */
+export async function syncRecordStrict(
+  resource: string,
+  data: object,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}`,
+      {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(data),
+      },
+    );
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      console.error(`[syncRecordStrict] ${resource} failed (${res.status})`, detail || data);
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+/**
  * Fire-and-forget delete of a single record.
  * Sends DELETE /api/sync/record/:resource/:id.
  */

@@ -50,8 +50,7 @@ export interface StockAdjustmentSimulationResult {
   lotAdjustments: StockLotAdjustment[];
 }
 
-const STOCK_ADJUSTMENTS_KEY = 'app_stock_adjustments_v1';
-const EDIT_STOCK_ADJUSTMENT_ID_KEY = 'app_edit_stock_adjustment_id';
+const STOCK_ADJUSTMENTS_UPDATED_EVENT = 'app:stock-adjustments-updated';
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
@@ -61,54 +60,64 @@ const toIsoDate = (value: string): string => {
 };
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
 
-export const getStockAdjustmentStorageKey = () => STOCK_ADJUSTMENTS_KEY;
-export const getEditStockAdjustmentIdKey = () => EDIT_STOCK_ADJUSTMENT_ID_KEY;
+let stockAdjustmentsCache: StockAdjustmentRecord[] = [];
+
+const notify = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(STOCK_ADJUSTMENTS_UPDATED_EVENT));
+};
+
+const parseRows = (raw: unknown): StockAdjustmentRecord[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const items = Array.isArray((row as any)?.items)
+        ? (row as any).items
+            .map((item: any) => ({
+              productId: String(item?.productId || ''),
+              productName: String(item?.productName || ''),
+              sku: String(item?.sku || ''),
+              unit: String(item?.unit || ''),
+              quantity: round3(Number(item?.quantity || 0)),
+              unitCost: round3(Number(item?.unitCost || 0)),
+              currentStockBefore: round3(Number(item?.currentStockBefore || 0)),
+            }))
+            .filter((item: StockAdjustmentItem) => item.productId && Number.isFinite(item.quantity) && item.quantity !== 0)
+        : [];
+      return {
+        id: String((row as any)?.id || ''),
+        date: String((row as any)?.date || ''),
+        referenceNo: String((row as any)?.referenceNo || ''),
+        location: String((row as any)?.location || ''),
+        adjustmentType: (String((row as any)?.adjustmentType || 'Normal') as StockAdjustmentType),
+        reason: String((row as any)?.reason || ''),
+        totalAmount: round3(Number((row as any)?.totalAmount || 0)),
+        totalRecovered: round3(Number((row as any)?.totalRecovered || 0)),
+        items,
+        addedById: String((row as any)?.addedById || ''),
+        addedBy: String((row as any)?.addedBy || 'System'),
+        createdAt: String((row as any)?.createdAt || ''),
+        updatedAt: String((row as any)?.updatedAt || ''),
+      } as StockAdjustmentRecord;
+    })
+    .filter((row: StockAdjustmentRecord) => row.id);
+};
 
 export const readStockAdjustments = (): StockAdjustmentRecord[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_ADJUSTMENTS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((row) => {
-        const items = Array.isArray(row?.items)
-          ? row.items
-              .map((item: any) => ({
-                productId: String(item?.productId || ''),
-                productName: String(item?.productName || ''),
-                sku: String(item?.sku || ''),
-                unit: String(item?.unit || ''),
-                quantity: round3(Number(item?.quantity || 0)),
-                unitCost: round3(Number(item?.unitCost || 0)),
-                currentStockBefore: round3(Number(item?.currentStockBefore || 0)),
-              }))
-              .filter((item: StockAdjustmentItem) => item.productId && Number.isFinite(item.quantity) && item.quantity !== 0)
-          : [];
-        return {
-          id: String(row?.id || ''),
-          date: String(row?.date || ''),
-          referenceNo: String(row?.referenceNo || ''),
-          location: String(row?.location || ''),
-          adjustmentType: (String(row?.adjustmentType || 'Normal') as StockAdjustmentType),
-          reason: String(row?.reason || ''),
-          totalAmount: round3(Number(row?.totalAmount || 0)),
-          totalRecovered: round3(Number(row?.totalRecovered || 0)),
-          items,
-          addedById: String(row?.addedById || ''),
-          addedBy: String(row?.addedBy || 'System'),
-          createdAt: String(row?.createdAt || ''),
-          updatedAt: String(row?.updatedAt || ''),
-        } as StockAdjustmentRecord;
-      })
-      .filter((row: StockAdjustmentRecord) => row.id);
-  } catch {
-    return [];
+  return stockAdjustmentsCache.map((row) => ({ ...row, items: [...(row.items || [])] }));
+};
+
+export const fetchStockAdjustmentsFromDB = async (): Promise<StockAdjustmentRecord[]> => {
+  const remoteAdjustments = await fetchDedicated<StockAdjustmentRecord>('/api/sync/stock-adjustments');
+  if (remoteAdjustments) {
+    stockAdjustmentsCache = parseRows(remoteAdjustments);
   }
+  return readStockAdjustments();
 };
 
 export const writeStockAdjustments = (rows: StockAdjustmentRecord[], changedId?: string) => {
-  localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(rows));
+  stockAdjustmentsCache = parseRows(rows);
+  notify();
   if (changedId) {
     const record = rows.find(r => r.id === changedId);
     if (record) syncDedicated('/api/sync/stock-adjustments', record.id, record);
@@ -123,10 +132,7 @@ export const writeStockAdjustments = (rows: StockAdjustmentRecord[], changedId?:
  * Empty DB responses clear local cache to prevent stale browser-only rows.
  */
 export const bootstrapStockAdjustmentsFromDB = async (): Promise<void> => {
-  const remoteAdjustments = await fetchDedicated<StockAdjustmentRecord>('/api/sync/stock-adjustments');
-  if (remoteAdjustments) {
-    localStorage.setItem(STOCK_ADJUSTMENTS_KEY, JSON.stringify(remoteAdjustments));
-  }
+  await fetchStockAdjustmentsFromDB();
 };
 
 export const makeNextStockAdjustmentRef = (prefix: string, rows: StockAdjustmentRecord[]) => {

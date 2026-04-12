@@ -5,6 +5,7 @@ import { Save, Calendar, Upload, Info, CreditCard, DollarSign, RefreshCw, MapPin
 import { toExpenseDateTimeInput, toExpenseIsoDateTime } from '@/utils/expenses';
 import {
   addRegisterTransaction,
+  bootstrapRegisterFromDB,
   deleteRegisterTransaction,
   getActiveRegisterSession,
 } from '@/utils/registerLedger';
@@ -264,7 +265,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     onNavigate?.('expenses');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (editingExpenseId && !canEdit) {
       addNotification({ title: 'Access Denied', message: 'You do not have permission to edit expenses.', type: 'error' });
       return;
@@ -444,6 +445,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     }
 
     if (expensePaymentAmount > 0) {
+      await bootstrapRegisterFromDB().catch(() => {});
       const activeRegister = getActiveRegisterSession();
       const expenseLocation = normalize(expense.location);
       const registerLocation = normalize(activeRegister?.locationName);

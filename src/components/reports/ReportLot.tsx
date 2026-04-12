@@ -9,7 +9,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { printActiveReportTable } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
-import { bootstrapStockLotsFromDB, getStockLotsStorageKey, readStockLotBalances } from '@/utils/stockLots';
+import { bootstrapStockLotsFromDB, readStockLotBalances } from '@/utils/stockLots';
 import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 
 interface LotReportItem {
@@ -29,8 +29,6 @@ interface LotReportItem {
   brand: string;
   isFallback: boolean;
 }
-
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
@@ -108,7 +106,6 @@ const ReportLot: React.FC = () => {
   });
   const [lotVersion, setLotVersion] = useState(0);
   const columnMenuRef = useRef<HTMLDivElement | null>(null);
-  const stockLotsStorageKey = getStockLotsStorageKey();
 
   useEffect(() => {
     const onMouseDown = (event: MouseEvent) => {
@@ -131,21 +128,23 @@ const ReportLot: React.FC = () => {
       if (cancelled) return;
       setLotVersion((prev) => prev + 1);
     };
-    const onStorage = (event: StorageEvent) => {
-      if (!event.key || event.key === stockLotsStorageKey || event.key === STOCK_LEDGER_KEY) {
-        void refreshLots();
-      }
-    };
     void refreshLots();
     const onFocus = () => { void refreshLots(); };
+    const onLotsUpdated = () => { void refreshLots(); };
+    const onLedgerUpdated = () => { void refreshLots(); };
+    const onTransfersUpdated = () => { void refreshLots(); };
     window.addEventListener('focus', onFocus);
-    window.addEventListener('storage', onStorage);
+    window.addEventListener('app:stock-lots-updated', onLotsUpdated);
+    window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
+    window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
-      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('app:stock-lots-updated', onLotsUpdated);
+      window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
+      window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
     };
-  }, [stockLotsStorageKey]);
+  }, []);
 
   const soldByProductId = useMemo(() => {
     const byId = new Map<string, number>();

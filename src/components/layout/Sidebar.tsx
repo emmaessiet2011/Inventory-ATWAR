@@ -5,7 +5,7 @@ import {
   ChevronDown, ChevronRight, LogOut, Tags,
   BarChart3, UserCircle, LifeBuoy,
   Banknote, ShieldCheck, Sliders, Wallet,
-  Menu, X, Cloud, CloudOff, Loader2
+  Menu, X, Cloud, CloudOff, Loader2, Bell
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { isCoreSyncEnabled } from '@/utils/coreStateSync';
@@ -67,6 +67,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const allMenuItems = [
     { title: 'Dashboard', icon: LayoutDashboard, path: 'dashboard' },
+    { title: 'Notifications', icon: Bell, path: 'notifications' },
     { 
       title: 'User Management', 
       icon: ShieldCheck, 

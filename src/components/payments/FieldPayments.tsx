@@ -5,7 +5,7 @@ import {
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { ConfirmationModal } from '@/components/users/UserModals';
-import { addRegisterTransaction, getActiveRegisterSession } from '@/utils/registerLedger';
+import { addRegisterTransaction, bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import {
   clampPrecision,
   normalizePrefix,
@@ -137,6 +137,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     payments,
     addPayment: globalAddPayment,
     deletePayment: globalDeletePayment,
+    addActivityLog,
     currentUser,
     roles,
     settings,
@@ -622,6 +623,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       };
       persistRecords(records.map(record => record.id === editingId ? updated : record), updated);
       addNotification({ title: 'Field Payment Updated', message: `${current.referenceNo} was updated.`, type: 'success' });
+      addActivityLog({
+        action: 'Updated',
+        module: 'Field Payments',
+        description: `Updated field payment: ${current.referenceNo}`,
+      });
       closeModal();
       return;
     }
@@ -651,10 +657,15 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     };
     persistRecords([newRecord, ...records], newRecord);
     addNotification({ title: 'Field Payment Added', message: `${referenceNo} created and pending approval.`, type: 'success' });
+    addActivityLog({
+      action: 'Created',
+      module: 'Field Payments',
+      description: `Created field payment: ${referenceNo}`,
+    });
     closeModal();
   };
 
-  const handleApprove = (record: FieldPaymentRecord) => {
+  const handleApprove = async (record: FieldPaymentRecord) => {
     if (!canApprove) {
       addNotification({ title: 'Access Denied', message: 'You do not have permission to approve field payments.', type: 'error' });
       return;
@@ -704,6 +715,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       return;
     }
 
+    await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     if (activeRegister && (!record.location || activeRegister.locationName === record.location)) {
       addRegisterTransaction({
@@ -728,6 +740,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     };
     persistRecords(records.map(row => row.id === record.id ? approvedRecord : row), approvedRecord);
     addNotification({ title: 'Field Payment Approved', message: `${record.referenceNo} posted to payment ledger.`, type: 'success' });
+    addActivityLog({
+      action: 'Approved',
+      module: 'Field Payments',
+      description: `Approved field payment: ${record.referenceNo}`,
+    });
   };
 
   const handleDelete = () => {
@@ -748,6 +765,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     if (linkedPaymentId) globalDeletePayment(linkedPaymentId);
     persistRecords(records.filter(record => record.id !== deletingRecord.id), undefined, deletingRecord.id);
     addNotification({ title: 'Field Payment Deleted', message: `${deletingRecord.referenceNo} was deleted.`, type: 'success' });
+    addActivityLog({
+      action: 'Deleted',
+      module: 'Field Payments',
+      description: `Deleted field payment: ${deletingRecord.referenceNo}`,
+    });
     setDeletingRecord(null);
   };
 

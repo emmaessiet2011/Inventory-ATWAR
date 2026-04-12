@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Calendar, DollarSign, Banknote, ChevronDown, CreditCard, Paperclip } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { addRegisterTransaction, getActiveRegisterSession } from '@/utils/registerLedger';
+import { addRegisterTransaction, bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import {
   clampPrecision,
   normalizePrefix,
@@ -126,7 +126,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     ? Number((paymentAmountPreview * customerRebatePercent / 100).toFixed(currencyPrecision))
     : 0;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const paymentAmount = parseFloat(toFixedPrecision(amount, currencyPrecision));
     if (!sale) return;
     if (isNaN(paymentAmount) || paymentAmount <= 0) {
@@ -185,6 +185,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
         drawerName: chequeDrawerName || undefined,
       } : {}),
     });
+    await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(sale.location);
     const registerLocation = normalizeText(activeRegister?.locationName);

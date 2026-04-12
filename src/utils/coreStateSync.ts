@@ -110,9 +110,9 @@ export const pushCoreSnapshot = async (snapshot: CoreSyncSnapshot): Promise<bool
 /** Lightweight ping to keep the Render free-tier server awake. */
 export const pingBackend = async (): Promise<void> => {
   try {
-    await fetch(`${getApiBaseUrl()}/api/sync/core`, {
-      method: 'HEAD',
-      headers: { Accept: 'application/json', ...getAuthHeaders() },
+    await fetch(`${getApiBaseUrl()}/api/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
     });
   } catch {
     // non-blocking — best effort only

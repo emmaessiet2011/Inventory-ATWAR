@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Download, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
@@ -91,7 +91,6 @@ interface ImportBatchRecord {
   invoices: number;
 }
 
-const IMPORT_HISTORY_KEY = 'app_sales_import_history_v1';
 
 const columns: ColumnDefinition[] = [
   { key: 'invoiceNo', name: 'Invoice No.', required: false, instruction: 'Optional - leave blank to auto-generate' },
@@ -142,21 +141,6 @@ const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const normalizeHeader = (value: string) => normalizeText(value.replace(/^\uFEFF/, '')).toLowerCase();
 const normalizePhone = (value: string) => normalizeText(value).replace(/[\s-]/g, '').toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
-
-const readHistory = (): ImportBatchRecord[] => {
-  try {
-    const raw = localStorage.getItem(IMPORT_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const writeHistory = (rows: ImportBatchRecord[]) => {
-  localStorage.setItem(IMPORT_HISTORY_KEY, JSON.stringify(rows));
-};
 
 const resolveHeaderIndexes = (headerCells: string[]): Partial<Record<ColumnKey, number>> => {
   const normalizedHeaders = headerCells.map(normalizeHeader);
@@ -228,12 +212,8 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
   const [step, setStep] = useState<Step>('upload');
   const [groupedSales, setGroupedSales] = useState<GroupedSale[]>([]);
   const [importResults, setImportResults] = useState<{ imported: number; skipped: number } | null>(null);
-  const [importHistory, setImportHistory] = useState<ImportBatchRecord[]>(() => readHistory());
+  const [importHistory, setImportHistory] = useState<ImportBatchRecord[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    writeHistory(importHistory);
-  }, [importHistory]);
 
   const existingInvoiceSet = useMemo(
     () => new Set(sales.map(sale => normalizeText(String(sale.invoiceNo || '')).toLowerCase()).filter(Boolean)),

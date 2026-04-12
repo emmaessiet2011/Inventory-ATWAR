@@ -46,9 +46,8 @@ export interface StockTransferSimulationResult {
   ledgerEntries: StockLedgerEntry[];
 }
 
-const STOCK_TRANSFERS_KEY = 'app_stock_transfers_v1';
-const EDIT_STOCK_TRANSFER_ID_KEY = 'app_edit_stock_transfer_id';
-const STOCK_LEDGER_KEY = 'app_product_stock_ledger_v1';
+const STOCK_TRANSFERS_UPDATED_EVENT = 'app:stock-transfers-updated';
+const STOCK_LEDGER_UPDATED_EVENT = 'app:stock-ledger-updated';
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
@@ -58,54 +57,82 @@ const toIsoDate = (value: string): string => {
 };
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
 
-export const getStockTransferStorageKey = () => STOCK_TRANSFERS_KEY;
-export const getStockLedgerStorageKey = () => STOCK_LEDGER_KEY;
-export const getEditStockTransferIdKey = () => EDIT_STOCK_TRANSFER_ID_KEY;
+let stockTransfersCache: StockTransferRecord[] = [];
+let stockLedgerCache: StockLedgerEntry[] = [];
+
+const notify = (eventName: string) => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(eventName));
+};
+
+const normalizeTransferRows = (raw: unknown): StockTransferRecord[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((row) => {
+      const items = Array.isArray((row as any)?.items)
+        ? (row as any).items
+            .map((item: any) => ({
+              productId: String(item?.productId || ''),
+              productName: String(item?.productName || ''),
+              sku: String(item?.sku || ''),
+              qty: round3(Number(item?.qty || 0)),
+              unit: String(item?.unit || ''),
+              unitCost: round3(Number(item?.unitCost || 0)),
+            }))
+            .filter((item: StockTransferItem) => item.qty > 0 && item.productId)
+        : [];
+      return {
+        id: String((row as any)?.id || ''),
+        date: String((row as any)?.date || ''),
+        refNo: String((row as any)?.refNo || ''),
+        locationFrom: String((row as any)?.locationFrom || ''),
+        locationTo: String((row as any)?.locationTo || ''),
+        status: (String((row as any)?.status || 'Pending') as StockTransferStatus),
+        shippingCharges: round3(Number((row as any)?.shippingCharges || 0)),
+        totalAmount: round3(Number((row as any)?.totalAmount || 0)),
+        notes: String((row as any)?.notes || ''),
+        items,
+        addedBy: String((row as any)?.addedBy || 'System'),
+        createdAt: String((row as any)?.createdAt || ''),
+        updatedAt: String((row as any)?.updatedAt || ''),
+      } as StockTransferRecord;
+    })
+    .filter((row: StockTransferRecord) => row.id);
+};
+
+const normalizeLedgerRows = (raw: unknown): StockLedgerEntry[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry: any) => ({
+      id: String(entry?.id || ''),
+      productId: String(entry?.productId || ''),
+      type: String(entry?.type || ''),
+      change: round3(Number(entry?.change || 0)),
+      newQty: round3(Number(entry?.newQty || 0)),
+      date: String(entry?.date || ''),
+      ref: String(entry?.ref || ''),
+      party: String(entry?.party || ''),
+      location: String(entry?.location || ''),
+      note: String(entry?.note || ''),
+    }))
+    .filter((entry: StockLedgerEntry) => entry.id && entry.productId);
+};
 
 export const readStockTransfers = (): StockTransferRecord[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_TRANSFERS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((row) => {
-        const items = Array.isArray(row?.items)
-          ? row.items
-              .map((item: any) => ({
-                productId: String(item?.productId || ''),
-                productName: String(item?.productName || ''),
-                sku: String(item?.sku || ''),
-                qty: round3(Number(item?.qty || 0)),
-                unit: String(item?.unit || ''),
-                unitCost: round3(Number(item?.unitCost || 0)),
-              }))
-              .filter((item: StockTransferItem) => item.qty > 0 && item.productId)
-          : [];
-        return {
-          id: String(row?.id || ''),
-          date: String(row?.date || ''),
-          refNo: String(row?.refNo || ''),
-          locationFrom: String(row?.locationFrom || ''),
-          locationTo: String(row?.locationTo || ''),
-          status: (String(row?.status || 'Pending') as StockTransferStatus),
-          shippingCharges: round3(Number(row?.shippingCharges || 0)),
-          totalAmount: round3(Number(row?.totalAmount || 0)),
-          notes: String(row?.notes || ''),
-          items,
-          addedBy: String(row?.addedBy || 'System'),
-          createdAt: String(row?.createdAt || ''),
-          updatedAt: String(row?.updatedAt || ''),
-        } as StockTransferRecord;
-      })
-      .filter((row: StockTransferRecord) => row.id);
-  } catch {
-    return [];
+  return stockTransfersCache.map((row) => ({ ...row, items: [...(row.items || [])] }));
+};
+
+export const fetchStockTransfersFromDB = async (): Promise<StockTransferRecord[]> => {
+  const remoteTransfers = await fetchDedicated<StockTransferRecord>('/api/sync/stock-transfers');
+  if (remoteTransfers) {
+    stockTransfersCache = normalizeTransferRows(remoteTransfers);
   }
+  return readStockTransfers();
 };
 
 export const writeStockTransfers = (rows: StockTransferRecord[], changedId?: string, deletedId?: string) => {
-  localStorage.setItem(STOCK_TRANSFERS_KEY, JSON.stringify(rows));
+  stockTransfersCache = normalizeTransferRows(rows);
+  notify(STOCK_TRANSFERS_UPDATED_EVENT);
   if (deletedId) {
     deleteDedicated('/api/sync/stock-transfers', deletedId);
   } else if (changedId) {
@@ -117,19 +144,23 @@ export const writeStockTransfers = (rows: StockTransferRecord[], changedId?: str
 };
 
 export const readStockLedger = (): StockLedgerEntry[] => {
-  try {
-    const raw = localStorage.getItem(STOCK_LEDGER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
+  return stockLedgerCache.map((entry) => ({ ...entry }));
+};
+
+export const fetchStockLedgerFromDB = async (): Promise<StockLedgerEntry[]> => {
+  const remoteLedger = await fetchDedicated<StockLedgerEntry>('/api/sync/stock-ledger');
+  if (remoteLedger) {
+    stockLedgerCache = normalizeLedgerRows(remoteLedger);
   }
+  return readStockLedger();
 };
 
 export const appendStockLedgerEntries = (entries: StockLedgerEntry[]) => {
   if (entries.length === 0) return;
-  const existing = readStockLedger();
-  localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify([...existing, ...entries]));
-  entries.forEach(e => syncDedicated('/api/sync/stock-ledger', e.id, e));
+  const next = [...readStockLedger(), ...normalizeLedgerRows(entries)];
+  stockLedgerCache = normalizeLedgerRows(next);
+  notify(STOCK_LEDGER_UPDATED_EVENT);
+  entries.forEach((e) => syncDedicated('/api/sync/stock-ledger', e.id, e));
 };
 
 /**
@@ -137,16 +168,10 @@ export const appendStockLedgerEntries = (entries: StockLedgerEntry[]) => {
  * If DB returns empty arrays, local cache is explicitly cleared to avoid stale browser-only data.
  */
 export const bootstrapStockTransfersFromDB = async (): Promise<void> => {
-  const [remoteTransfers, remoteLedger] = await Promise.all([
-    fetchDedicated<StockTransferRecord>('/api/sync/stock-transfers'),
-    fetchDedicated<StockLedgerEntry>('/api/sync/stock-ledger'),
+  await Promise.all([
+    fetchStockTransfersFromDB(),
+    fetchStockLedgerFromDB(),
   ]);
-  if (remoteTransfers) {
-    localStorage.setItem(STOCK_TRANSFERS_KEY, JSON.stringify(remoteTransfers));
-  }
-  if (remoteLedger) {
-    localStorage.setItem(STOCK_LEDGER_KEY, JSON.stringify(remoteLedger));
-  }
 };
 
 export const makeNextStockTransferRef = (prefix: string, rows: StockTransferRecord[]) => {

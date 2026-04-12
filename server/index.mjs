@@ -212,10 +212,11 @@ app.get('/api/health', async (_req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
     const identifier = String(email || '').trim();
-    const normalizedPassword = String(password || '');
-    if (!identifier || !normalizedPassword) {
+    const passwordRaw = String(password || '');
+    const passwordTrimmed = passwordRaw.trim();
+    if (!identifier || !passwordRaw) {
       return res.status(400).json({ ok: false, error: 'Email and password are required' });
     }
 
@@ -254,9 +255,12 @@ app.post('/api/auth/login', async (req, res) => {
       password: fallbackPlainPassword || undefined,
     };
 
-    const { isValid, needsMigration } = await verifyPassword(normalizedPassword, loginUser);
-    
-    if (!isValid) {
+    let authResult = await verifyPassword(passwordRaw, loginUser);
+    if (!authResult.isValid && passwordTrimmed && passwordTrimmed !== passwordRaw) {
+      authResult = await verifyPassword(passwordTrimmed, loginUser);
+    }
+
+    if (!authResult.isValid) {
       return res.status(401).json({ ok: false, error: 'Invalid credentials or account inactive' });
     }
 
@@ -272,8 +276,9 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     // Migrate password to secure bcrypt hash seamlessly
-    if (needsMigration) {
-      const newHash = await hashPassword(normalizedPassword);
+    if (authResult.needsMigration) {
+      const sourcePassword = passwordTrimmed || passwordRaw;
+      const newHash = await hashPassword(sourcePassword);
       await prisma.appUser.update({
         where: { id: user.id },
         data: { passwordHash: newHash, passwordSalt: null }
@@ -286,7 +291,7 @@ app.post('/api/auth/login', async (req, res) => {
       data: { lastLogin: new Date() }
     });
 
-    const token = generateToken(user);
+    const token = generateToken(user, { rememberMe: rememberMe === true });
 
     // Send minimal user details, NEVER send passwordHash back
     delete user.passwordHash;
@@ -866,6 +871,20 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         await prisma.activityLog.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
+      case 'locations': {
+        const d = {
+          name: String(raw.name || `Location-${id}`),
+          city: raw.city ? String(raw.city) : null,
+          state: raw.state ? String(raw.state) : null,
+          country: raw.country ? String(raw.country) : null,
+          mobile: raw.mobile ? String(raw.mobile) : null,
+          email: raw.email ? String(raw.email) : null,
+          isActive: raw.isActive !== false,
+          meta: raw,
+        };
+        await prisma.location.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
     }
@@ -902,6 +921,7 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       case 'purchaseReturns': await prisma.purchaseReturn.deleteMany({ where: { id } }); break;
       case 'orders':          await prisma.salesOrder.deleteMany({ where: { id } }); break;
       case 'activityLogs':    await prisma.activityLog.deleteMany({ where: { id } }); break;
+      case 'locations':       await prisma.location.deleteMany({ where: { id } }); break;
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
     }

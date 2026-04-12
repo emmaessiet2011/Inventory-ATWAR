@@ -73,6 +73,7 @@ import ReportExpense from '@/components/reports/ReportExpense';
 import ReportRegister from '@/components/reports/ReportRegister';
 import ReportSalesRep from '@/components/reports/ReportSalesRep';
 import ActivityLog from '@/components/shared/ActivityLog';
+import NotificationsPage from '@/components/shared/NotificationsPage';
 import TaxRates from '@/components/settings/TaxRates';
 import Settings from '@/components/settings/Settings';
 import BackupRestore from '@/components/settings/BackupRestore';
@@ -160,6 +161,7 @@ const AppContent: React.FC = () => {
     { label: 'Suppliers', page: 'suppliers' },
     { label: 'Settings', page: 'settings' },
     { label: 'Backup & Restore', page: 'backup-restore' },
+    { label: 'Notifications', page: 'notifications' },
     { label: 'Activity Log', page: 'activity-log' },
     { label: 'Profit / Loss Report', page: 'report-profit-loss' },
     { label: 'Tax Report', page: 'report-tax' },
@@ -949,6 +951,8 @@ const AppContent: React.FC = () => {
       case 'report-sales-rep':
         if (!canViewSalesRepresentativeReport) return renderAccessDenied('Sales Representative Report');
         return <ReportSalesRep />;
+      case 'notifications':
+        return <NotificationsPage onNavigate={setCurrentPage} />;
       case 'activity-log':
         if (!settings.enableActivityLog) return renderModuleDisabled('Activity Log');
         if (!canViewActivityLog) return renderAccessDenied('Activity Log');
@@ -1287,13 +1291,24 @@ const AppContent: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  <div className="p-3 border-t border-slate-100 bg-slate-50/50 text-center">
+                  <div className="p-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-center gap-2">
                     <button
-                      onClick={() => { setCurrentPage('activity-log'); setShowNotifications(false); }}
-                      className="text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                      onClick={() => { setCurrentPage('notifications'); setShowNotifications(false); }}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-800 transition-colors"
                     >
-                      View all activity
+                      View all notifications
                     </button>
+                    {settings.enableActivityLog && canViewActivityLog && (
+                      <>
+                        <span className="text-slate-300 text-xs">|</span>
+                        <button
+                          onClick={() => { setCurrentPage('activity-log'); setShowNotifications(false); }}
+                          className="text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                        >
+                          Activity log
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               )}

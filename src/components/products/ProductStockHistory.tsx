@@ -69,10 +69,16 @@ const ProductStockHistory: React.FC<ProductStockHistoryProps> = ({ isOpen = true
     };
     void refreshLedger();
     const onFocus = () => { void refreshLedger(); };
+    const onTransfersUpdated = () => { void refreshLedger(); };
+    const onLedgerUpdated = () => { void refreshLedger(); };
     window.addEventListener('focus', onFocus);
+    window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
+    window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
+      window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
     };
   }, []);
 

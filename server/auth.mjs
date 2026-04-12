@@ -2,7 +2,8 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'atwar-bss-super-secret-key-change-me-in-prod';
-const JWT_EXPIRES_IN = '24h';
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const JWT_REMEMBER_EXPIRES_IN = process.env.JWT_REMEMBER_EXPIRES_IN || '30d';
 
 // Helper to gracefully extract token from auth header
 export const extractToken = (req) => {
@@ -107,7 +108,9 @@ export const verifyPassword = async (password, user) => {
 };
 
 // Generate JWT for authenticated user
-export const generateToken = (user) => {
+export const generateToken = (user, options = {}) => {
+  const rememberMe = options?.rememberMe === true;
+  const expiresIn = rememberMe ? JWT_REMEMBER_EXPIRES_IN : JWT_EXPIRES_IN;
   return jwt.sign(
     {
       id: user.id,
@@ -116,6 +119,6 @@ export const generateToken = (user) => {
       roleId: user.roleId,
     },
     JWT_SECRET,
-    { expiresIn: JWT_EXPIRES_IN }
+    { expiresIn }
   );
 };

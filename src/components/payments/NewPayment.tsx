@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { addRegisterTransaction, getActiveRegisterSession } from '@/utils/registerLedger';
+import { addRegisterTransaction, bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import {
   buildPaymentAccountOptions,
   PAYMENT_ACCOUNTS_UPDATED_EVENT,
@@ -256,7 +256,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     return breakdown;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!selectedCustomer || !amount) {
       addNotification({ title: 'Validation Error', message: 'Please select a customer and enter amount.', type: 'error' });
       return;
@@ -283,7 +283,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     setConfirmingBreakdown(breakdown);
   };
 
-  const handleConfirmAndRecord = () => {
+  const handleConfirmAndRecord = async () => {
     if (!selectedCustomer || !confirmingBreakdown) return;
 
     const paymentAmount = parseFloat(formatToPrecision(amount));
@@ -331,6 +331,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
       } : {}),
     });
 
+    await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(selectedLocation);
     const registerLocation = normalizeText(activeRegister?.locationName);
