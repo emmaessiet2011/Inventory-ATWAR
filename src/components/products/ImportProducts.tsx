@@ -3,6 +3,7 @@ import { Download, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import type { Product, ProductCategory, ProductVariation, ProductWarranty } from '@/context/GlobalContext';
+import { normalizePackagingType, normalizeUnitsPerPackage } from '@/utils/productPackaging';
 
 const BARCODE_TYPE_MAP: Record<string, string> = {
   'c128': 'Code 128 (C128)',
@@ -31,6 +32,8 @@ type ColumnKey =
   | 'brand'
   | 'warranty'
   | 'unit'
+  | 'packagingType'
+  | 'unitsPerPackage'
   | 'category'
   | 'subCategory'
   | 'sku'
@@ -54,6 +57,7 @@ type ColumnKey =
   | 'expiryDate'
   | 'enableSerial'
   | 'weight'
+  | 'serviceStaffTimer'
   | 'rack'
   | 'row'
   | 'position'
@@ -77,6 +81,8 @@ interface ParsedRow {
   brand: string;
   warranty?: string;
   unit: string;
+  packagingType?: Product['packagingType'];
+  unitsPerPackage?: number;
   categoryId?: string;
   category: string;
   subCategory: string;
@@ -100,6 +106,7 @@ interface ParsedRow {
   expiryPeriod?: number;
   expiryPeriodUnit?: 'Days' | 'Months';
   weight: string;
+  serviceStaffTimer?: number;
   rack: string;
   shelfRow: string;
   position: string;
@@ -116,6 +123,8 @@ const columns: ColumnDefinition[] = [
   { key: 'brand', name: 'Brand', required: false, instruction: 'Name of the brand', aliases: [] },
   { key: 'warranty', name: 'Warranty', required: false, instruction: 'Warranty name from Warranty master', aliases: [] },
   { key: 'unit', name: 'Unit', required: true, instruction: 'Name of the unit', aliases: [] },
+  { key: 'packagingType', name: 'Packaging Type', required: false, instruction: 'Piece, Pack or Carton', aliases: ['Package Type'] },
+  { key: 'unitsPerPackage', name: 'Units Per Package', required: false, instruction: 'Integer > 0. Required when Packaging Type is Pack/Carton', aliases: ['Pieces Per Package', 'Units per package'] },
   { key: 'category', name: 'Category', required: false, instruction: 'Name of the Category', aliases: [] },
   { key: 'subCategory', name: 'Sub category', required: false, instruction: 'Name of the Sub-Category', aliases: ['Subcategory'] },
   { key: 'sku', name: 'SKU', required: false, instruction: 'Product SKU. If blank an SKU will be automatically generated', aliases: [] },
@@ -139,6 +148,7 @@ const columns: ColumnDefinition[] = [
   { key: 'expiryDate', name: 'Expiry Date', required: false, instruction: 'Format: mm-dd-yyyy', aliases: [] },
   { key: 'enableSerial', name: 'Enable Product description, IMEI or Serial Number', required: false, instruction: '1 = Yes, 0 = No', aliases: ['Enable Product Description, IMEI or Serial Number'] },
   { key: 'weight', name: 'Weight', required: false, instruction: 'Optional', aliases: [] },
+  { key: 'serviceStaffTimer', name: 'Service Staff Timer (min)', required: false, instruction: 'Optional minutes, numbers only', aliases: ['Service Staff Timer', 'Service Timer'] },
   { key: 'rack', name: 'Rack', required: false, instruction: 'Rack details separated by |', aliases: [] },
   { key: 'row', name: 'Row', required: false, instruction: 'Row details separated by |', aliases: [] },
   { key: 'position', name: 'Position', required: false, instruction: 'Position details separated by |', aliases: [] },
@@ -237,14 +247,33 @@ const ImportProducts: React.FC = () => {
   };
 
   const handleDownloadTemplate = () => {
-    const exampleRow = [
-      'Wireless Keyboard', 'Logitech', '1 Year Warranty', 'Pieces', 'Electronics', '',
-      'SKU-KB-001', 'C128', '1', '5', '', '', 'VAT@5%',
-      'exclusive', 'single', '', '', '',
-      '', '15.000', '10', '20.000', '50',
-      defaultLocation, '', '0', '', '', '', '', '',
-      'USB wireless keyboard', '0', defaultLocation,
-    ];
+    const exampleRowByKey: Partial<Record<ColumnKey, string>> = {
+      productName: 'Wireless Keyboard',
+      brand: 'Logitech',
+      warranty: '1 Year Warranty',
+      unit: 'Pieces',
+      packagingType: 'Carton',
+      unitsPerPackage: '12',
+      category: 'Electronics',
+      sku: 'SKU-KB-001',
+      barcodeType: 'C128',
+      manageStock: '1',
+      alertQuantity: '5',
+      applicableTax: 'VAT@5%',
+      sellingPriceTaxType: 'exclusive',
+      productType: 'single',
+      purchasePriceExc: '15.000',
+      profitMargin: '10',
+      sellingPrice: '20.000',
+      openingStock: '50',
+      openingStockLocation: defaultLocation,
+      enableSerial: '0',
+      serviceStaffTimer: '0',
+      productDescription: 'USB wireless keyboard',
+      notForSelling: '0',
+      productLocations: defaultLocation,
+    };
+    const exampleRow = columns.map(col => exampleRowByKey[col.key] || '');
     const csv = [TEMPLATE_HEADERS.join(','), exampleRow.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -331,6 +360,13 @@ const ImportProducts: React.FC = () => {
         const warranty = matchedWarranty?.id || '';
         const rawUnit = c('unit');
         const unit = unitLookup.get(rawUnit.toLowerCase()) || '';
+        const rawPackagingType = c('packagingType');
+        const normalizedPackagingType = normalizePackagingType(rawPackagingType || 'Piece');
+        const normalizedRawPackagingType = normalizeText(rawPackagingType).toLowerCase();
+        const hasUnknownPackagingType = !!rawPackagingType && normalizedRawPackagingType !== normalizedPackagingType.toLowerCase();
+        const unitsPerPackageRaw = c('unitsPerPackage');
+        const parsedUnitsPerPackage = toFiniteNumber(unitsPerPackageRaw);
+        const unitsPerPackage = normalizeUnitsPerPackage(parsedUnitsPerPackage);
         const rawCategory = c('category');
         const matchedCategory = categoryLookup.get(rawCategory.toLowerCase());
         const category = matchedCategory?.name || rawCategory;
@@ -373,6 +409,8 @@ const ImportProducts: React.FC = () => {
           ? 'Months'
           : undefined;
         const weight = c('weight');
+        const serviceStaffTimerRaw = c('serviceStaffTimer');
+        const serviceStaffTimer = toFiniteNumber(serviceStaffTimerRaw);
         const rack = c('rack');
         const shelfRow = c('row');
         const position = c('position');
@@ -411,6 +449,9 @@ const ImportProducts: React.FC = () => {
         if (!name) error = 'Product Name is required';
         else if (!rawUnit) error = 'Unit is required';
         else if (!unit) error = `Unit "${rawUnit}" not found in Unit master`;
+        else if (unitsPerPackageRaw && !Number.isFinite(parsedUnitsPerPackage)) error = `Invalid Units Per Package "${unitsPerPackageRaw}"`;
+        else if (Number.isFinite(parsedUnitsPerPackage) && (!Number.isInteger(parsedUnitsPerPackage) || parsedUnitsPerPackage <= 0)) error = 'Units Per Package must be a positive whole number';
+        else if (normalizedPackagingType !== 'Piece' && !unitsPerPackage) error = `Units Per Package is required when Packaging Type is "${normalizedPackagingType}"`;
         else if (!rawTaxType) error = 'Selling Price Tax Type is required';
         else if (!taxType) error = `Invalid Selling Price Tax Type "${rawTaxType}"`;
         else if (!productTypeRaw) error = 'Product Type is required';
@@ -427,12 +468,14 @@ const ImportProducts: React.FC = () => {
         else if (expiresInRaw && !Number.isFinite(expiryPeriod)) error = `Invalid Expires in "${expiresInRaw}"`;
         else if (expiryPeriodUnitRaw && !expiryPeriodUnit) error = `Invalid Expiry Period Unit "${expiryPeriodUnitRaw}"`;
         else if (weight && !Number.isFinite(Number(weight))) error = `Invalid Weight "${weight}"`;
+        else if (serviceStaffTimerRaw && !Number.isFinite(serviceStaffTimer)) error = `Invalid Service Staff Timer "${serviceStaffTimerRaw}"`;
         else if (alertQuantity < 0) error = 'Alert quantity cannot be negative';
         else if (type === 'Variable' && !variationName) error = 'Variable product requires Variation Name';
         else if (type === 'Variable' && variationValues.length === 0) error = 'Variable product requires Variation Values';
         else if (manageStock && openingStock < 0) error = 'Opening Stock cannot be negative';
         else if (unitPurchasePrice < 0) error = 'Purchase Price cannot be negative';
         else if (sellingPrice < 0) error = 'Selling Price cannot be negative';
+        else if (typeof serviceStaffTimer === 'number' && serviceStaffTimer < 0) error = 'Service Staff Timer cannot be negative';
 
         const variationSkuSet = new Set<string>();
         if (!error && variationSkus.length > variationValues.length) {
@@ -457,6 +500,12 @@ const ImportProducts: React.FC = () => {
         if (!error) variationSkus.forEach(vs => { if (vs) fileSkus.add(vs.toLowerCase()); });
         if (!error && rawBrand && !brandLookup.has(rawBrand.toLowerCase())) {
           warning = appendWarning(warning, `Brand "${brand}" not in Brand master (will be auto-created)`);
+        }
+        if (!error && hasUnknownPackagingType) {
+          warning = appendWarning(
+            warning,
+            `Unknown Packaging Type "${rawPackagingType}". Defaulted to "Piece".`,
+          );
         }
         if (!error && rawWarranty && !warrantyLookup.has(rawWarranty.toLowerCase())) {
           warning = appendWarning(warning, `Warranty "${rawWarranty}" not found in Warranty master (ignored)`);
@@ -487,6 +536,8 @@ const ImportProducts: React.FC = () => {
           brand,
           warranty,
           unit,
+          packagingType: normalizedPackagingType === 'Piece' ? undefined : normalizedPackagingType,
+          unitsPerPackage,
           categoryId,
           category,
           subCategory,
@@ -510,6 +561,7 @@ const ImportProducts: React.FC = () => {
           expiryPeriod,
           expiryPeriodUnit: expiryPeriodUnit || (expiryPeriod ? 'Days' : undefined),
           weight,
+          serviceStaffTimer,
           rack,
           shelfRow,
           position,
@@ -680,6 +732,8 @@ const ImportProducts: React.FC = () => {
         openingStock: row.stock,
         openingStockLocation: row.openingStockLocation || row.location || defaultLocation,
         unit: row.unit,
+        packagingType: row.packagingType,
+        unitsPerPackage: row.unitsPerPackage,
         image: row.imageName || '',
         alertQuantity: row.alertQuantity || undefined,
         barcodeType: row.barcodeType || undefined,
@@ -688,6 +742,7 @@ const ImportProducts: React.FC = () => {
         expiryPeriodUnit: row.expiryPeriodUnit,
         enableSerialNumber: row.enableSerialNumber || undefined,
         weight: row.weight ? parseFloat(row.weight) : undefined,
+        serviceStaffTimer: row.serviceStaffTimer,
         rack: row.rack || undefined,
         row: row.shelfRow || undefined,
         position: row.position || undefined,
