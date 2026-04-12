@@ -1,11 +1,10 @@
 import { expect, Page } from '@playwright/test';
 
 const E2E_SESSION_KEY = 'atwar_secure_session_user_v1';
-const E2E_TOKEN_KEY = 'atwar_auth_token';
 
 const seedFallbackSession = async (page: Page) => {
   await page.evaluate(
-    ({ sessionKey, tokenKey }) => {
+    ({ sessionKey }) => {
       const user = {
         id: 'USR-E2E-ADMIN',
         username: 'admin',
@@ -19,9 +18,9 @@ const seedFallbackSession = async (page: Page) => {
         enableServiceStaffPin: false,
       };
       sessionStorage.setItem(sessionKey, JSON.stringify(user));
-      localStorage.setItem(tokenKey, 'e2e-fallback-token');
+      localStorage.removeItem('atwar_auth_token');
     },
-    { sessionKey: E2E_SESSION_KEY, tokenKey: E2E_TOKEN_KEY },
+    { sessionKey: E2E_SESSION_KEY },
   );
   await page.reload();
 };
@@ -38,14 +37,18 @@ export const loginAsAdmin = async (page: Page) => {
   await page.locator('input[type="password"]').first().fill('admin123');
   await page.getByRole('button', { name: 'Sign In' }).click();
 
-  if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await searchInput.isVisible({ timeout: 8000 }).catch(() => false)) {
     return;
   }
 
   // CI preview runs frontend-only and may not have a live auth backend.
   // For route smoke coverage, seed a deterministic authenticated session
-  // whenever login is still on the auth screen after submit.
-  const stillOnLogin = await page.getByRole('button', { name: 'Sign In' }).isVisible().catch(() => false);
+  // whenever we're still on the auth screen after submit (including
+  // "Signing In..." warm-up states).
+  const stillOnLogin =
+    await page.getByRole('heading', { name: 'Welcome back' }).isVisible().catch(() => false)
+    || await page.getByRole('button', { name: /Sign In|Signing In/i }).isVisible().catch(() => false)
+    || await page.locator('input[type="password"]').first().isVisible().catch(() => false);
   if (stillOnLogin) {
     await seedFallbackSession(page);
   }
