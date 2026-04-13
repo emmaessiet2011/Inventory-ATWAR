@@ -16,9 +16,71 @@ interface ReturnRow {
   name: string;
   unitPrice: number;
   soldQty: number;
+  maxReturnQty: number;
   returnQty: number;
   unit?: string;
 }
+
+interface ReturnPoolEntry {
+  qty: number;
+  idKey: string;
+  nameKey: string;
+}
+
+const normalizePoolKey = (value: unknown): string =>
+  String(value || '').trim().toLowerCase();
+
+const round3 = (value: number): number =>
+  Number((Number(value) || 0).toFixed(3));
+
+const buildReturnItemPool = (items: Array<{ productId?: unknown; productName?: unknown; qty?: unknown }>): ReturnPoolEntry[] => (
+  items
+    .map((item) => ({
+      qty: round3(Number(item.qty || 0)),
+      idKey: normalizePoolKey(item.productId),
+      nameKey: normalizePoolKey(item.productName),
+    }))
+    .filter((entry) => entry.qty > 0.0005 && (entry.idKey || entry.nameKey))
+);
+
+const consumeReturnPool = (
+  pool: ReturnPoolEntry[],
+  idKey: string,
+  nameKey: string,
+  requestedQty: number,
+): number => {
+  let remaining = round3(Math.max(0, requestedQty));
+  let consumed = 0;
+  if (remaining <= 0.0005) return 0;
+
+  if (idKey) {
+    for (const entry of pool) {
+      if (remaining <= 0.0005) break;
+      if (entry.qty <= 0.0005) continue;
+      if (entry.idKey !== idKey) continue;
+      const take = round3(Math.min(entry.qty, remaining));
+      if (take <= 0.0005) continue;
+      entry.qty = round3(Math.max(0, entry.qty - take));
+      remaining = round3(Math.max(0, remaining - take));
+      consumed = round3(consumed + take);
+    }
+  }
+
+  if (remaining > 0.0005 && nameKey) {
+    for (const entry of pool) {
+      if (remaining <= 0.0005) break;
+      if (entry.qty <= 0.0005) continue;
+      if (entry.nameKey !== nameKey) continue;
+      const take = round3(Math.min(entry.qty, remaining));
+      if (take <= 0.0005) continue;
+      entry.qty = round3(Math.max(0, entry.qty - take));
+      remaining = round3(Math.max(0, remaining - take));
+      consumed = round3(consumed + take);
+    }
+  }
+
+  return round3(consumed);
+};
 
 const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId, editReturnId }) => {
   const { addNotification } = useNotifications();
@@ -190,46 +252,54 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
   const canAccessReturnRecord = (record?: { addedBy?: string } | null) =>
     !!record && (canAccessAllSellReturns || (canAccessOwnSellReturns && isOwnRecord(record.addedBy)));
 
-  const returnedElseByProduct = useMemo(() => {
-    const map: Record<string, number> = {};
-    sellReturns
-      .filter(ret => ret.parentSaleId === saleId && ret.id !== editingReturnId)
-      .forEach(ret => {
-        (ret.items || []).forEach(item => {
-          const key = String(item.productId || '').trim();
-          if (!key) return;
-          map[key] = (map[key] || 0) + Number(item.qty || 0);
-        });
-      });
-    return map;
-  }, [sellReturns, saleId, editingReturnId]);
-
   const maxReturnQtyForRow = (row: ReturnRow): number =>
-    Math.max(0, Number(row.soldQty || 0) - Number(returnedElseByProduct[row.productId] || 0));
+    Math.max(0, round3(Number(row.maxReturnQty || 0)));
 
   useEffect(() => {
     if (!selectedSale) {
       setRows([]);
       return;
     }
-    const existingQtyByProduct: Record<string, number> = {};
-    if (editingReturn && editingReturn.parentSaleId === selectedSale.id) {
-      (editingReturn.items || []).forEach(item => {
-        const key = String(item.productId || '').trim();
-        if (!key) return;
-        existingQtyByProduct[key] = (existingQtyByProduct[key] || 0) + Number(item.qty || 0);
-      });
-    }
+
+    const returnedElsePool = buildReturnItemPool(
+      sellReturns
+        .filter(ret => ret.parentSaleId === selectedSale.id && ret.id !== editingReturnId)
+        .flatMap(ret => ret.items || [])
+        .map(item => ({
+          productId: item.productId,
+          productName: item.productName,
+          qty: item.qty,
+        }))
+    );
+    const editingPool = editingReturn && editingReturn.parentSaleId === selectedSale.id
+      ? buildReturnItemPool(
+          (editingReturn.items || []).map(item => ({
+            productId: item.productId,
+            productName: item.productName,
+            qty: item.qty,
+          }))
+        )
+      : [];
 
     const mappedRows = (selectedSale.items || []).map((item, index) => {
       const productId = String(item.id || `sale-item-${index + 1}`);
+      const productName = String(item.name || 'Unnamed Product');
+      const idKey = normalizePoolKey(productId);
+      const nameKey = normalizePoolKey(productName);
+      const soldQty = round3(Number(item.qty || 0));
+      const consumedElseQty = consumeReturnPool(returnedElsePool, idKey, nameKey, soldQty);
+      const maxReturnQty = round3(Math.max(0, soldQty - consumedElseQty));
+      const prefilledQty = editingPool.length > 0
+        ? consumeReturnPool(editingPool, idKey, nameKey, maxReturnQty)
+        : 0;
       return {
         rowId: `${productId}-${index + 1}`,
         productId,
-        name: item.name || 'Unnamed Product',
+        name: productName,
         unitPrice: Number(item.unitPrice || 0),
-        soldQty: Number(item.qty || 0),
-        returnQty: Number((existingQtyByProduct[productId] || 0).toFixed(3)),
+        soldQty,
+        maxReturnQty,
+        returnQty: round3(prefilledQty),
         unit: item.unit || '',
       };
     });
@@ -238,7 +308,7 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
     if (!editingReturn) {
       setReturnTax(String(selectedSale.tax || selectedSale.orderTax || 'None'));
     }
-  }, [selectedSale, editingReturn]);
+  }, [selectedSale, editingReturn, sellReturns, editingReturnId]);
 
   useEffect(() => {
     if (editingReturnId) return;
