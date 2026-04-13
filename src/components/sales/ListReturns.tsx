@@ -517,11 +517,22 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
               {pagedReturns.map(record => (
                 <tr key={record.id} className="hover:bg-slate-50 transition-colors">
                   <td style={getColumnStyle('date')} className="px-4 py-3">{formatDateTimeDisplay(record.date)}</td>
-                  <td style={getColumnStyle('referenceNo')} className="px-4 py-3 font-semibold text-slate-800">{record.referenceNo}</td>
+                  <td style={getColumnStyle('referenceNo')} className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => handleView(record.id)}
+                      className="font-semibold text-blue-700 hover:text-blue-800 hover:underline underline-offset-2"
+                      title="View sell return details"
+                    >
+                      {record.referenceNo}
+                    </button>
+                  </td>
                   <td style={getColumnStyle('parentSale')} className="px-4 py-3">
                     <button
-                      onClick={() => record.parentSaleId ? onNavigate(`edit-sale/${record.parentSaleId}`) : addNotification({ title: 'Parent sale not available', message: 'This return is not linked to a parent sale record.', type: 'warning' })}
+                      type="button"
+                      onClick={() => record.parentSaleId ? onNavigate(`view-sale/${record.parentSaleId}`) : addNotification({ title: 'Parent sale not available', message: 'This return is not linked to a parent sale record.', type: 'warning' })}
                       className="text-blue-600 hover:underline bg-blue-50 px-2 py-0.5 rounded border border-blue-100"
+                      title="View parent sale details"
                     >
                       {record.parentSaleDisplay}
                     </button>
