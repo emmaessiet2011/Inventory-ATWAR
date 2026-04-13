@@ -22,6 +22,13 @@ import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument, paymentBadge, statusBadge } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
+import {
+  formatDueMonthLabel,
+  formatSalePaymentStatusLabel,
+  resolveSaleEffectivePaymentStatus,
+  summarizeSaleDueTiming,
+  type PaymentStatusValue,
+} from '@/utils/paymentTerms';
 
 interface DateRangeSelection {
   startDate: Date | null;
@@ -146,6 +153,7 @@ const Sales: React.FC<SalesProps> = ({
       location: [] as string[],
       customer: [] as string[],
       paymentStatus: [] as string[],
+      dueMonth: [] as string[],
       shippingStatus: [] as string[],
       user: [] as string[]
   });
@@ -242,8 +250,19 @@ const Sales: React.FC<SalesProps> = ({
     isFinalizedSale(sale) ? Number(getSellReturnSummary(sale).total || 0) : 0;
   const hasLinkedSellReturn = (sale?: GlobalSale | null): boolean =>
     isFinalizedSale(sale) && getSellReturnSummary(sale).count > 0;
+  const getEffectivePaymentStatus = (sale?: GlobalSale | null): PaymentStatusValue | 'N/A' => {
+    if (!isFinalizedSale(sale)) return 'N/A';
+    return resolveSaleEffectivePaymentStatus(sale || {});
+  };
   const getDisplayPaymentStatus = (sale?: GlobalSale | null): string =>
-    isFinalizedSale(sale) ? String(sale?.paymentStatus || '--') : 'N/A';
+    isFinalizedSale(sale) ? formatSalePaymentStatusLabel(sale || {}) : 'N/A';
+  const getDueMonthLabel = (sale?: GlobalSale | null): string => {
+    if (!isFinalizedSale(sale)) return '';
+    if (getDisplaySellDue(sale) <= 0.001) return '';
+    const dueSummary = summarizeSaleDueTiming(sale || {});
+    if (!dueSummary.dueDateIso) return '';
+    return formatDueMonthLabel(dueSummary.dueDateIso);
+  };
 
   const currentRoleRecord = roles.find(r => r.name === currentUser?.role);
   const rolePermissions = currentRoleRecord?.permissions || [];
@@ -515,7 +534,7 @@ const Sales: React.FC<SalesProps> = ({
         });
         return;
       }
-      const normalizedStatus = String(sale.paymentStatus || '').trim();
+      const normalizedStatus = getEffectivePaymentStatus(sale);
       if (normalizedStatus === 'Paid') {
         handleViewPayments(sale.id);
         return;
@@ -814,6 +833,30 @@ const Sales: React.FC<SalesProps> = ({
     })
   ), [sales, statusFilter, canViewAllQuotations, canViewOwnQuotations, currentUser?.name]);
 
+  const paymentStatusOptions = useMemo(() => {
+    const order: PaymentStatusValue[] = ['Paid', 'Due', 'Partial', 'Overdue'];
+    const seen = new Set<PaymentStatusValue>();
+    scopedSales.forEach((sale) => {
+      const status = getEffectivePaymentStatus(sale);
+      if (status !== 'N/A') seen.add(status);
+    });
+    return order.filter((status) => seen.has(status));
+  }, [scopedSales]);
+
+  const dueMonthOptions = useMemo(() => {
+    const options = new Set<string>();
+    scopedSales.forEach((sale) => {
+      const label = getDueMonthLabel(sale);
+      if (label) options.add(label);
+    });
+    return Array.from(options).sort((a, b) => {
+      const aDate = Date.parse(`01 ${a}`);
+      const bDate = Date.parse(`01 ${b}`);
+      if (Number.isFinite(aDate) && Number.isFinite(bDate)) return aDate - bDate;
+      return a.localeCompare(b);
+    });
+  }, [scopedSales, sellReturns]);
+
   const filteredSales = useMemo(() => (
     scopedSales.filter(s => {
       const textMatch =
@@ -821,10 +864,14 @@ const Sales: React.FC<SalesProps> = ({
         (s.customerName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (s.location || '').toLowerCase().includes(searchTerm.toLowerCase());
 
+      const effectivePaymentStatus = getEffectivePaymentStatus(s);
+      const dueMonthLabel = getDueMonthLabel(s);
+
       const filterMatch =
         (filters.location.length === 0 || filters.location.includes(s.location || '')) &&
         (filters.customer.length === 0 || filters.customer.includes(s.customerName || '')) &&
-        (!paymentStatusFilterEnabled || filters.paymentStatus.length === 0 || filters.paymentStatus.includes(s.paymentStatus || '')) &&
+        (!paymentStatusFilterEnabled || filters.paymentStatus.length === 0 || (effectivePaymentStatus !== 'N/A' && filters.paymentStatus.includes(effectivePaymentStatus))) &&
+        (!paymentStatusFilterEnabled || filters.dueMonth.length === 0 || (dueMonthLabel && filters.dueMonth.includes(dueMonthLabel))) &&
         (filters.shippingStatus.length === 0 || filters.shippingStatus.includes(s.shippingStatus || '')) &&
         (filters.user.length === 0 || filters.user.includes(s.addedBy || ''));
 
@@ -841,7 +888,7 @@ const Sales: React.FC<SalesProps> = ({
 
       return textMatch && filterMatch && dateMatch;
     })
-  ), [scopedSales, searchTerm, filters, dateRange, paymentStatusFilterEnabled]);
+  ), [scopedSales, searchTerm, filters, dateRange, paymentStatusFilterEnabled, sellReturns]);
 
   const sortedSales = useMemo(() => {
     const copy = [...filteredSales];
@@ -937,9 +984,17 @@ const Sales: React.FC<SalesProps> = ({
                       {paymentStatusFilterEnabled && (
                         <MultiSelect 
                             label="Payment Status"
-                            options={['Paid', 'Due', 'Partial', 'Overdue']}
+                            options={paymentStatusOptions}
                             selected={filters.paymentStatus}
                             onChange={(val) => setFilters({...filters, paymentStatus: val})}
+                        />
+                      )}
+                      {paymentStatusFilterEnabled && (
+                        <MultiSelect
+                          label="Due Month"
+                          options={dueMonthOptions}
+                          selected={filters.dueMonth}
+                          onChange={(val) => setFilters({ ...filters, dueMonth: val })}
                         />
                       )}
                       <MultiSelect 
@@ -1158,29 +1213,40 @@ const Sales: React.FC<SalesProps> = ({
                            </span>
                       </td>
                       <td style={getColumnStyle('paymentStatus')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
-                           {getDisplayPaymentStatus(sale) === 'N/A' ? (
-                             <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
-                               N/A
-                             </span>
-                           ) : (
-                           <button
-                             type="button"
-                             data-no-row-open="true"
-                             onClick={() => handlePaymentStatusClick(sale)}
-                             className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-                               sale.paymentStatus === 'Paid' ? 'bg-emerald-500 text-white border-emerald-400 focus:ring-emerald-300' : 
-                               sale.paymentStatus === 'Partial' ? 'bg-sky-500 text-white border-sky-400 focus:ring-sky-300' :
-                               'bg-amber-500 text-white border-amber-400 focus:ring-amber-300'
-                             }`}
-                             title={sale.paymentStatus === 'Paid' ? 'View payments' : 'Add payment for due amount'}
-                           >
-                             {getDisplayPaymentStatus(sale)}
-                           </button>
-                           )}
+                           {(() => {
+                             const paymentStatusDisplay = getDisplayPaymentStatus(sale);
+                             const effectivePaymentStatus = getEffectivePaymentStatus(sale);
+                             if (paymentStatusDisplay === 'N/A') {
+                               return (
+                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-slate-100 text-slate-500 border-slate-200">
+                                   N/A
+                                 </span>
+                               );
+                             }
+                             return (
+                               <button
+                                 type="button"
+                                 data-no-row-open="true"
+                                 onClick={() => handlePaymentStatusClick(sale)}
+                                 className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                   effectivePaymentStatus === 'Paid'
+                                     ? 'bg-emerald-500 text-white border-emerald-400 focus:ring-emerald-300'
+                                     : effectivePaymentStatus === 'Partial'
+                                       ? 'bg-sky-500 text-white border-sky-400 focus:ring-sky-300'
+                                       : effectivePaymentStatus === 'Overdue'
+                                         ? 'bg-rose-600 text-white border-rose-500 focus:ring-rose-300'
+                                         : 'bg-amber-500 text-white border-amber-400 focus:ring-amber-300'
+                                 }`}
+                                 title={effectivePaymentStatus === 'Paid' ? 'View payments' : 'Add payment for due amount'}
+                               >
+                                 {paymentStatusDisplay}
+                               </button>
+                             );
+                           })()}
                       </td>
                       <td style={getColumnStyle('saleType')} className="px-2 py-2 sm:px-4 sm:py-3text-center">
                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border bg-indigo-50 text-indigo-700 border-indigo-200">
-                               {sale.saleType || ((sale.paymentStatus === 'Due' && (sale.totalPaid || 0) === 0) ? 'Credit Sale' : 'Paid')}
+                               {sale.saleType || ((getEffectivePaymentStatus(sale) !== 'Paid' && (sale.totalPaid || 0) === 0) ? 'Credit Sale' : 'Paid')}
                            </span>
                       </td>
                       <td style={getColumnStyle('commissionAgent')} className="px-2 py-2 sm:px-4 sm:py-3text-slate-600 whitespace-nowrap">{sale.commissionAgentName || '--'}</td>

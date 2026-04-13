@@ -25,6 +25,7 @@ import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
 import { printElementSnapshot } from '@/utils/printUtils';
+import { resolveSaleDueDate } from '@/utils/paymentTerms';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 
 interface AddSaleProps {
@@ -1521,6 +1522,19 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           ? grandTotal
           : Math.max(0, grandTotal - amountPaid))
       : 0;
+    const resolvedPayTermValue = Math.max(0, Number(payTermNumber || 0));
+    const resolvedPayTermType: 'Days' | 'Months' = payTermUnit === 'Months' ? 'Months' : 'Days';
+    const resolvedPayTerm = resolvedPayTermValue > 0
+      ? `${resolvedPayTermValue} ${resolvedPayTermType}`
+      : '';
+    const resolvedDueDate = isFinalStatus && saleType === 'Credit Sale' && resolvedPayTermValue > 0
+      ? resolveSaleDueDate({
+          date: saleDate,
+          payTerm: resolvedPayTerm,
+          payTermValue: resolvedPayTermValue,
+          payTermType: resolvedPayTermType,
+        })
+      : '';
     const commissionBaseAmount = settings.commissionCalculationType === 'Paid amount'
       ? amountPaid
       : grandTotal;
@@ -1556,7 +1570,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       sellingPriceGroupDiscount: Number(resolvedSellingPriceGroup?.discount || 0),
       sellingPriceGroupPriceAdj: Number(resolvedSellingPriceGroup?.priceCalcPercentage || 0),
       sellingPriceGroupTaxRate: Number(resolvedSellingPriceGroup?.taxRate || 0),
-      payTerm: payTermNumber ? `${payTermNumber} ${payTermUnit}` : '',
+      payTerm: resolvedPayTerm,
+      payTermValue: resolvedPayTermValue > 0 ? resolvedPayTermValue : undefined,
+      payTermType: resolvedPayTermValue > 0 ? resolvedPayTermType : undefined,
+      dueDate: resolvedDueDate,
       paymentStatus: computedPaymentStatus as any,
       paymentMethod: resolvedPaymentMethod,
       paymentAccount: resolvedPaymentAccount,

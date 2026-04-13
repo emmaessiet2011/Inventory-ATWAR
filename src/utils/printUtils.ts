@@ -80,10 +80,10 @@ export function badge(
 /** Resolves payment-status text to a badge colour. */
 export function paymentBadge(status: string): string {
   const s = String(status || '').toLowerCase();
-  if (s === 'paid') return badge(status, 'green');
-  if (s === 'partial') return badge(status, 'sky');
-  if (s === 'overdue') return badge(status, 'rose');
-  if (s === 'due') return badge(status, 'amber');
+  if (s === 'paid' || s.startsWith('paid')) return badge(status, 'green');
+  if (s === 'partial' || s.startsWith('partial')) return badge(status, 'sky');
+  if (s === 'overdue' || s.startsWith('overdue')) return badge(status, 'rose');
+  if (s === 'due' || s.startsWith('due ')) return badge(status, 'amber');
   return badge(status, 'slate');
 }
 

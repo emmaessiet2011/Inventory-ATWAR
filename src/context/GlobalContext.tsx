@@ -299,6 +299,9 @@ export interface Sale {
   sellingPriceGroupPriceAdj?: number;
   sellingPriceGroupTaxRate?: number;
   payTerm?: string;
+  payTermValue?: number;
+  payTermType?: 'Days' | 'Months';
+  dueDate?: string;
   paymentStatus: 'Paid' | 'Due' | 'Partial' | 'Overdue';
   paymentMethod?: string;
   paymentAccount?: string;
