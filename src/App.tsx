@@ -98,6 +98,7 @@ import SalesCommissionAgents from '@/components/users/SalesCommissionAgents';
 import AddUser from '@/components/users/AddUser';
 import ViewUser from '@/components/users/ViewUser';
 import ViewSaleDetails from '@/components/sales/ViewSaleDetails';
+import { applyAutoHelpTitles } from '@/utils/helpHints';
 
 const App: React.FC = () => {
   return (
@@ -221,6 +222,30 @@ const AppContent: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    let rafId: number | null = null;
+    const scheduleApply = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        applyAutoHelpTitles(document);
+      });
+    };
+
+    scheduleApply();
+    const observer = new MutationObserver(() => {
+      scheduleApply();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [currentPage, isAuthenticated]);
 
   // Check URL parameters on load for public invoice links
   useEffect(() => {

@@ -2118,7 +2118,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
                 <div className="group">
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
-                      Pay Term {isFinalStatus && settings.isPayTermRequired && saleType === 'Credit Sale' && <span className="text-red-500">*</span>} <Info size={12} className="text-blue-500" />
+                      Pay Term {isFinalStatus && settings.isPayTermRequired && saleType === 'Credit Sale' && <span className="text-red-500">*</span>} <Info size={12} className="text-blue-500" title="Credit due period before payment is expected." data-help-text="Pay Term: Number of days or months after invoice date when this sale becomes due." />
                     </label>
                     <div className="flex">
                         <input 
