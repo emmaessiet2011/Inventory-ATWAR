@@ -27,6 +27,15 @@ interface ReturnPoolEntry {
   nameKey: string;
 }
 
+interface ConfirmModalState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmClassName: string;
+  onConfirm: () => void;
+}
+
 const normalizePoolKey = (value: unknown): string =>
   String(value || '').trim().toLowerCase();
 
@@ -112,6 +121,7 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
   const [settlementMode, setSettlementMode] = useState<SellReturnSettlementMode>('apply_to_invoice_due');
   const [returnNote, setReturnNote] = useState('');
   const [rows, setRows] = useState<ReturnRow[]>([]);
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const linkedSaleId = String(prefillSaleId || '').trim();
   const routeEditId = String(editReturnId || '').trim();
 
@@ -403,8 +413,26 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
     || Number(editingReturn?.paymentDue || 0) > 0.001
   ), [settlementMode, editingReturn?.paymentDue]);
 
+  const openConfirmModal = (modal: Omit<ConfirmModalState, 'isOpen'>) => {
+    setConfirmModal({ isOpen: true, ...modal });
+  };
+
   const handleClearRow = (rowId: string) => {
-    setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, returnQty: 0 } : row));
+    const targetRow = rows.find(row => row.rowId === rowId);
+    if (!targetRow || targetRow.returnQty <= 0.0005) {
+      setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, returnQty: 0 } : row));
+      return;
+    }
+    openConfirmModal({
+      title: 'Clear Return Quantity?',
+      message: `Reset return quantity for "${targetRow.name}"?`,
+      confirmLabel: 'Yes, Clear',
+      confirmClassName: 'bg-rose-600 hover:bg-rose-700',
+      onConfirm: () => {
+        setRows(prev => prev.map(row => row.rowId === rowId ? { ...row, returnQty: 0 } : row));
+        setConfirmModal(null);
+      },
+    });
   };
 
   /** Validates form and builds the return record. Returns null if validation fails. */
@@ -490,35 +518,43 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
     };
   };
 
-  const handleSubmit = () => {
-    const returnRecord = buildReturnRecord();
-    if (!returnRecord) return;
-    if (editingReturn) {
-      globalUpdateSellReturn(returnRecord);
-    } else {
-      globalAddSellReturn(returnRecord);
-    }
+  const persistSellReturn = (returnRecord: SellReturn) => {
+    if (editingReturn) globalUpdateSellReturn(returnRecord);
+    else globalAddSellReturn(returnRecord);
     addNotification({
       title: editingReturn ? 'Sell Return Updated' : 'Sell Return Saved',
       message: `Credit note ${returnRecord.referenceNo} was ${editingReturn ? 'updated' : 'recorded'}.`,
       type: 'success',
     });
-    onNavigate('returns');
+  };
+
+  const handleSubmit = () => {
+    const returnRecord = buildReturnRecord();
+    if (!returnRecord) return;
+    openConfirmModal({
+      title: editingReturn ? 'Update Sell Return?' : 'Submit Sell Return?',
+      message: `This will save credit note ${returnRecord.referenceNo} with total ${formatCurrency(returnRecord.total)}.`,
+      confirmLabel: editingReturn ? 'Yes, Update' : 'Yes, Submit',
+      confirmClassName: 'bg-blue-600 hover:bg-blue-700',
+      onConfirm: () => {
+        persistSellReturn(returnRecord);
+        setConfirmModal(null);
+        onNavigate('returns');
+      },
+    });
   };
 
   const handleSaveAndPrint = () => {
     const returnRecord = buildReturnRecord();
     if (!returnRecord) return;
-    if (editingReturn) {
-      globalUpdateSellReturn(returnRecord);
-    } else {
-      globalAddSellReturn(returnRecord);
-    }
-    addNotification({
-      title: editingReturn ? 'Sell Return Updated' : 'Sell Return Saved',
-      message: `Credit note ${returnRecord.referenceNo} was ${editingReturn ? 'updated' : 'recorded'}.`,
-      type: 'success',
-    });
+    openConfirmModal({
+      title: editingReturn ? 'Update & Print Sell Return?' : 'Save & Print Sell Return?',
+      message: `This will save credit note ${returnRecord.referenceNo} and open the print preview.`,
+      confirmLabel: 'Yes, Save & Print',
+      confirmClassName: 'bg-slate-700 hover:bg-slate-800',
+      onConfirm: () => {
+        persistSellReturn(returnRecord);
+        setConfirmModal(null);
     // Print credit note in new window
     const businessName = settings.businessName || 'ATWAR AL MUSTAQBAL';
     printCreditNote({
@@ -556,7 +592,9 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
       fmtRefund: formatCurrency(settlementPreview.refundNow),
       fmtDue: formatCurrency(returnRecord.paymentDue),
     });
-    onNavigate('returns');
+        onNavigate('returns');
+      },
+    });
   };
 
   if (!canAccessSellReturns) {
@@ -598,7 +636,7 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
           <Calendar size={18} className="text-blue-500" /> Return Details
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Parent Sale *</label>
             <select
@@ -623,41 +661,6 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
                 className="w-full pl-9 pr-3 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
               />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Settlement *</label>
-            <select
-              value={settlementMode}
-              onChange={(e) => setSettlementMode(e.target.value as SellReturnSettlementMode)}
-              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
-            >
-              <option value="refund_now">Refund now</option>
-              <option value="apply_to_invoice_due">Apply to this invoice due</option>
-              <option value="customer_credit">Keep as customer credit</option>
-              {showLegacyRefundDueOption && <option value="refund_due">Refund later (legacy)</option>}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Discount Type</label>
-            <select
-              value={discountType}
-              onChange={(e) => setDiscountType(e.target.value as 'None' | 'Fixed' | 'Percentage')}
-              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
-            >
-              <option value="None">None</option>
-              <option value="Fixed">Fixed</option>
-              <option value="Percentage">Percentage</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Discount Amount</label>
-            <input
-              type="number"
-              min={0}
-              value={discountAmount}
-              onChange={(e) => setDiscountAmount(Number(e.target.value || 0))}
-              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
-            />
           </div>
         </div>
 
@@ -756,6 +759,44 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
           <Save size={18} className="text-amber-500" /> Totals & Settlement
         </h3>
 
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Settlement *</label>
+            <select
+              value={settlementMode}
+              onChange={(e) => setSettlementMode(e.target.value as SellReturnSettlementMode)}
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
+            >
+              <option value="refund_now">Refund now</option>
+              <option value="apply_to_invoice_due">Apply to this invoice due</option>
+              <option value="customer_credit">Keep as customer credit</option>
+              {showLegacyRefundDueOption && <option value="refund_due">Refund later (legacy)</option>}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Discount Type</label>
+            <select
+              value={discountType}
+              onChange={(e) => setDiscountType(e.target.value as 'None' | 'Fixed' | 'Percentage')}
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
+            >
+              <option value="None">None</option>
+              <option value="Fixed">Fixed</option>
+              <option value="Percentage">Percentage</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Discount Amount</label>
+            <input
+              type="number"
+              min={0}
+              value={discountAmount}
+              onChange={(e) => setDiscountAmount(Number(e.target.value || 0))}
+              className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
+            />
+          </div>
+        </div>
+
         <div className="ml-auto w-full max-w-sm bg-slate-50 rounded-2xl border border-slate-200 p-4 text-sm space-y-2">
           <div className="flex justify-between text-slate-700"><span>Subtotal</span><span>{formatCurrency(subTotal)}</span></div>
           <div className="flex justify-between text-slate-700"><span>Discount</span><span>(-) {formatCurrency(discountValue)}</span></div>
@@ -793,6 +834,22 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
           </button>
         </div>
       </div>
+
+      {confirmModal?.isOpen && (
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="p-4 rounded-full bg-amber-50 text-amber-600 mb-4"><Save size={28} /></div>
+              <h3 className="text-xl font-bold text-slate-900 mb-2">{confirmModal.title}</h3>
+              <p className="text-slate-500 text-sm mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold transition-colors ${confirmModal.confirmClassName}`}>{confirmModal.confirmLabel}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

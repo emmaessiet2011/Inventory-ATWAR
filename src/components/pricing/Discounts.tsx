@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import AddDiscountModal, { DiscountFormData } from './AddDiscountModal';
 import MultiSelect from '@/components/shared/MultiSelect';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { Discount, useGlobalContext } from '@/context/GlobalContext';
 import { printActiveReportTable } from '@/utils/printUtils';
 import { formatDiscountAmount, sortDiscountsByPriority } from '@/utils/discountRules';
@@ -73,6 +74,13 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [isDiscountModalOpen, setIsDiscountModalOpen] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    tone?: 'danger' | 'warning' | 'primary';
+    onConfirm: () => void;
+  } | null>(null);
 
   const parseDateValue = (value?: string): Date | null => {
     if (!value) return null;
@@ -195,21 +203,42 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
 
   const handleToggleStatus = (discount: Discount) => {
     const action = discount.isActive ? 'deactivate' : 'activate';
-    if (!confirm(`Are you sure you want to ${action} discount "${discount.name}"?`)) return;
-    updateDiscount({ ...discount, isActive: !discount.isActive });
-    setActiveActionId(null);
+    setConfirmDialog({
+      title: `${discount.isActive ? 'Deactivate' : 'Activate'} Discount`,
+      message: `Are you sure you want to ${action} discount "${discount.name}"?`,
+      confirmLabel: discount.isActive ? 'Deactivate' : 'Activate',
+      tone: discount.isActive ? 'warning' : 'primary',
+      onConfirm: () => {
+        updateDiscount({ ...discount, isActive: !discount.isActive });
+        setActiveActionId(null);
+      },
+    });
   };
   const handleDelete = (discount: Discount) => {
-    if (!confirm(`Are you sure you want to delete "${discount.name}"?`)) return;
-    deleteDiscount(discount.id);
-    setActiveActionId(null);
+    setConfirmDialog({
+      title: 'Delete Discount',
+      message: `Are you sure you want to delete "${discount.name}"?`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+      onConfirm: () => {
+        deleteDiscount(discount.id);
+        setActiveActionId(null);
+      },
+    });
   };
   const handleBulkDeactivate = () => {
     const targets = discounts.filter(discount => selectedIds.has(discount.id) && discount.isActive);
     if (targets.length === 0) return;
-    if (!confirm(`Deactivate ${targets.length} selected discount(s)?`)) return;
-    targets.forEach(discount => updateDiscount({ ...discount, isActive: false }));
-    setSelectedIds(new Set());
+    setConfirmDialog({
+      title: 'Bulk Deactivate Discounts',
+      message: `Deactivate ${targets.length} selected discount(s)?`,
+      confirmLabel: 'Deactivate',
+      tone: 'warning',
+      onConfirm: () => {
+        targets.forEach(discount => updateDiscount({ ...discount, isActive: false }));
+        setSelectedIds(new Set());
+      },
+    });
   };
 
   const downloadBlob = (filename: string, content: string, mime: string) => {
@@ -350,6 +379,19 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
         onClose={() => { setIsDiscountModalOpen(false); setEditingDiscount(null); }}
         onSave={handleSaveDiscount}
         initialData={editingDiscount}
+      />
+      <ConfirmDialog
+        isOpen={!!confirmDialog}
+        title={confirmDialog?.title || 'Confirm Action'}
+        message={confirmDialog?.message || ''}
+        confirmLabel={confirmDialog?.confirmLabel || 'Confirm'}
+        tone={confirmDialog?.tone || 'danger'}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          const action = confirmDialog?.onConfirm;
+          setConfirmDialog(null);
+          action?.();
+        }}
       />
     </div>
   );

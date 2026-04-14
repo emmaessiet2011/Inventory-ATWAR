@@ -17,6 +17,7 @@ import ViewPaymentsModal from '@/components/payments/ViewPaymentsModal';
 import InvoiceURLModal from '@/components/shared/InvoiceURLModal';
 import MultiSelect from '@/components/shared/MultiSelect';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { useNotifications } from '@/context/NotificationContext';
 import { Sale as GlobalSale, useGlobalContext } from '@/context/GlobalContext';
 import { printActiveReportTable } from '@/utils/printUtils';
@@ -156,6 +157,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
   const [viewPaymentsModalOpen, setViewPaymentsModalOpen] = useState(false);
   const [invoiceURLModalOpen, setInvoiceURLModalOpen] = useState(false);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [pendingDeleteSale, setPendingDeleteSale] = useState<{ id: string; invoiceNo: string } | null>(null);
   const [invoiceAutoPrintRequestId, setInvoiceAutoPrintRequestId] = useState<string | null>(null);
   
   // Filter States
@@ -568,14 +570,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
           return;
       }
       const invoiceNo = sales.find(s => s.id === saleId)?.invoiceNo || 'this sale';
-      if (confirm(`Delete ${invoiceNo}?`)) {
-          globalDeleteSale(saleId);
-          addNotification({
-            title: 'Sale Deleted',
-            message: `${invoiceNo} has been deleted.`,
-            type: 'success',
-          });
-      }
+      setPendingDeleteSale({ id: saleId, invoiceNo });
       setActiveActionId(null);
   };
 
@@ -1240,6 +1235,24 @@ const ListPOS: React.FC<ListPOSProps> = ({
             saleId={selectedSaleId || undefined}
           />
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteSale}
+        title="Delete Sale"
+        message={`Are you sure you want to delete ${pendingDeleteSale?.invoiceNo || 'this sale'}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteSale(null)}
+        onConfirm={() => {
+          if (!pendingDeleteSale) return;
+          globalDeleteSale(pendingDeleteSale.id);
+          addNotification({
+            title: 'Sale Deleted',
+            message: `${pendingDeleteSale.invoiceNo} has been deleted.`,
+            type: 'success',
+          });
+          setPendingDeleteSale(null);
+        }}
+      />
 
     </div>
   );

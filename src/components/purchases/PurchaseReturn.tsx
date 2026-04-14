@@ -11,6 +11,7 @@ import {
 } from '@/context/GlobalContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface PurchaseReturnItemForm extends PurchaseReturnItem {
   rowId: string;
@@ -95,6 +96,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
   const [editingReturn, setEditingReturn] = useState<GlobalPurchaseReturn | null>(null);
   const [formError, setFormError] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  const [pendingDeleteReturnId, setPendingDeleteReturnId] = useState<string | null>(null);
 
   const activeLocations = useMemo(
     () => locations.filter(location => location.isActive !== false),
@@ -550,7 +552,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button onClick={() => openEditModal(item)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><Edit size={14} /></button>
-                      <button onClick={() => { if (confirm('Delete this purchase return?')) deletePurchaseReturn(item.id); }} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={14} /></button>
+                      <button onClick={() => setPendingDeleteReturnId(item.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -626,6 +628,18 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteReturnId}
+        title="Delete Purchase Return"
+        message="Are you sure you want to delete this purchase return? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteReturnId(null)}
+        onConfirm={() => {
+          if (pendingDeleteReturnId) deletePurchaseReturn(pendingDeleteReturnId);
+          setPendingDeleteReturnId(null);
+        }}
+      />
     </div>
   );
 };

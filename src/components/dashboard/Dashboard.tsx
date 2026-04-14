@@ -49,6 +49,7 @@ import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { fetchDedicated } from '@/utils/apiClient';
 import { formatDateBySettings } from '@/utils/dateTime';
 import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;
@@ -197,6 +198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [savedViews, setSavedViews] = useState<SavedDashboardView[]>(readViews);
   const [selectedViewId, setSelectedViewId] = useState('');
   const [viewName, setViewName] = useState('');
+  const [pendingDeleteViewId, setPendingDeleteViewId] = useState('');
 
   // Cheque reminders
   const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
@@ -1385,7 +1387,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </select>
         )}
         {selectedViewId && (
-          <button type="button" onClick={() => deleteSavedView(selectedViewId)} className="px-2 py-1.5 rounded-lg bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">
+          <button type="button" onClick={() => setPendingDeleteViewId(selectedViewId)} className="px-2 py-1.5 rounded-lg bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">
             Delete
           </button>
         )}
@@ -2052,6 +2054,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>,
         document.body
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteViewId}
+        title="Delete Saved View"
+        message="Are you sure you want to delete this saved dashboard view?"
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteViewId('')}
+        onConfirm={() => {
+          if (pendingDeleteViewId) deleteSavedView(pendingDeleteViewId);
+          setPendingDeleteViewId('');
+        }}
+      />
     </div>
   );
 };

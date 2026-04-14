@@ -12,6 +12,7 @@ import {
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface PurchaseOrderProps {
   onNavigate?: (page: string) => void;
@@ -138,6 +139,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingOrder, setEditingOrder] = useState<GlobalPurchaseOrder | null>(null);
   const [formError, setFormError] = useState('');
+  const [pendingDeleteOrderId, setPendingDeleteOrderId] = useState<string | null>(null);
   const [productQuickSearch, setProductQuickSearch] = useState('');
 
   const activeLocations = useMemo(
@@ -496,7 +498,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
       });
       return;
     }
-    if (confirm('Delete this purchase order?')) deletePurchaseOrder(id);
+    setPendingDeleteOrderId(id);
   };
 
   const handleCreatePurchaseFromOrder = (orderId: string) => {
@@ -1010,6 +1012,18 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteOrderId}
+        title="Delete Purchase Order"
+        message="Are you sure you want to delete this purchase order? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteOrderId(null)}
+        onConfirm={() => {
+          if (pendingDeleteOrderId) deletePurchaseOrder(pendingDeleteOrderId);
+          setPendingDeleteOrderId(null);
+        }}
+      />
     </div>
   );
 };

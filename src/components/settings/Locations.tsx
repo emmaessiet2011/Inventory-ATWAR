@@ -9,6 +9,7 @@ import {
 import { useNotifications } from '@/context/NotificationContext';
 import { bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import { buildPaymentAccountOptions, resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 const cloneDefaultPaymentMethods = (): PaymentMethod[] =>
   DEFAULT_LOCATION_PAYMENT_METHODS.map(method => ({
@@ -54,6 +55,7 @@ const Locations: React.FC = () => {
     invoiceLayoutSale: '',
   });
   const [formData, setFormData] = useState<Partial<Location>>({});
+  const [pendingDeleteLocationId, setPendingDeleteLocationId] = useState<string | null>(null);
 
   const invoiceSchemeOptions = useMemo(
     () => Array.from(new Set([
@@ -350,16 +352,7 @@ const Locations: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this location?')) {
-      const result = await deleteLocation(id);
-      if (!result.success) {
-        addNotification({
-          title: 'Unable to delete location',
-          message: result.message || 'Unable to delete this location.',
-          type: 'warning',
-        });
-      }
-    }
+    setPendingDeleteLocationId(id);
   };
 
   const handleToggleLocationStatus = async (location: Location) => {
@@ -1085,6 +1078,26 @@ const Locations: React.FC = () => {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteLocationId}
+        title="Delete Location"
+        message="Are you sure you want to delete this location? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteLocationId(null)}
+        onConfirm={async () => {
+          if (!pendingDeleteLocationId) return;
+          const result = await deleteLocation(pendingDeleteLocationId);
+          if (!result.success) {
+            addNotification({
+              title: 'Unable to delete location',
+              message: result.message || 'Unable to delete this location.',
+              type: 'warning',
+            });
+          }
+          setPendingDeleteLocationId(null);
+        }}
+      />
     </div>
   );
 };

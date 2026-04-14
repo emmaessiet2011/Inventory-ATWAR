@@ -7,6 +7,7 @@ import { jsPDF } from 'jspdf';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { printDocument, statusBadge as printStatusBadge, paymentBadge as printPaymentBadge } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface PurchasesProps {
   onNavigate?: (page: string) => void;
@@ -73,6 +74,7 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const [pendingDeletePurchaseId, setPendingDeletePurchaseId] = useState<string | null>(null);
   const columnMenuRef = useRef<HTMLDivElement>(null);
   const [visibleCols, setVisibleCols] = useState<Record<ColumnKey, boolean>>({
     date: true,
@@ -386,7 +388,7 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
                       <button onClick={() => handleStartPurchaseReturn(item.id)} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded" title="Return Purchase">
                         <RefreshCcw size={14} />
                       </button>
-                      <button onClick={() => { if (confirm('Delete this purchase?')) deletePurchase(item.id); }} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded" title="Delete">
+                      <button onClick={() => setPendingDeletePurchaseId(item.id)} className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded" title="Delete">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -430,6 +432,18 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={!!pendingDeletePurchaseId}
+        title="Delete Purchase"
+        message="Are you sure you want to delete this purchase? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeletePurchaseId(null)}
+        onConfirm={() => {
+          if (pendingDeletePurchaseId) deletePurchase(pendingDeletePurchaseId);
+          setPendingDeletePurchaseId(null);
+        }}
+      />
     </div>
   );
 };

@@ -150,6 +150,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const [viewPaymentModalOpen, setViewPaymentModalOpen] = useState(false);
   const [editPaymentModalOpen, setEditPaymentModalOpen] = useState(false);
   const [deletePaymentModalOpen, setDeletePaymentModalOpen] = useState(false);
+  const [deleteSaleModalOpen, setDeleteSaleModalOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   const [deleteDocModalOpen, setDeleteDocModalOpen] = useState(false);
   const [pendingDeleteDocId, setPendingDeleteDocId] = useState<string | null>(null);
@@ -506,11 +507,16 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   };
 
   const handleDeleteSale = (saleId: string) => {
-      if(confirm("Are you sure you want to delete this sale?")) {
-         globalDeleteSale(saleId); // restores stock + updates customer balance via GlobalContext
-      }
+      setSelectedSaleId(saleId);
+      setDeleteSaleModalOpen(true);
       setActiveActionId(null);
   }
+
+  const handleDeleteSaleConfirm = () => {
+    if (!selectedSaleId) return;
+    globalDeleteSale(selectedSaleId); // restores stock + updates customer balance via GlobalContext
+    setDeleteSaleModalOpen(false);
+  };
 
   const handlePackingSlip = (saleId: string) => {
       const sale = salesData.find(s => s.id === saleId);
@@ -2456,6 +2462,16 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
           onConfirm={confirmDeleteDoc}
           title="Delete Document"
           message="Are you sure you want to delete this document? This action cannot be undone."
+          confirmLabel="Delete"
+          confirmVariant="danger"
+          icon={<Trash2 size={32} />}
+      />
+      <ConfirmationModal
+          isOpen={deleteSaleModalOpen}
+          onClose={() => setDeleteSaleModalOpen(false)}
+          onConfirm={handleDeleteSaleConfirm}
+          title="Delete Sale"
+          message={`Are you sure you want to delete sale ${selectedSaleId ? (salesData.find(s => s.id === selectedSaleId)?.invoiceNo || selectedSaleId) : '--'}? This action cannot be undone.`}
           confirmLabel="Delete"
           confirmVariant="danger"
           icon={<Trash2 size={32} />}

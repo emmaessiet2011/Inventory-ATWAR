@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 import MultiSelect from '@/components/shared/MultiSelect';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import AddPaymentModal from '@/components/payments/AddPaymentModal';
 import ViewSellReturnDetails from './ViewSellReturnDetails';
 import ViewSellReturnPaymentsModal from './ViewSellReturnPaymentsModal';
@@ -62,6 +63,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
   const [addPaymentModalOpen, setAddPaymentModalOpen] = useState(false);
   const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
   const [autoPrintDetails, setAutoPrintDetails] = useState(false);
+  const [pendingDeleteReturn, setPendingDeleteReturn] = useState<{ id: string; ref: string } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const columnMenuRef = useRef<HTMLDivElement>(null);
 
@@ -367,10 +369,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
       setActiveActionId(null);
       return;
     }
-    if (confirm(`Delete credit note ${record?.referenceNo || id}?`)) {
-      globalDeleteSellReturn(id);
-      addNotification({ title: 'Sell Return Deleted', message: `Credit note ${record?.referenceNo || id} was removed.`, type: 'success' });
-    }
+    setPendingDeleteReturn({ id, ref: record?.referenceNo || id });
     setActiveActionId(null);
   };
   const handlePrint = (id: string) => {
@@ -610,6 +609,21 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
           documentLabel="Credit Note No."
         />
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteReturn}
+        title="Delete Sell Return"
+        message={`Are you sure you want to delete credit note ${pendingDeleteReturn?.ref || '--'}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteReturn(null)}
+        onConfirm={() => {
+          if (pendingDeleteReturn) {
+            globalDeleteSellReturn(pendingDeleteReturn.id);
+            addNotification({ title: 'Sell Return Deleted', message: `Credit note ${pendingDeleteReturn.ref} was removed.`, type: 'success' });
+          }
+          setPendingDeleteReturn(null);
+        }}
+      />
     </div>
   );
 };

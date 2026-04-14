@@ -10,6 +10,7 @@ import { useGlobalContext, Product as GlobalProduct } from '@/context/GlobalCont
 import { useNotifications } from '@/context/NotificationContext';
 import { findBestApplicableDiscount, formatDiscountAmount, resolveAppliedDiscount } from '@/utils/discountRules';
 import ProductStockHistory from '@/components/products/ProductStockHistory';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import {
   addRegisterTransaction,
   bootstrapRegisterFromDB,
@@ -22,7 +23,6 @@ import {
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument } from '@/utils/printUtils';
-import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
@@ -95,6 +95,8 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   // Cash denomination picker state
   const [showDenomPicker, setShowDenomPicker] = useState(false);
   const [denomTendered, setDenomTendered] = useState<number>(0);
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [confirmCloseRegisterOpen, setConfirmCloseRegisterOpen] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const discountInputRef = useRef<HTMLInputElement>(null);
@@ -252,7 +254,8 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   };
 
   const resetCart = (withConfirm: boolean) => {
-    if (withConfirm && cart.length > 0 && !confirm('Clear all cart items and reset this POS form?')) {
+    if (withConfirm && cart.length > 0) {
+      setConfirmResetOpen(true);
       return;
     }
     setCart([]);
@@ -963,15 +966,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                 onNavigate?.('open-register');
                 return;
               }
-              const details = `Register: ${registerSession.id}\n` +
-                `Location: ${registerSession.locationName}\n` +
-                `Opened by: ${registerSession.openedBy}\n` +
-                `Opened at: ${formatDateTimeBySettings(registerSession.openedAt, settings.dateFormat, settings.timeFormat, settings.timeZone)}\n` +
-                `Cash in hand: ${formatCurrency(registerSession.cashInHand)}\n\n` +
-                `Click OK to close this register, Cancel to keep it open.`;
-              if (confirm(details)) {
-                handleCloseRegister();
-              }
+              setConfirmCloseRegisterOpen(true);
             }}
             className="flex flex-col items-center justify-center p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors w-16"
             title="Register Details"
@@ -1404,6 +1399,30 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         onClose={() => setIsStockHistoryOpen(false)}
         product={stockHistoryProduct}
         pageMode={true}
+      />
+      <ConfirmDialog
+        isOpen={confirmResetOpen}
+        title="Reset POS Cart"
+        message="Clear all cart items and reset this POS form?"
+        confirmLabel="Reset"
+        tone="warning"
+        onCancel={() => setConfirmResetOpen(false)}
+        onConfirm={() => {
+          setConfirmResetOpen(false);
+          resetCart(false);
+        }}
+      />
+      <ConfirmDialog
+        isOpen={confirmCloseRegisterOpen}
+        title="Close Register"
+        message={`Close register ${registerSession?.id || '--'} at ${registerSession?.locationName || '--'} with cash in hand ${formatCurrency(registerSession?.cashInHand || 0)}?`}
+        confirmLabel="Close Register"
+        tone="warning"
+        onCancel={() => setConfirmCloseRegisterOpen(false)}
+        onConfirm={() => {
+          setConfirmCloseRegisterOpen(false);
+          handleCloseRegister();
+        }}
       />
     </div>
   );

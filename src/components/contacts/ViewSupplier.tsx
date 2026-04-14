@@ -15,6 +15,7 @@ import {
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { printDocument } from '@/utils/printUtils';
 import { formatDateBySettings } from '@/utils/dateTime';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface ViewSupplierProps {
   onNavigate: (page: string) => void;
@@ -73,6 +74,8 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
   const [isDocModalOpen, setIsDocModalOpen] = useState(false);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [newDocHeading, setNewDocHeading] = useState('');
+  const [pendingDeletePaymentId, setPendingDeletePaymentId] = useState<string | null>(null);
+  const [pendingDeleteDocId, setPendingDeleteDocId] = useState<string | null>(null);
   const paymentAccountOptions = useMemo(
     () => ['Cash Account', 'Bank Account'],
     []
@@ -327,7 +330,7 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
   };
 
   const handleDeletePayment = (id: string) => {
-    if (confirm('Delete this supplier payment?')) globalDeletePayment(id);
+    setPendingDeletePaymentId(id);
   };
 
   const handlePrintLedger = () => {
@@ -383,9 +386,8 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
   };
 
   const handleDeleteDoc = (docId: string) => {
-    if (!supplier || !confirm('Delete this document?')) return;
-    const docs = (supplier.documents || []).filter(d => d.id !== docId);
-    globalUpdateSupplier({ ...supplier, documents: docs });
+    if (!supplier) return;
+    setPendingDeleteDocId(docId);
   };
 
   if (!supplier) {
@@ -1275,6 +1277,32 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeletePaymentId}
+        title="Delete Supplier Payment"
+        message="Are you sure you want to delete this supplier payment? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeletePaymentId(null)}
+        onConfirm={() => {
+          if (pendingDeletePaymentId) globalDeletePayment(pendingDeletePaymentId);
+          setPendingDeletePaymentId(null);
+        }}
+      />
+      <ConfirmDialog
+        isOpen={!!pendingDeleteDocId}
+        title="Delete Document"
+        message="Are you sure you want to delete this document? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteDocId(null)}
+        onConfirm={() => {
+          if (!supplier || !pendingDeleteDocId) return;
+          const docs = (supplier.documents || []).filter(d => d.id !== pendingDeleteDocId);
+          globalUpdateSupplier({ ...supplier, documents: docs });
+          setPendingDeleteDocId(null);
+        }}
+      />
     </div>
   );
 };

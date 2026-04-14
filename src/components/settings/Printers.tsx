@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Edit, Plus, Search, Trash2, X } from 'lucide-react';
 import { ReceiptPrinter, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 type ViewMode = 'list' | 'form';
 
@@ -37,6 +38,7 @@ const Printers: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState<PrinterFormState>(createInitialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingDeletePrinter, setPendingDeletePrinter] = useState<ReceiptPrinter | null>(null);
 
   const isEditing = !!editingId;
 
@@ -173,14 +175,7 @@ const Printers: React.FC = () => {
   };
 
   const handleDelete = (printer: ReceiptPrinter) => {
-    const confirmed = confirm(`Delete printer "${printer.name}"?`);
-    if (!confirmed) return;
-    deletePrinter(printer.id);
-    addNotification({
-      title: 'Printer deleted',
-      message: `Printer "${printer.name}" has been removed.`,
-      type: 'success',
-    });
+    setPendingDeletePrinter(printer);
   };
 
   if (view === 'form') {
@@ -395,6 +390,24 @@ const Printers: React.FC = () => {
           Showing {showingStart} to {showingEnd} of {filteredPrinters.length} entries
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={!!pendingDeletePrinter}
+        title="Delete Printer"
+        message={`Are you sure you want to delete printer "${pendingDeletePrinter?.name || '--'}"?`}
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeletePrinter(null)}
+        onConfirm={() => {
+          if (!pendingDeletePrinter) return;
+          deletePrinter(pendingDeletePrinter.id);
+          addNotification({
+            title: 'Printer deleted',
+            message: `Printer "${pendingDeletePrinter.name}" has been removed.`,
+            type: 'success',
+          });
+          setPendingDeletePrinter(null);
+        }}
+      />
     </div>
   );
 };

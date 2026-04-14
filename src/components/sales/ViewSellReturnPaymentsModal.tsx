@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { X, Printer, Trash2 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { printDocument } from '@/utils/printUtils';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface ViewSellReturnPaymentsModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ const ViewSellReturnPaymentsModal: React.FC<ViewSellReturnPaymentsModalProps> = 
   sellReturnId,
 }) => {
   const { sellReturns, payments, settings, formatCurrency, deletePayment: globalDeletePayment } = useGlobalContext();
+  const [pendingDeletePayment, setPendingDeletePayment] = useState<{ id: string; ref: string } | null>(null);
 
   const sellReturn = useMemo(
     () => (sellReturnId ? sellReturns.find(record => record.id === sellReturnId) : undefined),
@@ -126,11 +128,7 @@ const ViewSellReturnPaymentsModal: React.FC<ViewSellReturnPaymentsModalProps> = 
                     <td className="px-4 py-3">{payment.account || payment.paymentAccount || '--'}</td>
                     <td className="px-4 py-3 text-center">
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete payment ${payment.referenceNo || payment.id}?`)) {
-                            globalDeletePayment(payment.id);
-                          }
-                        }}
+                        onClick={() => setPendingDeletePayment({ id: payment.id, ref: payment.referenceNo || payment.id })}
                         className="text-rose-500 hover:text-rose-700"
                       >
                         <Trash2 size={14} />
@@ -157,6 +155,18 @@ const ViewSellReturnPaymentsModal: React.FC<ViewSellReturnPaymentsModalProps> = 
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={!!pendingDeletePayment}
+        title="Delete Payment"
+        message={`Are you sure you want to delete payment ${pendingDeletePayment?.ref || '--'}? This action cannot be undone.`}
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeletePayment(null)}
+        onConfirm={() => {
+          if (pendingDeletePayment) globalDeletePayment(pendingDeletePayment.id);
+          setPendingDeletePayment(null);
+        }}
+      />
     </div>
   );
 };

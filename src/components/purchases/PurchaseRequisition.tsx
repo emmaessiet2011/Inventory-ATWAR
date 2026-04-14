@@ -12,6 +12,7 @@ import {
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
+import ConfirmDialog from '@/components/shared/ConfirmDialog';
 
 interface PurchaseRequisitionProps {
   onNavigate?: (page: string) => void;
@@ -72,6 +73,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRequisition, setEditingRequisition] = useState<GlobalPurchaseRequisition | null>(null);
   const [formError, setFormError] = useState('');
+  const [pendingDeleteRequisitionId, setPendingDeleteRequisitionId] = useState<string | null>(null);
   const activeLocations = useMemo(
     () => locations.filter(location => location.isActive !== false),
     [locations]
@@ -277,7 +279,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
       });
       return;
     }
-    if (confirm('Delete this purchase requisition?')) deletePurchaseRequisition(id);
+    setPendingDeleteRequisitionId(id);
   };
 
   const handleCreatePurchaseOrder = (requisition: GlobalPurchaseRequisition) => {
@@ -506,6 +508,18 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!pendingDeleteRequisitionId}
+        title="Delete Purchase Requisition"
+        message="Are you sure you want to delete this purchase requisition? This action cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        onCancel={() => setPendingDeleteRequisitionId(null)}
+        onConfirm={() => {
+          if (pendingDeleteRequisitionId) deletePurchaseRequisition(pendingDeleteRequisitionId);
+          setPendingDeleteRequisitionId(null);
+        }}
+      />
     </div>
   );
 };
