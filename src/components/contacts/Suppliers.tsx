@@ -253,6 +253,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   const handleSaveSupplier = () => {
     const businessName = String(formData.businessName || '').trim();
     const contactPerson = String(formData.name || '').trim();
+    const effectiveBusinessName = businessName || contactPerson;
     const mobile = String(formData.mobile || '').trim();
     const email = String(formData.email || '').trim();
     const taxNumber = String(formData.taxNumber || '').trim();
@@ -260,10 +261,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     const isEdit = !!editingSupplierId;
     const existing = isEdit ? suppliers.find(s => s.id === editingSupplierId) : null;
 
-    if (!businessName || !mobile || !contactPerson) {
+    if (!contactPerson) {
       addNotification({
         title: 'Missing Required Fields',
-        message: 'Business Name, Contact Person, and Mobile are required.',
+        message: 'Contact Person is required.',
         type: 'error',
       });
       return;
@@ -309,29 +310,31 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
 
     const normalize = (value: string) => value.trim().toLowerCase();
     const normalizeMobile = (value: string) => value.replace(/\D+/g, '');
-    const duplicateBusiness = suppliers.some(s => s.id !== editingSupplierId && normalize(s.businessName) === normalize(businessName));
+    const duplicateBusiness = suppliers.some(s => s.id !== editingSupplierId && normalize(s.businessName) === normalize(effectiveBusinessName));
     if (duplicateBusiness) {
       addNotification({
         title: 'Duplicate Business Name',
-        message: `A supplier with business name "${businessName}" already exists.`,
+        message: `A supplier with business name "${effectiveBusinessName}" already exists.`,
         type: 'error',
       });
       return;
     }
 
     const normalizedMobile = normalizeMobile(mobile);
-    const duplicateMobile = suppliers.some(s => {
-      if (s.id === editingSupplierId) return false;
-      const supplierMobile = normalizeMobile(String(s.mobile || ''));
-      return supplierMobile.length > 0 && supplierMobile === normalizedMobile;
-    });
-    if (duplicateMobile) {
-      addNotification({
-        title: 'Duplicate Mobile',
-        message: `A supplier with mobile "${mobile}" already exists.`,
-        type: 'error',
+    if (normalizedMobile) {
+      const duplicateMobile = suppliers.some(s => {
+        if (s.id === editingSupplierId) return false;
+        const supplierMobile = normalizeMobile(String(s.mobile || ''));
+        return supplierMobile.length > 0 && supplierMobile === normalizedMobile;
       });
-      return;
+      if (duplicateMobile) {
+        addNotification({
+          title: 'Duplicate Mobile',
+          message: `A supplier with mobile "${mobile}" already exists.`,
+          type: 'error',
+        });
+        return;
+      }
     }
 
     if (email) {
@@ -358,7 +361,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     const supplierData: GlobalSupplier = {
       id: resolvedId,
       type: 'Supplier',
-      businessName,
+      businessName: effectiveBusinessName,
       name: contactPerson,
       email,
       mobile,
@@ -379,10 +382,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
 
     if (isEdit) {
       globalUpdateSupplier(supplierData);
-      addNotification({ title: 'Supplier Updated', message: `"${businessName}" was updated successfully.`, type: 'success' });
+      addNotification({ title: 'Supplier Updated', message: `"${effectiveBusinessName}" was updated successfully.`, type: 'success' });
     } else {
       globalAddSupplier(supplierData);
-      addNotification({ title: 'Supplier Added', message: `"${businessName}" was added successfully.`, type: 'success' });
+      addNotification({ title: 'Supplier Added', message: `"${effectiveBusinessName}" was added successfully.`, type: 'success' });
     }
 
     setIsAddModalOpen(false);
@@ -1090,7 +1093,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
-                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Business Name <span className="text-red-500">*</span></label>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Business Name</label>
                                 <input 
                                     type="text" 
                                     placeholder="e.g. Acme Corp" 
@@ -1214,7 +1217,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
-                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Mobile <span className="text-red-500">*</span></label>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Mobile</label>
                                 <input 
                                     type="text" 
                                     placeholder="+968" 

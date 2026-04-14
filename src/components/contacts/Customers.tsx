@@ -351,6 +351,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
   const handleSaveCustomer = () => {
     const businessName = String(formData.businessName || '').trim();
     const contactName = String(formData.name || '').trim();
+    const effectiveBusinessName = businessName || contactName;
     const mobile = String(formData.mobile || '').trim();
     const email = String(formData.email || '').trim();
     const taxNumber = String(formData.taxNumber || '').trim();
@@ -358,10 +359,10 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     const isEdit = !!editingCustomerId;
     const existing = isEdit ? customers.find(c => c.id === editingCustomerId) : null;
 
-    if (!businessName || !contactName || !mobile) {
+    if (!contactName) {
       addNotification({
         title: 'Missing Required Fields',
-        message: 'Business Name, Name, and Mobile are required.',
+        message: 'Name is required.',
         type: 'error',
       });
       return;
@@ -411,28 +412,30 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       return;
     }
 
-    const duplicateBusiness = customers.some(c => c.id !== editingCustomerId && normalize(c.businessName) === normalize(businessName));
+    const duplicateBusiness = customers.some(c => c.id !== editingCustomerId && normalize(c.businessName) === normalize(effectiveBusinessName));
     if (duplicateBusiness) {
       addNotification({
         title: 'Duplicate Business Name',
-        message: `A customer with business name "${businessName}" already exists.`,
+        message: `A customer with business name "${effectiveBusinessName}" already exists.`,
         type: 'error',
       });
       return;
     }
 
     const normalizedMobile = normalizeMobile(mobile);
-    const duplicateMobile = customers.some(c =>
-      c.id !== editingCustomerId &&
-      normalizeMobile(String(c.mobile || '')) === normalizedMobile
-    );
-    if (duplicateMobile) {
-      addNotification({
-        title: 'Duplicate Mobile',
-        message: `A customer with mobile "${mobile}" already exists.`,
-        type: 'error',
-      });
-      return;
+    if (normalizedMobile) {
+      const duplicateMobile = customers.some(c =>
+        c.id !== editingCustomerId &&
+        normalizeMobile(String(c.mobile || '')) === normalizedMobile
+      );
+      if (duplicateMobile) {
+        addNotification({
+          title: 'Duplicate Mobile',
+          message: `A customer with mobile "${mobile}" already exists.`,
+          type: 'error',
+        });
+        return;
+      }
     }
 
     if (email) {
@@ -474,7 +477,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     const newCustomer: GlobalCustomer = {
       id: resolvedId,
       type: 'Customer',
-      businessName,
+      businessName: effectiveBusinessName,
       name: contactName,
       email,
       mobile,
@@ -499,10 +502,10 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
 
     if (isEdit) {
       globalUpdateCustomer(newCustomer);
-      addNotification({ title: 'Customer Updated', message: `"${businessName}" was updated successfully.`, type: 'success' });
+      addNotification({ title: 'Customer Updated', message: `"${effectiveBusinessName}" was updated successfully.`, type: 'success' });
     } else {
       globalAddCustomer(newCustomer);
-      addNotification({ title: 'Customer Added', message: `"${businessName}" was added successfully.`, type: 'success' });
+      addNotification({ title: 'Customer Added', message: `"${effectiveBusinessName}" was added successfully.`, type: 'success' });
     }
 
     closeAddModal();
@@ -1327,7 +1330,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
-                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Business Name <span className="text-red-500">*</span></label>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Business Name</label>
                                 <input 
                                     type="text" 
                                     placeholder="e.g. Acme Corp" 
@@ -1462,7 +1465,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
-                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Mobile <span className="text-red-500">*</span></label>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Mobile</label>
                                 <input 
                                     type="text" 
                                     placeholder="+968" 
