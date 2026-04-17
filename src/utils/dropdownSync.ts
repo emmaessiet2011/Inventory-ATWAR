@@ -2,6 +2,10 @@ export type DropdownCollectionMap = Record<string, any[]>;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000';
 const AUTH_TOKEN_KEY = 'atwar_auth_token';
+const RESOURCE_FALLBACK_MAP: Record<string, string> = {
+  customerGroups: 'customerGroups',
+  sellingPriceGroups: 'sellingPriceGroups',
+};
 
 const getApiBaseUrl = (): string => {
   const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
@@ -41,6 +45,37 @@ const handle401 = (): void => {
   }
 };
 
+const mapMetaRows = (value: unknown): any[] => {
+  if (!Array.isArray(value)) return [];
+  return value.map((row) => {
+    if (row && typeof row === 'object' && (row as Record<string, unknown>).meta && typeof (row as Record<string, unknown>).meta === 'object') {
+      return (row as Record<string, unknown>).meta;
+    }
+    return row;
+  });
+};
+
+const fetchResourceRows = async (resource: string): Promise<any[] | null> => {
+  try {
+    const response = await fetch(
+      `${getApiBaseUrl()}/api/data/${encodeURIComponent(resource)}?paginate=false`,
+      {
+        method: 'GET',
+        headers: buildHeaders(false),
+      },
+    );
+    if (response.status === 401) {
+      handle401();
+      return null;
+    }
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return mapMetaRows(payload?.data);
+  } catch {
+    return null;
+  }
+};
+
 export const fetchDropdownCollections = async (keys: string[]): Promise<DropdownCollectionMap> => {
   const normalizedKeys = Array.from(new Set(
     keys
@@ -68,6 +103,23 @@ export const fetchDropdownCollections = async (keys: string[]): Promise<Dropdown
     normalizedKeys.forEach((key) => {
       collections[key] = Array.isArray(data[key]) ? data[key] : [];
     });
+
+    const fallbackKeys = normalizedKeys.filter((key) =>
+      collections[key].length === 0 && Boolean(RESOURCE_FALLBACK_MAP[key]),
+    );
+
+    if (fallbackKeys.length > 0) {
+      await Promise.all(
+        fallbackKeys.map(async (key) => {
+          const resource = RESOURCE_FALLBACK_MAP[key];
+          const rows = await fetchResourceRows(resource);
+          if (Array.isArray(rows) && rows.length > 0) {
+            collections[key] = rows;
+          }
+        }),
+      );
+    }
+
     return collections;
   } catch {
     return {};
