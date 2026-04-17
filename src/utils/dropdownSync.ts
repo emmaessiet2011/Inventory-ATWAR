@@ -2,9 +2,45 @@ export type DropdownCollectionMap = Record<string, any[]>;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000';
 const AUTH_TOKEN_KEY = 'atwar_auth_token';
-const RESOURCE_FALLBACK_MAP: Record<string, string> = {
-  customerGroups: 'customerGroups',
-  sellingPriceGroups: 'sellingPriceGroups',
+const STRICT_RESOURCE_MAP: Record<
+  string,
+  { resource: string; serialize: (row: any) => Record<string, unknown> | null }
+> = {
+  customerGroups: {
+    resource: 'customerGroups',
+    serialize: (row) => {
+      const id = String(row?.id || '').trim();
+      const name = String(row?.name || '').trim();
+      if (!id || !name) return null;
+      const discountPercent = Number(row?.discountPercent);
+      const statusRaw = String(row?.status || 'Active').trim().toLowerCase();
+      return {
+        id,
+        name,
+        discountPercent: Number.isFinite(discountPercent) ? discountPercent : 0,
+        status: statusRaw === 'inactive' ? 'INACTIVE' : 'ACTIVE',
+        meta: row,
+      };
+    },
+  },
+  sellingPriceGroups: {
+    resource: 'sellingPriceGroups',
+    serialize: (row) => {
+      const id = String(row?.id || '').trim();
+      const name = String(row?.name || '').trim();
+      if (!id || !name) return null;
+      const discount = Number(row?.discount);
+      const priceCalcPercentage = Number(row?.priceCalcPercentage);
+      return {
+        id,
+        name,
+        description: String(row?.description || '').trim() || null,
+        discount: Number.isFinite(discount) ? discount : 0,
+        priceCalcPercentage: Number.isFinite(priceCalcPercentage) ? priceCalcPercentage : 0,
+        meta: row,
+      };
+    },
+  },
 };
 
 const getApiBaseUrl = (): string => {
@@ -76,6 +112,103 @@ const fetchResourceRows = async (resource: string): Promise<any[] | null> => {
   }
 };
 
+const fetchOptionCollections = async (keys: string[]): Promise<DropdownCollectionMap | null> => {
+  if (keys.length === 0) return {};
+  try {
+    const params = new URLSearchParams({ keys: keys.join(',') });
+    const response = await fetch(`${getApiBaseUrl()}/api/options/bulk?${params.toString()}`, {
+      method: 'GET',
+      headers: buildHeaders(false),
+    });
+    if (response.status === 401) {
+      handle401();
+      return null;
+    }
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+    const collections: DropdownCollectionMap = {};
+    keys.forEach((key) => {
+      collections[key] = Array.isArray(data[key]) ? data[key] : [];
+    });
+    return collections;
+  } catch {
+    return null;
+  }
+};
+
+const getRowId = (row: any): string => {
+  const direct = String(row?.id || '').trim();
+  if (direct) return direct;
+  return String(row?.meta?.id || '').trim();
+};
+
+const syncStrictResourceCollection = async (
+  key: string,
+  rows: any[],
+): Promise<boolean> => {
+  const strictCfg = STRICT_RESOURCE_MAP[key];
+  if (!strictCfg) return true;
+
+  const serializedRows = (Array.isArray(rows) ? rows : [])
+    .map((row) => strictCfg.serialize(row))
+    .filter((row): row is Record<string, unknown> => !!row);
+
+  const desiredIds = new Set(
+    serializedRows
+      .map((row) => String(row.id || '').trim())
+      .filter(Boolean),
+  );
+
+  const existingRows = await fetchResourceRows(strictCfg.resource);
+  if (existingRows === null) return false;
+  const existingIds = new Set(
+    existingRows
+      .map((row) => getRowId(row))
+      .filter(Boolean),
+  );
+
+  try {
+    const upsertResponse = await fetch(
+      `${getApiBaseUrl()}/api/data/${encodeURIComponent(strictCfg.resource)}/bulk-upsert`,
+      {
+        method: 'POST',
+        headers: buildHeaders(true),
+        body: JSON.stringify({ rows: serializedRows }),
+      },
+    );
+    if (upsertResponse.status === 401) {
+      handle401();
+      return false;
+    }
+    if (!upsertResponse.ok) return false;
+
+    const idsToDelete = Array.from(existingIds).filter((id) => !desiredIds.has(id));
+    if (idsToDelete.length === 0) return true;
+
+    const deleteResults = await Promise.all(
+      idsToDelete.map(async (id) => {
+        const response = await fetch(
+          `${getApiBaseUrl()}/api/data/${encodeURIComponent(strictCfg.resource)}/${encodeURIComponent(id)}`,
+          {
+            method: 'DELETE',
+            headers: buildHeaders(false),
+          },
+        );
+        if (response.status === 401) {
+          handle401();
+          return false;
+        }
+        return response.ok;
+      }),
+    );
+
+    return deleteResults.every(Boolean);
+  } catch {
+    return false;
+  }
+};
+
 export const fetchDropdownCollections = async (keys: string[]): Promise<DropdownCollectionMap> => {
   const normalizedKeys = Array.from(new Set(
     keys
@@ -86,44 +219,33 @@ export const fetchDropdownCollections = async (keys: string[]): Promise<Dropdown
   if (normalizedKeys.length === 0) return {};
   if (!isDropdownSyncEnabled() || !getToken()) return {};
 
-  try {
-    const params = new URLSearchParams({ keys: normalizedKeys.join(',') });
-    const response = await fetch(`${getApiBaseUrl()}/api/options/bulk?${params.toString()}`, {
-      method: 'GET',
-      headers: buildHeaders(false),
-    });
-    if (response.status === 401) {
-      handle401();
-      return {};
-    }
-    if (!response.ok) return {};
-    const payload = await response.json();
-    const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
-    const collections: DropdownCollectionMap = {};
-    normalizedKeys.forEach((key) => {
-      collections[key] = Array.isArray(data[key]) ? data[key] : [];
-    });
+  const collections: DropdownCollectionMap = {};
+  normalizedKeys.forEach((key) => {
+    collections[key] = [];
+  });
 
-    const fallbackKeys = normalizedKeys.filter((key) =>
-      collections[key].length === 0 && Boolean(RESOURCE_FALLBACK_MAP[key]),
+  const strictKeys = normalizedKeys.filter((key) => Boolean(STRICT_RESOURCE_MAP[key]));
+  const optionKeys = normalizedKeys.filter((key) => !STRICT_RESOURCE_MAP[key]);
+
+  if (strictKeys.length > 0) {
+    await Promise.all(
+      strictKeys.map(async (key) => {
+        const rows = await fetchResourceRows(STRICT_RESOURCE_MAP[key].resource);
+        collections[key] = Array.isArray(rows) ? rows : [];
+      }),
     );
-
-    if (fallbackKeys.length > 0) {
-      await Promise.all(
-        fallbackKeys.map(async (key) => {
-          const resource = RESOURCE_FALLBACK_MAP[key];
-          const rows = await fetchResourceRows(resource);
-          if (Array.isArray(rows) && rows.length > 0) {
-            collections[key] = rows;
-          }
-        }),
-      );
-    }
-
-    return collections;
-  } catch {
-    return {};
   }
+
+  if (optionKeys.length > 0) {
+    const optionCollections = await fetchOptionCollections(optionKeys);
+    if (optionCollections) {
+      optionKeys.forEach((key) => {
+        collections[key] = Array.isArray(optionCollections[key]) ? optionCollections[key] : [];
+      });
+    }
+  }
+
+  return collections;
 };
 
 export const pushDropdownCollections = async (collections: DropdownCollectionMap): Promise<boolean> => {
@@ -137,11 +259,28 @@ export const pushDropdownCollections = async (collections: DropdownCollectionMap
   if (Object.keys(payload).length === 0) return true;
   if (!isDropdownSyncEnabled() || !getToken()) return false;
 
+  const strictEntries = Object.entries(payload).filter(([key]) => Boolean(STRICT_RESOURCE_MAP[key]));
+  const optionEntries = Object.entries(payload).filter(([key]) => !STRICT_RESOURCE_MAP[key]);
+
+  if (strictEntries.length > 0) {
+    const strictResults = await Promise.all(
+      strictEntries.map(([key, rows]) => syncStrictResourceCollection(key, rows)),
+    );
+    if (!strictResults.every(Boolean)) return false;
+  }
+
+  if (optionEntries.length === 0) return true;
+
+  const optionPayload: DropdownCollectionMap = {};
+  optionEntries.forEach(([key, rows]) => {
+    optionPayload[key] = rows;
+  });
+
   try {
     const response = await fetch(`${getApiBaseUrl()}/api/options/bulk`, {
       method: 'PUT',
       headers: buildHeaders(true),
-      body: JSON.stringify({ collections: payload }),
+      body: JSON.stringify({ collections: optionPayload }),
     });
     if (response.status === 401) {
       handle401();
