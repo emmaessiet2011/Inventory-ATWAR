@@ -1882,7 +1882,7 @@ const Settings: React.FC = () => {
                      <div className="md:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
                         <div>
                           <h4 className="text-sm font-bold text-slate-900">Backup & Restore</h4>
-                          <p className="text-xs text-slate-500">Export your full browser data and restore it when needed.</p>
+                          <p className="text-xs text-slate-500">Export browser preferences only. Business data stays in PostgreSQL.</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <button

@@ -40,15 +40,9 @@ npm run server:dev
 Health:
 - `GET /api/health`
 
-Core snapshot sync:
-- `GET /api/sync/core`
-- `PUT /api/sync/core`
-- `GET /api/sync/core/status`
-- `POST /api/sync/core/materialize` (imports snapshot into relational tables)
-
-Dropdown/master collections:
-- `GET /api/options/bulk?keys=roles,locations,taxRates,productCategories,productBrands,productUnits,customerGroups,sellingPriceGroups,invoiceSchemes,invoiceLayouts,barcodeSettings,expenseCategories`
-- `PUT /api/options/bulk`
+Legacy snapshot sync:
+- `/api/sync/core`, `/api/sync/collection/:key`, and `/api/options/bulk` are disabled with `410 Gone`.
+- Business data must use typed PostgreSQL resources through `/api/data/*`, `/api/sync/record/*`, or dedicated sync endpoints.
 
 Relational CRUD:
 - `GET /api/data/resources` (discover available resources)
@@ -69,6 +63,5 @@ Bootstrap:
 
 Notes:
 
-- On first frontend load with `VITE_ENABLE_DB_SYNC=true`, if dropdown collections are empty in DB, the app seeds them automatically from current app state.
-- Existing frontend can continue using snapshot sync while you progressively move screens to relational CRUD endpoints.
-- Frontend `pushCoreSnapshot()` now triggers `/api/sync/core/materialize` automatically, so relational tables stay updated without waiting for a full frontend refactor.
+- On first frontend load with `VITE_ENABLE_DB_SYNC=true`, typed dropdown/master tables are loaded from PostgreSQL and seeded only through relational resources.
+- Snapshot and option-collection blob storage is no longer a supported business-data path.

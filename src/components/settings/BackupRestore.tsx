@@ -94,7 +94,7 @@ const BackupRestore: React.FC = () => {
       <div>
         <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Backup & Restore</h2>
         <p className="text-sm text-slate-500 mt-1">
-          Export, validate, and restore business data snapshots safely.
+          Export, validate, and restore browser preferences safely. Business data stays in PostgreSQL.
         </p>
       </div>
 

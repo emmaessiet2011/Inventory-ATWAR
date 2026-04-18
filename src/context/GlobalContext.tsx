@@ -57,8 +57,6 @@ import {
   deleteRecord,
   deleteRecordStrict,
   syncStockDelta,
-  fetchCollection,
-  syncCollection,
   syncDedicated,
   fetchDedicated,
 } from '../utils/apiClient';
@@ -2462,6 +2460,50 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ---- Legacy contacts ----
   const [contacts, setContacts] = useState<Contact[]>(initialContacts);
 
+  const numericLegacyContactId = (value: unknown, fallback: number): number => {
+    const direct = Number(value);
+    if (Number.isFinite(direct) && direct > 0) return Math.floor(direct);
+    const fromText = Number(String(value || '').replace(/[^\d]/g, ''));
+    return Number.isFinite(fromText) && fromText > 0 ? Math.floor(fromText) : fallback;
+  };
+
+  const customerToLegacyContact = (customer: Customer, index = 0): Contact => ({
+    id: numericLegacyContactId(customer.id, index + 1),
+    type: 'Customer',
+    contactId: String(customer.id || ''),
+    name: String(customer.name || customer.businessName || ''),
+    businessName: String(customer.businessName || customer.name || ''),
+    mobile: String(customer.mobile || customer.phone || ''),
+    email: String(customer.email || ''),
+    taxNumber: String(customer.taxNumber || ''),
+    creditLimit: Number(customer.creditLimit || 0),
+    balance: Number(customer.totalSellDue || 0),
+    payTerm: String(customer.payTerm || ''),
+    status: customer.status === 'Inactive' ? 'Inactive' : 'Active',
+  });
+
+  const supplierToLegacyContact = (supplier: Supplier, index = 0): Contact => ({
+    id: numericLegacyContactId(supplier.id, index + 1),
+    type: 'Supplier',
+    contactId: String(supplier.id || ''),
+    name: String(supplier.name || supplier.businessName || ''),
+    businessName: String(supplier.businessName || supplier.name || ''),
+    mobile: String(supplier.mobile || supplier.phone || ''),
+    email: String(supplier.email || ''),
+    taxNumber: String(supplier.taxNumber || ''),
+    creditLimit: 0,
+    balance: Number(supplier.totalPurchaseDue || 0),
+    payTerm: String(supplier.payTerm || ''),
+    status: supplier.status === 'Inactive' ? 'Inactive' : 'Active',
+  });
+
+  useEffect(() => {
+    setContacts([
+      ...customers.map(customerToLegacyContact),
+      ...suppliers.map(supplierToLegacyContact),
+    ]);
+  }, [customers, suppliers]);
+
   // ---- Sales ----
   const [sales, setSales] = useState<Sale[]>([]);
 
@@ -2847,7 +2889,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteProductUnits,
           remotePurchaseReqs,
           remotePurchaseOrders,
-          remoteContacts,
         ] = await Promise.all([
           apiFetchAllWithRetry<Product>('products'),
           apiFetchAllWithRetry<Customer>('customers'),
@@ -2867,9 +2908,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<ProductCategory>('productCategories'),
           apiFetchAllWithRetry<ProductBrand>('productBrands'),
           apiFetchAllWithRetry<ProductUnit>('productUnits'),
-          fetchCollection<PurchaseRequisition>('purchaseRequisitions'),
-          fetchCollection<PurchaseOrder>('purchaseOrders'),
-          fetchCollection<Contact>('contacts'),
+          apiFetchAllWithRetry<PurchaseRequisition>('purchaseRequisitions'),
+          apiFetchAllWithRetry<PurchaseOrder>('purchaseOrders'),
         ]);
 
         if (cancelled) return;
@@ -2895,7 +2935,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteProductUnits,
           remotePurchaseReqs,
           remotePurchaseOrders,
-          remoteContacts,
         ];
         const hadFetchFailure = bootResults.some((result) => result === null);
 
@@ -2941,7 +2980,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remoteProductUnits) setProductUnits(remoteProductUnits as ProductUnit[]);
         if (remotePurchaseReqs) setPurchaseRequisitions(remotePurchaseReqs);
         if (remotePurchaseOrders) setPurchaseOrders(remotePurchaseOrders);
-        if (remoteContacts) setContacts(remoteContacts);
 
         setSyncStatus(hadFetchFailure ? 'error' : 'synced');
       } catch {
@@ -2971,11 +3009,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const bootstrapPaymentAccountCaches = async () => {
       const [remoteAccounts, remoteAccountTypes] = await Promise.all([
         fetchDedicated<any>('/api/sync/payment-accounts').catch(() => null),
-        fetchCollection<string>('paymentAccountTypes').catch(() => null),
+        apiFetchAll<{ name?: string; isActive?: boolean }>('paymentAccountTypes').catch(() => null),
       ]);
       if (cancelled) return;
       if (remoteAccounts) setStoredPaymentAccounts(remoteAccounts);
-      if (remoteAccountTypes) setStoredPaymentAccountTypes(remoteAccountTypes);
+      if (remoteAccountTypes) {
+        const types = remoteAccountTypes
+          .filter((row) => row?.isActive !== false)
+          .map((row) => String(row?.name || '').trim())
+          .filter(Boolean);
+        setStoredPaymentAccountTypes(types);
+      }
       dispatchPaymentAccountsUpdated();
     };
     void bootstrapPaymentAccountCaches();
@@ -4131,19 +4175,65 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addContact = (contact: Contact) => {
-    let next: Contact[] = [];
-    setContacts(prev => { next = [...prev, contact]; return next; });
-    syncCollection('contacts', next);
+    const recordId = String(contact.contactId || `${contact.type === 'Supplier' ? 'SUP' : 'CUST'}-${contact.id}`).trim();
+    if (contact.type === 'Supplier') {
+      const supplier: Supplier = {
+        id: recordId,
+        type: 'Supplier',
+        businessName: contact.businessName || contact.name,
+        name: contact.name || contact.businessName,
+        email: contact.email || '',
+        mobile: contact.mobile || '',
+        taxNumber: contact.taxNumber || '',
+        payTerm: contact.payTerm || '',
+        openingBalance: Number(contact.balance || 0),
+        advanceBalance: 0,
+        totalPurchaseDue: Number(contact.balance || 0),
+        totalReturnDue: 0,
+        addedOn: new Date().toISOString(),
+        address: '',
+        status: contact.status,
+      };
+      setSuppliers(prev => [...prev.filter(row => row.id !== recordId), supplier]);
+      syncRecord('suppliers', supplier);
+      return;
+    }
+
+    const customer: Customer = {
+      id: recordId,
+      type: 'Customer',
+      businessName: contact.businessName || contact.name,
+      name: contact.name || contact.businessName,
+      email: contact.email || '',
+      mobile: contact.mobile || '',
+      taxNumber: contact.taxNumber || '',
+      creditLimit: Number(contact.creditLimit || 0),
+      payTerm: contact.payTerm || '',
+      openingBalance: Number(contact.balance || 0),
+      advanceBalance: 0,
+      totalSellDue: Number(contact.balance || 0),
+      totalSellReturnDue: 0,
+      addedOn: new Date().toISOString(),
+      customerGroup: '',
+      address: '',
+      status: contact.status,
+    };
+    setCustomers(prev => [...prev.filter(row => row.id !== recordId), customer]);
+    syncRecord('customers', customer);
   };
   const updateContact = (contact: Contact) => {
-    let next: Contact[] = [];
-    setContacts(prev => { next = prev.map(c => c.id === contact.id ? contact : c); return next; });
-    syncCollection('contacts', next);
+    addContact(contact);
   };
   const deleteContact = (id: number) => {
-    let next: Contact[] = [];
-    setContacts(prev => { next = prev.filter(c => c.id !== id); return next; });
-    syncCollection('contacts', next);
+    const existing = contacts.find(contact => contact.id === id);
+    if (!existing) return;
+    if (existing.type === 'Supplier') {
+      setSuppliers(prev => prev.filter(supplier => supplier.id !== existing.contactId));
+      deleteRecord('suppliers', existing.contactId);
+      return;
+    }
+    setCustomers(prev => prev.filter(customer => customer.id !== existing.contactId));
+    deleteRecord('customers', existing.contactId);
   };
 
   // ============================================================
@@ -4998,9 +5088,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseRequisition = (requisition: PurchaseRequisition) => {
-    let next: PurchaseRequisition[] = [];
-    setPurchaseRequisitions(prev => { next = [...prev, requisition]; return next; });
-    syncCollection('purchaseRequisitions', next);
+    setPurchaseRequisitions(prev => [...prev, requisition]);
+    syncRecord('purchaseRequisitions', requisition);
     recordActivity({
       action: 'Created',
       module: 'Purchase Requisitions',
@@ -5009,9 +5098,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updatePurchaseRequisition = (requisition: PurchaseRequisition) => {
     if (!canEditTransaction('Purchase Requisitions', String(requisition.referenceNo || requisition.id || '').trim(), requisition.date)) return;
-    let next: PurchaseRequisition[] = [];
-    setPurchaseRequisitions(prev => { next = prev.map(item => item.id === requisition.id ? requisition : item); return next; });
-    syncCollection('purchaseRequisitions', next);
+    setPurchaseRequisitions(prev => prev.map(item => item.id === requisition.id ? requisition : item));
+    syncRecord('purchaseRequisitions', requisition);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Requisitions',
@@ -5020,13 +5108,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseRequisition = (id: string) => {
     const existing = purchaseRequisitions.find(item => item.id === id);
-    let next: PurchaseRequisition[] = [];
     setPurchaseRequisitions(prev => {
       if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return prev;
-      next = prev.filter(item => item.id !== id); return next;
+      return prev.filter(item => item.id !== id);
     });
     if (!purchaseOrders.some(order => order.purchaseRequisitionId === id)) {
-      syncCollection('purchaseRequisitions', next);
+      deleteRecord('purchaseRequisitions', id);
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Requisitions',
@@ -5040,9 +5127,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseOrder = (order: PurchaseOrder) => {
-    let next: PurchaseOrder[] = [];
-    setPurchaseOrders(prev => { next = [...prev, order]; return next; });
-    syncCollection('purchaseOrders', next);
+    setPurchaseOrders(prev => [...prev, order]);
+    syncRecord('purchaseOrders', order);
     recordActivity({
       action: 'Created',
       module: 'Purchase Orders',
@@ -5051,9 +5137,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updatePurchaseOrder = (order: PurchaseOrder) => {
     if (!canEditTransaction('Purchase Orders', String(order.referenceNo || order.id || '').trim(), order.orderDate)) return;
-    let next: PurchaseOrder[] = [];
-    setPurchaseOrders(prev => { next = prev.map(item => item.id === order.id ? order : item); return next; });
-    syncCollection('purchaseOrders', next);
+    setPurchaseOrders(prev => prev.map(item => item.id === order.id ? order : item));
+    syncRecord('purchaseOrders', order);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Orders',
@@ -5062,13 +5147,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseOrder = (id: string) => {
     const existing = purchaseOrders.find(item => item.id === id);
-    let next: PurchaseOrder[] = [];
     setPurchaseOrders(prev => {
       if (purchases.some(purchase => purchase.purchaseOrderId === id)) return prev;
-      next = prev.filter(item => item.id !== id); return next;
+      return prev.filter(item => item.id !== id);
     });
     if (!purchases.some(purchase => purchase.purchaseOrderId === id)) {
-      syncCollection('purchaseOrders', next);
+      deleteRecord('purchaseOrders', id);
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Orders',
@@ -5728,9 +5812,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const addExpenseCategory = (cat: ExpenseCategory) => setExpenseCategories(prev => [...prev, cat]);
-  const updateExpenseCategory = (cat: ExpenseCategory) => setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
-  const deleteExpenseCategory = (id: string) => setExpenseCategories(prev => prev.filter(c => c.id !== id));
+  const addExpenseCategory = (cat: ExpenseCategory) => {
+    setExpenseCategories(prev => [...prev, cat]);
+    syncRecord('expenseCategories', cat);
+  };
+  const updateExpenseCategory = (cat: ExpenseCategory) => {
+    setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
+    syncRecord('expenseCategories', cat);
+  };
+  const deleteExpenseCategory = (id: string) => {
+    setExpenseCategories(prev => prev.filter(c => c.id !== id));
+    deleteRecord('expenseCategories', id);
+  };
 
   // ============================================================
   //  CRUD: USERS
@@ -6809,6 +6902,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     setTaxRates(prev => normalizeTaxRates([...prev, normalized]));
+    syncRecord('taxRates', normalized);
     recordActivity({
       action: 'Added',
       module: 'Tax Rates',
@@ -6833,6 +6927,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     setTaxRates(prev => normalizeTaxRates(prev.map(record => record.id === normalized.id ? normalized : record)));
+    syncRecord('taxRates', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Tax Rates',
@@ -6852,6 +6947,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
     setTaxRates(prev => normalizeTaxRates(prev.filter(record => record.id !== id)));
+    deleteRecord('taxRates', id);
     recordActivity({
       action: 'Deleted',
       module: 'Tax Rates',
@@ -6866,22 +6962,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addCustomerGroup = (group: CustomerGroup) => {
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
     setCustomerGroups(prev => [...prev, normalizedGroup]);
+    syncRecord('customerGroups', normalizedGroup);
   };
   const updateCustomerGroup = (group: CustomerGroup) => {
     const existingGroup = customerGroups.find(g => g.id === group.id);
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
     setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
+    syncRecord('customerGroups', normalizedGroup);
     setCustomers(prev => prev.map(customer => {
       const linkedById = customer.customerGroupId === group.id;
       const linkedByLegacyName = !customer.customerGroupId &&
         !!existingGroup &&
         normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
       if (!linkedById && !linkedByLegacyName) return customer;
-      return {
+      const updatedCustomer = {
         ...customer,
         customerGroupId: normalizedGroup.id,
         customerGroup: normalizedGroup.name,
       };
+      syncRecord('customers', updatedCustomer);
+      return updatedCustomer;
     }));
   };
   const deleteCustomerGroup = (id: string, reassignToGroupId?: string) => {
@@ -6897,18 +6997,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
       if (!linkedById && !linkedByLegacyName) return customer;
       if (reassignGroup && reassignGroup.id !== id) {
-        return {
+        const updatedCustomer = {
           ...customer,
           customerGroupId: reassignGroup.id,
           customerGroup: reassignGroup.name,
         };
+        syncRecord('customers', updatedCustomer);
+        return updatedCustomer;
       }
-      return {
+      const updatedCustomer = {
         ...customer,
         customerGroupId: '',
         customerGroup: '',
       };
+      syncRecord('customers', updatedCustomer);
+      return updatedCustomer;
     }));
+    deleteRecord('customerGroups', id);
   };
 
   // ============================================================
@@ -6923,14 +7028,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: String(cat.description || '').trim(),
     };
     setProductCategories(prev => [...prev, normalizedCategory]);
+    syncRecord('productCategories', normalizedCategory);
     setProducts(prev => prev.map(product => {
       if (product.categoryId) return product;
       if (normalizeText(product.category) !== normalizeText(normalizedCategory.name)) return product;
-      return {
+      const updatedProduct = {
         ...product,
         categoryId: normalizedCategory.id,
         category: normalizedCategory.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const updateProductCategory = (cat: ProductCategory) => {
@@ -6942,17 +7050,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: String(cat.description || '').trim(),
     };
     setProductCategories(prev => prev.map(category => category.id === cat.id ? normalizedCategory : category));
+    syncRecord('productCategories', normalizedCategory);
     setProducts(prev => prev.map(product => {
       const linkedById = product.categoryId === normalizedCategory.id;
       const linkedByLegacyName = !product.categoryId &&
         !!existingCategory &&
         normalizeText(product.category) === normalizeText(existingCategory.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         categoryId: normalizedCategory.id,
         category: normalizedCategory.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const deleteProductCategory = (id: string, reassignToCategoryId?: string) => {
@@ -6981,9 +7092,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let next = prev;
       if (createdUncategorized && !prev.some(category => normalizeText(category.name) === 'uncategorized')) {
         next = [...next, createdUncategorized];
+        syncRecord('productCategories', createdUncategorized);
       }
       return next.filter(category => category.id !== id);
     });
+    deleteRecord('productCategories', id);
 
     if (!replacementCategory) return;
     setProducts(prev => prev.map(product => {
@@ -6991,11 +7104,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const linkedByLegacyName = !product.categoryId &&
         normalizeText(product.category) === normalizeText(existingCategory.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         categoryId: replacementCategory.id,
         category: replacementCategory.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
 
@@ -7010,14 +7125,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       note: String(brand.note || '').trim(),
     };
     setProductBrands(prev => [...prev, normalizedBrand]);
+    syncRecord('productBrands', normalizedBrand);
     setProducts(prev => prev.map(product => {
       if (product.brandId) return product;
       if (normalizeText(product.brand) !== normalizeText(normalizedBrand.name)) return product;
-      return {
+      const updatedProduct = {
         ...product,
         brandId: normalizedBrand.id,
         brand: normalizedBrand.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const updateProductBrand = (brand: ProductBrand) => {
@@ -7028,17 +7146,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       note: String(brand.note || '').trim(),
     };
     setProductBrands(prev => prev.map(currentBrand => currentBrand.id === brand.id ? normalizedBrand : currentBrand));
+    syncRecord('productBrands', normalizedBrand);
     setProducts(prev => prev.map(product => {
       const linkedById = product.brandId === normalizedBrand.id;
       const linkedByLegacyName = !product.brandId &&
         !!existingBrand &&
         normalizeText(product.brand) === normalizeText(existingBrand.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         brandId: normalizedBrand.id,
         brand: normalizedBrand.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const deleteProductBrand = (id: string, reassignToBrandId?: string) => {
@@ -7066,9 +7187,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       let next = prev;
       if (createdUnknownBrand && !prev.some(brand => normalizeText(brand.name) === '--')) {
         next = [...next, createdUnknownBrand];
+        syncRecord('productBrands', createdUnknownBrand);
       }
       return next.filter(brand => brand.id !== id);
     });
+    deleteRecord('productBrands', id);
 
     if (!replacementBrand) return;
     setProducts(prev => prev.map(product => {
@@ -7076,11 +7199,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const linkedByLegacyName = !product.brandId &&
         normalizeText(product.brand) === normalizeText(existingBrand.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         brandId: replacementBrand.id,
         brand: replacementBrand.name,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
 
@@ -7088,9 +7213,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCT UNITS
   // ============================================================
 
-  const addProductUnit = (unit: ProductUnit) => setProductUnits(prev => [...prev, unit]);
-  const updateProductUnit = (unit: ProductUnit) => setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
-  const deleteProductUnit = (id: string) => setProductUnits(prev => prev.filter(u => u.id !== id));
+  const addProductUnit = (unit: ProductUnit) => {
+    setProductUnits(prev => [...prev, unit]);
+    syncRecord('productUnits', unit);
+  };
+  const updateProductUnit = (unit: ProductUnit) => {
+    setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
+    syncRecord('productUnits', unit);
+  };
+  const deleteProductUnit = (id: string) => {
+    setProductUnits(prev => prev.filter(u => u.id !== id));
+    deleteRecord('productUnits', id);
+  };
 
   // ============================================================
   //  CRUD: PRODUCT WARRANTIES
@@ -7106,10 +7240,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       durationUnit: warranty.durationUnit || 'Months',
     };
     setWarranties(prev => [...prev, normalizedWarranty]);
+    syncRecord('productWarranties', normalizedWarranty);
     setProducts(prev => prev.map(product => {
       const linked = resolveProductWarrantyLink(product.warranty, [normalizedWarranty]);
       if (!linked.id) return product;
-      return { ...product, warranty: normalizedWarranty.id };
+      const updatedProduct = { ...product, warranty: normalizedWarranty.id };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const updateWarranty = (warranty: ProductWarranty) => {
@@ -7123,15 +7260,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       durationUnit: warranty.durationUnit || 'Months',
     };
     setWarranties(prev => prev.map(currentWarranty => currentWarranty.id === warranty.id ? normalizedWarranty : currentWarranty));
+    syncRecord('productWarranties', normalizedWarranty);
     setProducts(prev => prev.map(product => {
       const linkedById = product.warranty === normalizedWarranty.id;
       const linkedByLegacyName = !!existingWarranty &&
         normalizeText(product.warranty) === normalizeText(existingWarranty.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         warranty: normalizedWarranty.id,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
   const deleteWarranty = (id: string, reassignToWarrantyId?: string) => {
@@ -7143,14 +7283,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       : undefined;
 
     setWarranties(prev => prev.filter(warranty => warranty.id !== id));
+    deleteRecord('productWarranties', id);
     setProducts(prev => prev.map(product => {
       const linkedById = product.warranty === id;
       const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
       if (!linkedById && !linkedByLegacyName) return product;
-      return {
+      const updatedProduct = {
         ...product,
         warranty: replacementWarranty?.id || undefined,
       };
+      syncRecord('products', updatedProduct);
+      return updatedProduct;
     }));
   };
 
@@ -7158,52 +7301,70 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: SELLING PRICE GROUPS
   // ============================================================
 
-  const addProductVariation = (v: ProductVariation) => setProductVariations(prev => [...prev, v]);
-  const updateProductVariation = (v: ProductVariation) => setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
-  const deleteProductVariation = (id: string) => setProductVariations(prev => prev.filter(x => x.id !== id));
+  const addProductVariation = (v: ProductVariation) => {
+    setProductVariations(prev => [...prev, v]);
+    syncRecord('productVariations', v);
+  };
+  const updateProductVariation = (v: ProductVariation) => {
+    setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
+    syncRecord('productVariations', v);
+  };
+  const deleteProductVariation = (id: string) => {
+    setProductVariations(prev => prev.filter(x => x.id !== id));
+    deleteRecord('productVariations', id);
+  };
 
   const addSellingPriceGroup = (group: SellingPriceGroup) => {
     setSellingPriceGroups(prev => [...prev, group]);
+    syncRecord('sellingPriceGroups', group);
     setCustomerGroups(prev => prev.map(customerGroup => {
       if (customerGroup.sellingPriceGroupId) return customerGroup;
       if (normalizeText(customerGroup.sellingPriceGroup) !== normalizeText(group.name)) return customerGroup;
-      return {
+      const updatedGroup = {
         ...customerGroup,
         sellingPriceGroupId: group.id,
         sellingPriceGroup: group.name,
       };
+      syncRecord('customerGroups', updatedGroup);
+      return updatedGroup;
     }));
   };
   const updateSellingPriceGroup = (group: SellingPriceGroup) => {
     const existing = sellingPriceGroups.find(g => g.id === group.id);
     setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
+    syncRecord('sellingPriceGroups', group);
     setCustomerGroups(prev => prev.map(customerGroup => {
       const linkedById = customerGroup.sellingPriceGroupId === group.id;
       const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
         !!existing &&
         normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
       if (!linkedById && !linkedByLegacyName) return customerGroup;
-      return {
+      const updatedGroup = {
         ...customerGroup,
         sellingPriceGroupId: group.id,
         sellingPriceGroup: group.name,
       };
+      syncRecord('customerGroups', updatedGroup);
+      return updatedGroup;
     }));
   };
   const deleteSellingPriceGroup = (id: string) => {
     const existing = sellingPriceGroups.find(g => g.id === id);
     setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
+    deleteRecord('sellingPriceGroups', id);
     setCustomerGroups(prev => prev.map(customerGroup => {
       const linkedById = customerGroup.sellingPriceGroupId === id;
       const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
         !!existing &&
         normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
       if (!linkedById && !linkedByLegacyName) return customerGroup;
-      return {
+      const updatedGroup = {
         ...customerGroup,
         sellingPriceGroupId: '',
         sellingPriceGroup: '',
       };
+      syncRecord('customerGroups', updatedGroup);
+      return updatedGroup;
     }));
   };
 
@@ -7214,6 +7375,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addDiscount = (discount: Discount) => {
     const normalized = normalizeDiscountRecord(discount);
     setDiscounts(prev => [...prev, normalized]);
+    syncRecord('discounts', normalized);
     recordActivity({
       action: 'Created',
       module: 'Discounts',
@@ -7223,6 +7385,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateDiscount = (discount: Discount) => {
     const normalized = normalizeDiscountRecord(discount);
     setDiscounts(prev => prev.map(d => d.id === discount.id ? normalized : d));
+    syncRecord('discounts', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Discounts',
@@ -7232,6 +7395,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteDiscount = (id: string) => {
     const existing = discounts.find(d => d.id === id);
     setDiscounts(prev => prev.filter(d => d.id !== id));
+    deleteRecord('discounts', id);
     recordActivity({
       action: 'Deleted',
       module: 'Discounts',

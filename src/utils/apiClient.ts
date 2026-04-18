@@ -263,57 +263,6 @@ export async function deleteRecordStrict(
   }
 }
 
-/**
- * Fetch an entire collection stored as a snapshot (used for resources that
- * don't have a dedicated Prisma model: purchaseRequisitions, purchaseOrders, contacts).
- * Returns null on failure — caller keeps local state.
- */
-export async function fetchCollection<T>(key: string): Promise<T[] | null> {
-  if (!isLiveSyncEnabled() || !getToken()) return null;
-  try {
-    const res = await fetch(
-      `${getApiBase()}/api/sync/collection/${encodeURIComponent(key)}`,
-      { headers: authHeaders() },
-    );
-    if (res.status === 401) { handle401(); return null; }
-    if (!res.ok) return null;
-    const json = await res.json();
-    return Array.isArray(json.data) ? (json.data as T[]) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Fire-and-forget save of an entire collection array to the database.
- * Used for resources without a dedicated Prisma model.
- */
-export function syncCollection(key: string, data: unknown[]): void {
-  if (!isLiveSyncEnabled() || !getToken()) return;
-  void fetch(
-    `${getApiBase()}/api/sync/collection/${encodeURIComponent(key)}`,
-    {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify({ data }),
-    },
-  )
-    .then(async (res) => {
-      if (res.status === 401) {
-        handle401();
-        return;
-      }
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = await res.text();
-        } catch {}
-        console.error(`[syncCollection] ${key} failed (${res.status})`, detail);
-      }
-    })
-    .catch(() => {});
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  Generic helpers for the dedicated resource endpoints
 //  (field-payments, payment-accounts, register-sessions, stock-ledger, etc.)

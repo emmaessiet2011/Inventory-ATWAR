@@ -42,7 +42,6 @@ type NotificationBroadcastDetail = NotificationDraft & {
   activityId?: string;
 };
 
-const STORAGE_PREFIX = 'app_notifications_v3';
 const SEEN_ACTIVITY_PREFIX = 'app_notification_seen_activity_v1';
 const MAX_STORED = 200;
 const MAX_SEEN_ACTIVITY_IDS = 5000;
@@ -115,26 +114,6 @@ const normalizeActivityToNotification = (entry: Pick<ActivityLogEntry, 'action' 
   };
 };
 
-function loadFromStorage(storageKey: string): Notification[] {
-  try {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return [];
-    const parsed: Array<Notification & { timestamp: string }> = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.map((n) => ({ ...n, timestamp: parseTimestamp(n.timestamp) }));
-  } catch {
-    return [];
-  }
-}
-
-function saveToStorage(storageKey: string, notifications: Notification[]): void {
-  try {
-    localStorage.setItem(storageKey, JSON.stringify(notifications.slice(0, MAX_STORED)));
-  } catch {
-    // storage full - ignore
-  }
-}
-
 function loadSeenActivityIds(storageKey: string): Set<string> {
   try {
     const raw = localStorage.getItem(storageKey);
@@ -159,10 +138,6 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
   const userStorageScope = useMemo(
     () => String(currentUser?.id || 'guest').trim() || 'guest',
     [currentUser?.id],
-  );
-  const notificationStorageKey = useMemo(
-    () => `${STORAGE_PREFIX}:${userStorageScope}`,
-    [userStorageScope],
   );
   const seenActivityStorageKey = useMemo(
     () => `${SEEN_ACTIVITY_PREFIX}:${userStorageScope}`,
@@ -299,22 +274,12 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     setHasLoadedSeenIds(false);
     setHasBootstrappedActivitySeen(false);
 
-    const loadedNotifications = loadFromStorage(notificationStorageKey);
-    setNotifications(loadedNotifications);
+    setNotifications([]);
 
     const seen = loadSeenActivityIds(seenActivityStorageKey);
-    loadedNotifications.forEach((row) => {
-      const sourceActivityId = String(row.sourceActivityId || '').trim();
-      if (sourceActivityId) seen.add(sourceActivityId);
-    });
     seenActivityIdsRef.current = seen;
     setHasLoadedSeenIds(true);
-  }, [notificationStorageKey, seenActivityStorageKey]);
-
-  // Persist to localStorage whenever notifications change
-  useEffect(() => {
-    saveToStorage(notificationStorageKey, notifications);
-  }, [notificationStorageKey, notifications]);
+  }, [seenActivityStorageKey]);
 
   // Listen for immediate in-tab broadcasts from GlobalContext
   useEffect(() => {

@@ -27,7 +27,6 @@ const BACKUP_ALLOWED_KEYS = new Set<string>([
   'app_customer_custom_columns',
   'app_supplier_custom_columns',
   'app_cheque_reminder_date',
-  'app_notifications_v2',
   'atwar_login_identifier',
 ]);
 

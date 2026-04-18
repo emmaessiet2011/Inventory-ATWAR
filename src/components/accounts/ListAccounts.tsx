@@ -18,7 +18,7 @@ import {
 } from '@/utils/paymentAccounts';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { buildPaginationItems } from '@/utils/pagination';
-import { fetchDedicated, fetchCollection, syncDedicated, deleteDedicated, syncCollection } from '@/utils/apiClient';
+import { apiFetchAll, fetchDedicated, syncDedicated, deleteDedicated } from '@/utils/apiClient';
 
 interface ListAccountsProps {
   onNavigate?: (page: string) => void;
@@ -39,6 +39,51 @@ interface PaymentAccountRow {
   status: 'Active' | 'Inactive';
   system?: boolean;
 }
+
+interface PaymentAccountTypeRow {
+  id: string;
+  name: string;
+  isSystem?: boolean;
+  isActive?: boolean;
+}
+
+const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const AUTH_TOKEN_KEY = 'atwar_auth_token';
+
+const normalizeTypeId = (name: string): string =>
+  `PAT-${String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'type'}`;
+
+const getAuthHeaders = (): Record<string, string> => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
+const pushPaymentAccountTypesToDB = async (types: string[]): Promise<void> => {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  if (!token) return;
+
+  const normalizedTypes = Array.from(new Set(
+    (Array.isArray(types) ? types : [])
+      .map((type) => String(type || '').trim())
+      .filter(Boolean),
+  ));
+  const rows: PaymentAccountTypeRow[] = normalizedTypes.map((name) => ({
+    id: normalizeTypeId(name),
+    name,
+    isSystem: name.toLowerCase() === 'cash' || name.toLowerCase() === 'bank',
+    isActive: true,
+  }));
+
+  await fetch(`${API_BASE_URL}/api/data/paymentAccountTypes/bulk-upsert`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ rows }),
+  }).catch(() => {});
+};
 
 const resolvePaymentAccountForLedger = (payment: any): string => {
   const explicitAccount = String(payment?.account || '').trim();
@@ -107,13 +152,21 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
       setStoredPaymentAccounts(remote);
       dispatchPaymentAccountsUpdated();
     }).catch(() => {});
-    // Account types are small — stored as a collection snapshot
-    fetchCollection<string>('paymentAccountTypes').then(remote => {
-      if (!remote) return;
-      setAccountTypes(remote);
-      setStoredPaymentAccountTypes(remote);
-      dispatchPaymentAccountsUpdated();
-    }).catch(() => {});
+    // Account types are table-backed in Postgres (no collection snapshot cache).
+    apiFetchAll<PaymentAccountTypeRow>('paymentAccountTypes')
+      .then((remoteRows) => {
+        const remoteTypes = Array.from(new Set(
+          (Array.isArray(remoteRows) ? remoteRows : [])
+            .filter((row) => row?.isActive !== false)
+            .map((row) => String(row?.name || '').trim())
+            .filter(Boolean),
+        ));
+        if (remoteTypes.length === 0) return;
+        setAccountTypes(remoteTypes);
+        setStoredPaymentAccountTypes(remoteTypes);
+        dispatchPaymentAccountsUpdated();
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -123,7 +176,7 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
 
   useEffect(() => {
     setStoredPaymentAccountTypes(accountTypes);
-    syncCollection('paymentAccountTypes', accountTypes);
+    void pushPaymentAccountTypesToDB(accountTypes);
     dispatchPaymentAccountsUpdated();
   }, [accountTypes]);
 

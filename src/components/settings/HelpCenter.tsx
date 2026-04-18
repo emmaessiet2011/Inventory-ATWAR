@@ -591,7 +591,7 @@ const GUIDES: Guide[] = [
       'Most report mismatches are caused by stale/mock data sources.',
     ],
     fixes: [
-      'Clear local storage only as last resort after backup.',
+      'Clear browser preference storage only as a last resort after exporting preferences.',
       'When issue is reproducible, capture steps and expected vs actual behavior in Activity Log ticket.',
     ],
   },

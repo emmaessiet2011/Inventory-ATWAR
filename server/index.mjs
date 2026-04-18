@@ -77,25 +77,6 @@ const enforceCriticalAdminStatus = async (userId) => {
     return null;
   }
 };
-const sanitizeCollectionKey = (value) =>
-  String(value || '').trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
-
-const sanitizeCoreSnapshot = (input) => {
-  const payload = toObject(input);
-  return {
-    products: toArray(payload.products),
-    customers: toArray(payload.customers),
-    suppliers: toArray(payload.suppliers),
-    sales: toArray(payload.sales),
-    payments: toArray(payload.payments),
-    users: toArray(payload.users),
-    settings: toObject(payload.settings),
-    syncedAt: new Date().toISOString(),
-  };
-};
-const hasSnapshotData = (s) =>
-  s.products.length > 0 || s.customers.length > 0 || s.suppliers.length > 0 || s.sales.length > 0 || s.payments.length > 0 || s.users.length > 0;
-
 const RESOURCE_CONFIG = {
   users: { delegate: 'appUser', idField: 'id', searchFields: ['name', 'email', 'username'], defaultOrderBy: { updatedAt: 'desc' } },
   roles: { delegate: 'role', idField: 'id', searchFields: ['name'], defaultOrderBy: { name: 'asc' } },
@@ -108,6 +89,7 @@ const RESOURCE_CONFIG = {
   productBrands: { delegate: 'productBrand', idField: 'id', searchFields: ['name'], defaultOrderBy: { name: 'asc' } },
   productUnits: { delegate: 'productUnit', idField: 'id', searchFields: ['name', 'shortName'], defaultOrderBy: { name: 'asc' } },
   productWarranties: { delegate: 'productWarranty', idField: 'id', searchFields: ['name'], defaultOrderBy: { name: 'asc' } },
+  productVariations: { delegate: 'productVariation', idField: 'id', searchFields: ['name'], defaultOrderBy: { name: 'asc' } },
   productInventory: { delegate: 'productInventory', idField: 'id', searchFields: ['lotNumber', 'rack', 'row', 'position'], defaultOrderBy: { updatedAt: 'desc' } },
   stockTransfers: { delegate: 'stockTransfer', idField: 'id', searchFields: ['refNo'], defaultOrderBy: { date: 'desc' } },
   stockTransferItems: { delegate: 'stockTransferItem', idField: 'id', searchFields: ['productName', 'sku'], defaultOrderBy: { id: 'asc' } },
@@ -117,6 +99,8 @@ const RESOURCE_CONFIG = {
   stockLedger: { delegate: 'stockLedger', idField: 'id', searchFields: ['entryType', 'ref', 'party', 'note'], defaultOrderBy: { date: 'desc' } },
   purchases: { delegate: 'purchase', idField: 'id', searchFields: ['refNo'], defaultOrderBy: { date: 'desc' } },
   purchaseItems: { delegate: 'purchaseItem', idField: 'id', searchFields: ['name'], defaultOrderBy: { id: 'asc' } },
+  purchaseRequisitions: { delegate: 'purchaseRequisition', idField: 'id', searchFields: ['referenceNo', 'supplier', 'location'], defaultOrderBy: { date: 'desc' } },
+  purchaseOrders: { delegate: 'purchaseOrder', idField: 'id', searchFields: ['referenceNo', 'supplierName', 'location'], defaultOrderBy: { orderDate: 'desc' } },
   purchaseReturns: { delegate: 'purchaseReturn', idField: 'id', searchFields: ['refNo'], defaultOrderBy: { date: 'desc' } },
   purchaseReturnItems: { delegate: 'purchaseReturnItem', idField: 'id', searchFields: ['name'], defaultOrderBy: { id: 'asc' } },
   sales: { delegate: 'sale', idField: 'id', searchFields: ['invoiceNo'], defaultOrderBy: { date: 'desc' } },
@@ -157,8 +141,6 @@ const RESOURCE_CONFIG = {
   customFieldValues: { delegate: 'customFieldValue', idField: 'id', searchFields: ['entityId', 'valueText'], defaultOrderBy: { updatedAt: 'desc' } },
   helpCenterCategories: { delegate: 'helpCenterCategory', idField: 'id', searchFields: ['name'], defaultOrderBy: { sortOrder: 'asc' } },
   helpCenterArticles: { delegate: 'helpCenterArticle', idField: 'id', searchFields: ['title', 'slug'], defaultOrderBy: { sortOrder: 'asc' } },
-  optionCollections: { delegate: 'optionCollection', idField: 'key', searchFields: ['key'], defaultOrderBy: { key: 'asc' } },
-  appStateSnapshots: { delegate: 'appStateSnapshot', idField: 'id', searchFields: ['id'], defaultOrderBy: { updatedAt: 'desc' } },
 };
 
 const getResource = (key) => RESOURCE_CONFIG[String(key || '').trim()] || null;
@@ -630,6 +612,12 @@ const requireCanDelete = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const normDate = (v) => { const d = new Date(String(v || '')); return Number.isNaN(d.getTime()) ? new Date() : d; };
+const normOptionalDate = (v) => {
+  const raw = String(v || '').trim();
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
 const normStatus = (v, allowed, fallback) => { const s = String(v || '').trim().toUpperCase(); return allowed.includes(s) ? s : fallback; };
 
 app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
@@ -653,6 +641,53 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           meta: raw,
         };
         await prisma.product.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'productCategories': {
+        const d = {
+          name: String(raw.name || `Category-${id}`),
+          code: raw.code ? String(raw.code) : null,
+          description: raw.description ? String(raw.description) : null,
+          meta: raw,
+        };
+        await prisma.productCategory.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'productBrands': {
+        const d = {
+          name: String(raw.name || `Brand-${id}`),
+          note: raw.note ? String(raw.note) : null,
+          meta: raw,
+        };
+        await prisma.productBrand.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'productUnits': {
+        const d = {
+          name: String(raw.name || `Unit-${id}`),
+          shortName: String(raw.shortName || raw.name || id),
+          allowDecimal: raw.allowDecimal === true,
+          meta: raw,
+        };
+        await prisma.productUnit.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'productWarranties': {
+        const d = {
+          name: String(raw.name || `Warranty-${id}`),
+          description: raw.description ? String(raw.description) : null,
+          meta: raw,
+        };
+        await prisma.productWarranty.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'productVariations': {
+        const d = {
+          name: String(raw.name || `Variation-${id}`),
+          values: toArray(raw.values),
+          meta: raw,
+        };
+        await prisma.productVariation.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
       case 'customers': {
@@ -771,6 +806,62 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         await prisma.appSetting.upsert({ where: { id: 'SETTINGS' }, update: d, create: { id: 'SETTINGS', ...d } });
         break;
       }
+      case 'taxRates': {
+        const d = {
+          name: String(raw.name || `Tax-${id}`),
+          rate: toFiniteNumber(raw.rate, 0),
+          type: normStatus(raw.type, ['INCLUSIVE', 'EXCLUSIVE'], 'EXCLUSIVE'),
+          description: raw.description ? String(raw.description) : null,
+          meta: raw,
+        };
+        await prisma.taxRate.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'customerGroups': {
+        const d = {
+          name: String(raw.name || `Group-${id}`),
+          discountPercent: toFiniteNumber(raw.discountPercent ?? raw.calculationPercentage, 0),
+          status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
+          meta: raw,
+        };
+        await prisma.customerGroup.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'sellingPriceGroups': {
+        const d = {
+          name: String(raw.name || `Price Group-${id}`),
+          description: raw.description ? String(raw.description) : null,
+          discount: toOptionalFiniteNumber(raw.discount),
+          priceCalcPercentage: toOptionalFiniteNumber(raw.priceCalcPercentage ?? raw.calculationPercentage),
+          meta: raw,
+        };
+        await prisma.sellingPriceGroup.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'discounts': {
+        const rawDiscountType = String(raw.discountType || '').trim().toUpperCase();
+        const d = {
+          name: String(raw.name || `Discount-${id}`),
+          discountType: rawDiscountType === 'FIXED' ? 'FIXED' : rawDiscountType === 'PERCENTAGE' ? 'PERCENTAGE' : null,
+          discountAmount: toOptionalFiniteNumber(String(raw.discountAmount ?? '').replace(/[^\d.-]/g, '')),
+          startsAt: normOptionalDate(raw.startsAt),
+          endsAt: normOptionalDate(raw.endsAt),
+          isActive: raw.isActive !== false,
+          meta: raw,
+        };
+        await prisma.discount.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'expenseCategories': {
+        const d = {
+          name: String(raw.name || `Expense Category-${id}`),
+          description: raw.description ? String(raw.description) : null,
+          code: raw.code ? String(raw.code) : null,
+          meta: raw,
+        };
+        await prisma.expenseCategory.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
       case 'expenses': {
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `EXP-${id}`),
@@ -804,6 +895,58 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           meta: raw,
         };
         await prisma.purchase.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'purchaseRequisitions': {
+        const d = {
+          referenceNo: String(raw.referenceNo || raw.refNo || `REQ-${id}`),
+          date: normDate(raw.date),
+          location: raw.location ? String(raw.location) : null,
+          supplier: raw.supplier ? String(raw.supplier) : null,
+          supplierId: raw.supplierId ? String(raw.supplierId) : null,
+          status: String(raw.status || 'Pending'),
+          addedBy: raw.addedBy ? String(raw.addedBy) : null,
+          brand: raw.brand ? String(raw.brand) : null,
+          category: raw.category ? String(raw.category) : null,
+          requiredByDate: normOptionalDate(raw.requiredByDate),
+          note: raw.note ? String(raw.note) : null,
+          items: toArray(raw.items),
+          meta: raw,
+        };
+        await prisma.purchaseRequisition.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'purchaseOrders': {
+        const d = {
+          referenceNo: String(raw.referenceNo || raw.refNo || `PO-${id}`),
+          orderDate: normDate(raw.orderDate || raw.date),
+          supplierId: raw.supplierId ? String(raw.supplierId) : null,
+          supplierName: raw.supplierName ? String(raw.supplierName) : null,
+          supplierAddress: raw.supplierAddress ? String(raw.supplierAddress) : null,
+          location: raw.location ? String(raw.location) : null,
+          deliveryDate: normOptionalDate(raw.deliveryDate),
+          payTermValue: raw.payTermValue ? String(raw.payTermValue) : null,
+          payTermType: raw.payTermType ? String(raw.payTermType) : null,
+          attachDocumentName: raw.attachDocumentName ? String(raw.attachDocumentName) : null,
+          purchaseRequisitionId: raw.purchaseRequisitionId ? String(raw.purchaseRequisitionId) : null,
+          purchaseRequisitionRef: raw.purchaseRequisitionRef ? String(raw.purchaseRequisitionRef) : null,
+          items: toArray(raw.items),
+          shippingDetails: raw.shippingDetails ? String(raw.shippingDetails) : null,
+          shippingAddress: raw.shippingAddress ? String(raw.shippingAddress) : null,
+          shippingCharges: toFiniteNumber(raw.shippingCharges, 0),
+          shippingStatus: raw.shippingStatus ? String(raw.shippingStatus) : null,
+          deliveredTo: raw.deliveredTo ? String(raw.deliveredTo) : null,
+          shippingDocumentName: raw.shippingDocumentName ? String(raw.shippingDocumentName) : null,
+          additionalExpenses: toFiniteNumber(raw.additionalExpenses, 0),
+          additionalNotes: raw.additionalNotes ? String(raw.additionalNotes) : null,
+          totalItems: Math.trunc(toFiniteNumber(raw.totalItems, 0)),
+          netTotalAmount: toFiniteNumber(raw.netTotalAmount, 0),
+          orderTotal: toFiniteNumber(raw.orderTotal, 0),
+          status: String(raw.status || 'Draft'),
+          addedBy: raw.addedBy ? String(raw.addedBy) : null,
+          meta: raw,
+        };
+        await prisma.purchaseOrder.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
       case 'sellReturns': {
@@ -903,6 +1046,11 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
   try {
     switch (resource) {
       case 'products':        await prisma.product.deleteMany({ where: { id } }); break;
+      case 'productCategories': await prisma.productCategory.deleteMany({ where: { id } }); break;
+      case 'productBrands':   await prisma.productBrand.deleteMany({ where: { id } }); break;
+      case 'productUnits':    await prisma.productUnit.deleteMany({ where: { id } }); break;
+      case 'productWarranties': await prisma.productWarranty.deleteMany({ where: { id } }); break;
+      case 'productVariations': await prisma.productVariation.deleteMany({ where: { id } }); break;
       case 'customers':       await prisma.customer.deleteMany({ where: { id } }); break;
       case 'suppliers':       await prisma.supplier.deleteMany({ where: { id } }); break;
       case 'sales':           await prisma.sale.deleteMany({ where: { id } }); break;
@@ -917,11 +1065,18 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       }
       case 'expenses':        await prisma.expense.deleteMany({ where: { id } }); break;
       case 'purchases':       await prisma.purchase.deleteMany({ where: { id } }); break;
+      case 'purchaseRequisitions': await prisma.purchaseRequisition.deleteMany({ where: { id } }); break;
+      case 'purchaseOrders':   await prisma.purchaseOrder.deleteMany({ where: { id } }); break;
       case 'sellReturns':     await prisma.sellReturn.deleteMany({ where: { id } }); break;
       case 'purchaseReturns': await prisma.purchaseReturn.deleteMany({ where: { id } }); break;
       case 'orders':          await prisma.salesOrder.deleteMany({ where: { id } }); break;
       case 'activityLogs':    await prisma.activityLog.deleteMany({ where: { id } }); break;
       case 'locations':       await prisma.location.deleteMany({ where: { id } }); break;
+      case 'taxRates':        await prisma.taxRate.deleteMany({ where: { id } }); break;
+      case 'customerGroups':  await prisma.customerGroup.deleteMany({ where: { id } }); break;
+      case 'sellingPriceGroups': await prisma.sellingPriceGroup.deleteMany({ where: { id } }); break;
+      case 'discounts':       await prisma.discount.deleteMany({ where: { id } }); break;
+      case 'expenseCategories': await prisma.expenseCategory.deleteMany({ where: { id } }); break;
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
     }
@@ -1271,39 +1426,23 @@ app.delete('/api/sync/stock-lots/:id', requireAuth, requireCanDelete, async (req
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  COLLECTION SNAPSHOT ENDPOINTS
-//  Used for resources that don't have a dedicated Prisma model (purchaseReqs,
-//  purchaseOrders, contacts). Stores/retrieves the entire array under a key.
-//  GET  /api/sync/collection/:key
-//  PUT  /api/sync/collection/:key   Body: { data: [...] }
+//  LEGACY SNAPSHOT ENDPOINTS DISABLED
+//  Business data must use typed PostgreSQL tables through /api/data/* or
+//  /api/sync/record/*, never snapshot blobs.
 // ────────────────────────��─────────────────────────��──────────────────────────
 
-app.get('/api/sync/collection/:key', requireAuth, async (req, res) => {
-  const key = sanitizeCollectionKey(req.params.key);
-  if (!key) return res.status(400).json({ ok: false, error: 'key is required' });
-  try {
-    const record = await prisma.appStateSnapshot.findUnique({ where: { id: `COL_${key}` } });
-    const data = (record?.payload && Array.isArray((record.payload).data)) ? (record.payload).data : [];
-    return res.json({ ok: true, data });
-  } catch (error) {
-    return sendPrismaError(res, error, `Failed to fetch collection ${key}`);
-  }
+const sendLegacySnapshotGone = (res, replacement = '/api/data/:resource') =>
+  res.status(410).json({
+    ok: false,
+    error: `Legacy snapshot storage has been disabled. Use ${replacement} so PostgreSQL tables remain the source of truth.`,
+  });
+
+app.get('/api/sync/collection/:key', requireAuth, (_req, res) => {
+  return sendLegacySnapshotGone(res);
 });
 
-app.put('/api/sync/collection/:key', requireAuth, async (req, res) => {
-  const key = sanitizeCollectionKey(req.params.key);
-  if (!key) return res.status(400).json({ ok: false, error: 'key is required' });
-  const data = toArray(req.body?.data);
-  try {
-    await prisma.appStateSnapshot.upsert({
-      where: { id: `COL_${key}` },
-      update: { payload: { data } },
-      create: { id: `COL_${key}`, payload: { data } },
-    });
-    return res.json({ ok: true, key, count: data.length });
-  } catch (error) {
-    return sendPrismaError(res, error, `Failed to save collection ${key}`);
-  }
+app.put('/api/sync/collection/:key', requireAuth, (_req, res) => {
+  return sendLegacySnapshotGone(res);
 });
 
 // ────────────────────────────────────────────────────────────────────��────────
@@ -1311,62 +1450,16 @@ app.put('/api/sync/collection/:key', requireAuth, async (req, res) => {
 //  sync path — atomic /api/sync/record endpoints are used instead)
 // ───────────────────────────────────────────────────────────────────��─────────
 
-app.get('/api/sync/core', async (_req, res) => {
-  try {
-    const row = await prisma.appStateSnapshot.findUnique({ where: { id: 'core' } });
-    const snapshot = sanitizeCoreSnapshot(row?.payload);
-    res.json({ ok: true, hasData: hasSnapshotData(snapshot), data: snapshot, updatedAt: row?.updatedAt || null });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : 'Failed to fetch snapshot' });
-  }
+app.get('/api/sync/core', (_req, res) => {
+  return sendLegacySnapshotGone(res, '/api/data/:resource');
 });
 
-app.put('/api/sync/core', async (req, res) => {
-  try {
-    const snapshot = sanitizeCoreSnapshot(req.body);
-    const row = await prisma.appStateSnapshot.upsert({
-      where: { id: 'core' },
-      update: { payload: snapshot },
-      create: { id: 'core', payload: snapshot },
-    });
-    res.json({
-      ok: true,
-      message: 'Core snapshot saved',
-      updatedAt: row.updatedAt,
-      counts: {
-        products: snapshot.products.length,
-        customers: snapshot.customers.length,
-        suppliers: snapshot.suppliers.length,
-        sales: snapshot.sales.length,
-        payments: snapshot.payments.length,
-        users: snapshot.users.length,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : 'Failed to save snapshot' });
-  }
+app.put('/api/sync/core', (_req, res) => {
+  return sendLegacySnapshotGone(res, '/api/sync/record/:resource');
 });
 
-app.get('/api/sync/core/status', async (_req, res) => {
-  try {
-    const row = await prisma.appStateSnapshot.findUnique({ where: { id: 'core' } });
-    const snapshot = sanitizeCoreSnapshot(row?.payload);
-    res.json({
-      ok: true,
-      hasData: hasSnapshotData(snapshot),
-      updatedAt: row?.updatedAt || null,
-      counts: {
-        products: snapshot.products.length,
-        customers: snapshot.customers.length,
-        suppliers: snapshot.suppliers.length,
-        sales: snapshot.sales.length,
-        payments: snapshot.payments.length,
-        users: snapshot.users.length,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: error instanceof Error ? error.message : 'Failed to read snapshot status' });
-  }
+app.get('/api/sync/core/status', (_req, res) => {
+  return sendLegacySnapshotGone(res, '/api/data/:resource');
 });
 
 // NOTE: /api/sync/core/materialize has been removed.
@@ -1379,49 +1472,12 @@ app.post('/api/sync/core/materialize', (_req, res) => {
 });
 
 
-app.get('/api/options/bulk', async (req, res) => {
-  try {
-    const raw = String(req.query.keys || '');
-    const keys = Array.from(new Set(raw.split(',').map((key) => sanitizeCollectionKey(key)).filter(Boolean)));
-    if (keys.length === 0) return res.json({ ok: true, data: {} });
-    const rows = await prisma.optionCollection.findMany({ where: { key: { in: keys } } });
-    const rowMap = new Map(rows.map((row) => [row.key, row.payload]));
-    const data = {};
-    keys.forEach((key) => {
-      const value = rowMap.get(key);
-      data[key] = Array.isArray(value) ? value : [];
-    });
-    return res.json({ ok: true, data });
-  } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch option collections',
-    });
-  }
+app.get('/api/options/bulk', (_req, res) => {
+  return sendLegacySnapshotGone(res, '/api/data/:resource');
 });
 
-app.put('/api/options/bulk', async (req, res) => {
-  try {
-    const body = toObject(req.body);
-    const incoming = toObject(body.collections);
-    const entries = Object.entries(incoming)
-      .map(([key, value]) => [sanitizeCollectionKey(key), toArray(value)])
-      .filter(([key]) => Boolean(key));
-    if (entries.length === 0) return res.json({ ok: true, updated: 0 });
-    await prisma.$transaction(entries.map(([key, payload]) =>
-      prisma.optionCollection.upsert({
-        where: { key },
-        update: { payload },
-        create: { key, payload },
-      })
-    ));
-    return res.json({ ok: true, updated: entries.length, keys: entries.map(([key]) => key) });
-  } catch (error) {
-    return res.status(500).json({
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to save option collections',
-    });
-  }
+app.put('/api/options/bulk', (_req, res) => {
+  return sendLegacySnapshotGone(res, '/api/data/:resource/bulk-upsert');
 });
 
 app.post('/api/bootstrap/defaults', async (_req, res) => {
@@ -1447,8 +1503,8 @@ app.post('/api/bootstrap/defaults', async (_req, res) => {
       prisma.currency.upsert({ where: { code: currency.code }, update: currency, create: currency })
     ));
     const accountTypes = [
-      { id: 'acct-cash', name: 'Cash Account', isSystem: true, isActive: true },
-      { id: 'acct-bank', name: 'Bank Account', isSystem: true, isActive: true },
+      { id: 'PAT-cash', name: 'Cash', isSystem: true, isActive: true },
+      { id: 'PAT-bank', name: 'Bank', isSystem: true, isActive: true },
     ];
     await prisma.$transaction(accountTypes.map((type) =>
       prisma.paymentAccountType.upsert({

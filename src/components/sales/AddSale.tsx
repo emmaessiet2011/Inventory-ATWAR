@@ -23,7 +23,6 @@ import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingS
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
-import { isLiveSyncEnabled } from '@/utils/apiClient';
 import { printElementSnapshot } from '@/utils/printUtils';
 import { resolveSaleDueDate } from '@/utils/paymentTerms';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
@@ -143,18 +142,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const [isDraftStatusLocked, setIsDraftStatusLocked] = useState(isAddDraftFlow);
   const [isQuotationStatusLocked, setIsQuotationStatusLocked] = useState(isAddQuotationFlow);
   const [pendingFinalStatus, setPendingFinalStatus] = useState<string | null>(null);
-  const draftScope = initialStatus === 'Draft'
-    ? 'draft'
-    : initialStatus === 'Quotation'
-      ? 'quotation'
-      : 'sale';
-  const draftOwner = String(currentUser?.id || currentUser?.name || 'anonymous')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_');
-  const scopedDraftStorageKey = `addSaleDraft:${draftScope}:${draftOwner}`;
-  const legacySharedDraftKey = 'addSaleDraft';
-  const shouldUseLocalDraftCache = !isLiveSyncEnabled();
   const normalizeSaleLifecycleStatus = (
     value?: string,
   ): 'Final' | 'Draft' | 'Quotation' | 'Proforma' => {
@@ -462,8 +449,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   // --- Draft State ---
   const [showDraftPrompt, setShowDraftPrompt] = useState(false);
-  const [draftData, setDraftData] = useState<any>(null);
-  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+  const [draftData] = useState<any>(null);
 
   useEffect(() => {
     const nextSourceOrderId = String(sourceOrderIdParam || '').trim();
@@ -559,60 +545,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     }
   }, [forceInitialStatusLock, initialStatus, status]);
 
-  const removeScopedDraft = () => {
-    if (!shouldUseLocalDraftCache) return;
-    localStorage.removeItem(scopedDraftStorageKey);
-    if (draftScope === 'sale') {
-      localStorage.removeItem(legacySharedDraftKey);
-    }
-  };
-
-  // Load Draft Logic
-  useEffect(() => {
-    if (!shouldUseLocalDraftCache) {
-      setIsDraftLoaded(true);
-      return;
-    }
-    if (!isEdit && !fromOrder) {
-      const savedDraft = localStorage.getItem(scopedDraftStorageKey)
-        || (draftScope === 'sale' ? localStorage.getItem(legacySharedDraftKey) : null);
-      if (savedDraft) {
-        try {
-          const parsed = JSON.parse(savedDraft);
-          const draftRows = normalizeRows(parsed.rows);
-          if (parsed.customer || draftRows.length > 0) {
-             setDraftData({ ...parsed, rows: draftRows });
-             setShowDraftPrompt(true);
-          } else {
-             setIsDraftLoaded(true);
-          }
-        } catch (e) {
-             setIsDraftLoaded(true);
-        }
-      } else {
-         setIsDraftLoaded(true);
-      }
-    } else {
-       setIsDraftLoaded(true);
-    }
-  }, [isEdit, fromOrder, scopedDraftStorageKey, draftScope, legacySharedDraftKey, shouldUseLocalDraftCache]);
-
-  // Save Draft Logic
-  useEffect(() => {
-    if (!shouldUseLocalDraftCache) return;
-    if (isDraftLoaded && !isEdit && !fromOrder && !showDraftPrompt) {
-      const draft = {
-        saleType, customer, payTermNumber, payTermUnit, saleDate, status, invoiceScheme, invoiceLayout,
-        rows, discountType, discountAmount, orderTax, sellNote, shippingDetails, shippingAddress,
-        shippingCharges, shippingStatus, deliveredTo, amount, paymentDate, paymentMethod, paymentAccount, paymentNote,
-        location, selectedPriceGroupId, selectedCommissionAgentId, attachedFileName
-      };
-      localStorage.setItem(scopedDraftStorageKey, JSON.stringify(draft));
-      if (draftScope === 'sale') {
-        localStorage.removeItem(legacySharedDraftKey);
-      }
-    }
-  }, [isDraftLoaded, showDraftPrompt, saleType, customer, payTermNumber, payTermUnit, saleDate, status, invoiceScheme, invoiceLayout, rows, discountType, discountAmount, orderTax, sellNote, shippingDetails, shippingAddress, shippingCharges, shippingStatus, deliveredTo, amount, paymentDate, paymentMethod, paymentAccount, paymentNote, isEdit, fromOrder, location, selectedPriceGroupId, selectedCommissionAgentId, scopedDraftStorageKey, draftScope, legacySharedDraftKey, attachedFileName, shouldUseLocalDraftCache]);
+  const removeScopedDraft = () => {};
 
   const restoreDraft = () => {
      if (draftData) {
@@ -665,13 +598,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
          }
      }
      setShowDraftPrompt(false);
-     setIsDraftLoaded(true);
   };
 
   const discardDraft = () => {
      removeScopedDraft();
      setShowDraftPrompt(false);
-     setIsDraftLoaded(true);
   };
 
   const toDateTimeLocal = (value?: string) => {
