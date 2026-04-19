@@ -89,7 +89,11 @@ export async function apiFetchAll<T>(resource: string): Promise<T[]> {
   if (!res.ok) throw new Error(`apiFetchAll(${resource}): HTTP ${res.status}`);
   const json = await res.json();
   if (!Array.isArray(json.data)) return [];
-  return json.data.map((row: Record<string, unknown>) => {
+  const rows = json.data.filter(
+    (row: unknown): row is Record<string, unknown> =>
+      !!row && typeof row === 'object' && !Array.isArray(row),
+  );
+  return rows.map((row) => {
     const meta = row.meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
       // Merge canonical DB row + meta snapshot so partial meta payloads
@@ -282,7 +286,11 @@ export async function fetchDedicated<T>(path: string): Promise<T[] | null> {
     if (res.status === 401) { handle401(); return null; }
     if (!res.ok) return null;
     const json = await res.json();
-    return Array.isArray(json.data) ? (json.data as T[]) : null;
+    if (!Array.isArray(json.data)) return null;
+    return json.data.filter(
+      (row: unknown): row is T =>
+        !!row && typeof row === 'object' && !Array.isArray(row),
+    );
   } catch {
     return null;
   }

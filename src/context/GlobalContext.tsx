@@ -2949,10 +2949,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             ),
           );
         }
-        if (remoteCustomers) setCustomers(remoteCustomers);
-        if (remoteSuppliers) setSuppliers(remoteSuppliers);
-        if (remoteSales) setSales(remoteSales);
-        if (remotePayments) setPayments(remotePayments);
+        if (remoteCustomers) {
+          setCustomers((remoteCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, customerGroups)));
+        }
+        if (remoteSuppliers) {
+          setSuppliers((remoteSuppliers as Supplier[]).map((supplier) => normalizeSupplierRecord(supplier)));
+        }
+        if (remoteSales) {
+          setSales((remoteSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)));
+        }
+        if (remotePayments) {
+          setPayments((remotePayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
+        }
         if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteLocations) {
           if (remoteLocations.length > 0) {
@@ -2976,18 +2984,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const richEnough = s && Object.keys(s).filter(k => !['id', 'businessName', 'currency', 'currencySymbol', 'createdAt', 'updatedAt'].includes(k)).length > 0;
           if (richEnough) setSettings(normalizeAppSettings(s));
         }
-        if (remoteExpenses) setExpenses(remoteExpenses);
-        if (remotePurchases) setPurchases(remotePurchases);
-        if (remoteSellReturns) setSellReturns(remoteSellReturns);
-        if (remotePurchaseReturns) setPurchaseReturns(remotePurchaseReturns);
-        if (remoteOrders) setOrders(remoteOrders);
-        if (remoteActivityLogs) setActivityLogs(remoteActivityLogs);
+        if (remoteExpenses) {
+          setExpenses((remoteExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
+        }
+        if (remotePurchases) {
+          setPurchases((remotePurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
+        }
+        if (remoteSellReturns) {
+          setSellReturns((remoteSellReturns as SellReturn[]).map((record) => normalizeSellReturnRecordLoaded(record)));
+        }
+        if (remotePurchaseReturns) {
+          setPurchaseReturns((remotePurchaseReturns as PurchaseReturn[]).map((record) => normalizePurchaseReturnRecordLoaded(record)));
+        }
+        if (remoteOrders) {
+          setOrders((remoteOrders as GlobalOrder[]).map((order) => normalizeOrderRecordLoaded(order)));
+        }
+        if (remoteActivityLogs) {
+          setActivityLogs((remoteActivityLogs as ActivityLogEntry[]).map((entry) => normalizeActivityLogRecordLoaded(entry)));
+        }
         if (remoteTaxRates) setTaxRates(normalizeTaxRates(remoteTaxRates as TaxRate[]));
         if (remoteProductCategories) setProductCategories(remoteProductCategories as ProductCategory[]);
         if (remoteProductBrands) setProductBrands(remoteProductBrands as ProductBrand[]);
         if (remoteProductUnits) setProductUnits(remoteProductUnits as ProductUnit[]);
-        if (remotePurchaseReqs) setPurchaseRequisitions(remotePurchaseReqs);
-        if (remotePurchaseOrders) setPurchaseOrders(remotePurchaseOrders);
+        if (remotePurchaseReqs) {
+          setPurchaseRequisitions((remotePurchaseReqs as PurchaseRequisition[]).map((record) => normalizePurchaseRequisitionRecordLoaded(record)));
+        }
+        if (remotePurchaseOrders) {
+          setPurchaseOrders((remotePurchaseOrders as PurchaseOrder[]).map((record) => normalizePurchaseOrderRecordLoaded(record)));
+        }
 
         setSyncStatus(hadFetchFailure ? 'error' : 'synced');
       } catch {
@@ -3100,20 +3124,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             ),
           );
         }
-        if (freshSales) setSales(freshSales);
-        if (freshPayments) setPayments(freshPayments);
-        if (freshCustomers) setCustomers(freshCustomers);
+        if (freshSales) {
+          setSales((freshSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)));
+        }
+        if (freshPayments) {
+          setPayments((freshPayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
+        }
+        if (freshCustomers) {
+          setCustomers((freshCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, customerGroups)));
+        }
         if (freshLocations) {
           setLocations((freshLocations as Location[])
             .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
             .filter((row) => row.id && row.name));
         }
-        if (freshExpenses) setExpenses(freshExpenses);
-        if (freshPurchases) setPurchases(freshPurchases);
-        if (freshSellReturns) setSellReturns(freshSellReturns);
-        if (freshPurchaseReturns) setPurchaseReturns(freshPurchaseReturns);
-        if (freshOrders) setOrders(freshOrders);
-        if (freshActivityLogs) setActivityLogs(freshActivityLogs);
+        if (freshExpenses) {
+          setExpenses((freshExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
+        }
+        if (freshPurchases) {
+          setPurchases((freshPurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
+        }
+        if (freshSellReturns) {
+          setSellReturns((freshSellReturns as SellReturn[]).map((record) => normalizeSellReturnRecordLoaded(record)));
+        }
+        if (freshPurchaseReturns) {
+          setPurchaseReturns((freshPurchaseReturns as PurchaseReturn[]).map((record) => normalizePurchaseReturnRecordLoaded(record)));
+        }
+        if (freshOrders) {
+          setOrders((freshOrders as GlobalOrder[]).map((order) => normalizeOrderRecordLoaded(order)));
+        }
+        if (freshActivityLogs) {
+          setActivityLogs((freshActivityLogs as ActivityLogEntry[]).map((entry) => normalizeActivityLogRecordLoaded(entry)));
+        }
         if (freshTaxRates) setTaxRates(normalizeTaxRates(freshTaxRates as TaxRate[]));
         if (freshProductCategories) setProductCategories(freshProductCategories as ProductCategory[]);
         if (freshProductBrands) setProductBrands(freshProductBrands as ProductBrand[]);
@@ -3961,6 +4003,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { id: '', name: String(customerGroupName || '').trim() };
   };
 
+  const normalizeContactDocuments = (docs: unknown): ContactDocument[] => {
+    if (!Array.isArray(docs)) return [];
+    return docs
+      .filter((row): row is Partial<ContactDocument> => !!row && typeof row === 'object' && !Array.isArray(row))
+      .map((row, index) => {
+        const nowIso = new Date().toISOString();
+        return {
+          id: String(row.id || `DOC-${Date.now()}-${index}`),
+          heading: String(row.heading || '').trim(),
+          fileName: String(row.fileName || '').trim() || undefined,
+          addedBy: String(row.addedBy || '').trim() || 'System',
+          createdAt: String(row.createdAt || '').trim() || nowIso,
+          updatedAt: String(row.updatedAt || row.createdAt || '').trim() || nowIso,
+        };
+      });
+  };
+
   const normalizeCustomerRecord = (
     customer: Customer,
     availableGroups: CustomerGroup[] = customerGroups
@@ -3970,12 +4029,547 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       customer.customerGroup,
       availableGroups
     );
+    const businessName = String(customer.businessName || customer.name || '').trim();
+    const contactName = String(customer.name || customer.businessName || '').trim() || businessName;
+    const id = String(customer.id || businessName || contactName).trim();
+    const normalizedStatus = normalizeActiveState(customer.status, (customer as any).isActive);
+    const customerGroupId = String(linked.id || '').trim();
+    const customerGroup = String(linked.name || '').trim();
+    const customValues = customer.customValues && typeof customer.customValues === 'object' && !Array.isArray(customer.customValues)
+      ? Object.fromEntries(
+          Object.entries(customer.customValues).map(([key, value]) => [String(key), String(value ?? '')]),
+        )
+      : undefined;
+    const parsedRebate = Number(customer.rebatePercent);
+    const parsedReward = Number(customer.rewardPoints);
+
     return {
       ...customer,
-      customerGroupId: linked.id,
-      customerGroup: linked.name,
+      id,
+      type: 'Customer',
+      businessName,
+      name: contactName,
+      email: String(customer.email || '').trim(),
+      mobile: String(customer.mobile || '').trim(),
+      phone: String(customer.phone || '').trim() || undefined,
+      taxNumber: String(customer.taxNumber || '').trim(),
+      creditLimit: Number(customer.creditLimit || 0),
+      payTerm: String(customer.payTerm || '').trim(),
+      openingBalance: Number(customer.openingBalance || 0),
+      advanceBalance: Number(customer.advanceBalance || 0),
+      totalSellDue: Number(customer.totalSellDue || 0),
+      totalSellReturnDue: Number(customer.totalSellReturnDue || 0),
+      addedOn: String(customer.addedOn || '').trim() || new Date().toISOString().slice(0, 10),
+      customerGroupId,
+      customerGroup,
+      address: String(customer.address || '').trim(),
+      city: String(customer.city || '').trim() || undefined,
+      state: String(customer.state || '').trim() || undefined,
+      country: String(customer.country || '').trim() || undefined,
+      zipCode: String(customer.zipCode || '').trim() || undefined,
+      status: normalizedStatus,
+      assignedTo: String(customer.assignedTo || '').trim() || undefined,
+      lastSellDate: String(customer.lastSellDate || '').trim() || undefined,
+      customValues,
+      documents: normalizeContactDocuments(customer.documents),
+      contactCategory: customer.contactCategory === 'Business' ? 'Business' : 'Individual',
+      rewardPoints: Number.isFinite(parsedReward) ? parsedReward : 0,
+      rebatePercent: Number.isFinite(parsedRebate) ? parsedRebate : 0,
     };
   };
+
+  const normalizeSupplierRecord = (supplier: Supplier): Supplier => {
+    const businessName = String(supplier.businessName || supplier.name || '').trim();
+    const contactName = String(supplier.name || supplier.businessName || '').trim() || businessName;
+    const id = String(supplier.id || businessName || contactName).trim();
+    const normalizedStatus = normalizeActiveState(supplier.status, (supplier as any).isActive);
+    const customValues = supplier.customValues && typeof supplier.customValues === 'object' && !Array.isArray(supplier.customValues)
+      ? Object.fromEntries(
+          Object.entries(supplier.customValues).map(([key, value]) => [String(key), String(value ?? '')]),
+        )
+      : undefined;
+
+    return {
+      ...supplier,
+      id,
+      type: 'Supplier',
+      businessName,
+      name: contactName,
+      email: String(supplier.email || '').trim(),
+      mobile: String(supplier.mobile || '').trim(),
+      phone: String(supplier.phone || '').trim() || undefined,
+      taxNumber: String(supplier.taxNumber || '').trim(),
+      payTerm: String(supplier.payTerm || '').trim(),
+      openingBalance: Number(supplier.openingBalance || 0),
+      advanceBalance: Number(supplier.advanceBalance || 0),
+      totalPurchaseDue: Number(supplier.totalPurchaseDue || 0),
+      totalReturnDue: Number(supplier.totalReturnDue || 0),
+      addedOn: String(supplier.addedOn || '').trim() || new Date().toISOString().slice(0, 10),
+      address: String(supplier.address || '').trim(),
+      city: String(supplier.city || '').trim() || undefined,
+      state: String(supplier.state || '').trim() || undefined,
+      country: String(supplier.country || '').trim() || undefined,
+      zipCode: String(supplier.zipCode || '').trim() || undefined,
+      status: normalizedStatus,
+      assignedTo: String(supplier.assignedTo || '').trim() || undefined,
+      purchaseStatus: String(supplier.purchaseStatus || '').trim() || undefined,
+      customValues,
+      documents: normalizeContactDocuments(supplier.documents),
+      contactCategory: supplier.contactCategory === 'Individual' ? 'Individual' : 'Supplier',
+    };
+  };
+
+  const asNumber = (value: unknown, fallback = 0): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  const asString = (value: unknown, fallback = ''): string => String(value ?? fallback).trim();
+  const asOptionalNumber = (value: unknown): number | undefined => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
+  const normalizeSalePaymentStatus = (value: unknown): Sale['paymentStatus'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'paid') return 'Paid';
+    if (key === 'partial') return 'Partial';
+    if (key === 'overdue') return 'Overdue';
+    return 'Due';
+  };
+
+  const normalizePurchaseStatus = (value: unknown): Purchase['status'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'received') return 'Received';
+    if (key === 'ordered') return 'Ordered';
+    return 'Pending';
+  };
+
+  const normalizePurchasePaymentStatus = (value: unknown): Purchase['paymentStatus'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'paid') return 'Paid';
+    if (key === 'partial') return 'Partial';
+    return 'Due';
+  };
+
+  const normalizeExpensePaymentStatus = (value: unknown): Expense['paymentStatus'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'paid') return 'Paid';
+    if (key === 'partial') return 'Partial';
+    return 'Due';
+  };
+
+  const normalizeOrderStatus = (value: unknown): GlobalOrder['status'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'processing') return 'Processing';
+    if (key === 'ready') return 'Ready';
+    if (key === 'shipped') return 'Shipped';
+    if (key === 'delivered') return 'Delivered';
+    if (key === 'cancelled') return 'Cancelled';
+    return 'Pending';
+  };
+
+  const normalizeOrderPaymentStatus = (value: unknown): GlobalOrder['paymentStatus'] => {
+    const key = normalizeText(asString(value));
+    if (key === 'paid') return 'Paid';
+    if (key === 'partial') return 'Partial';
+    return 'Due';
+  };
+
+  const normalizeOrderType = (value: unknown): GlobalOrder['orderType'] =>
+    normalizeText(asString(value)) === 'credit' ? 'Credit' : 'Paid';
+
+  const normalizeSaleItemRecord = (item: Partial<SaleItem>): SaleItem => ({
+    id: asString(item.id || item.name),
+    name: asString(item.name),
+    qty: asNumber(item.qty),
+    quantityMode: item.quantityMode,
+    quantityInput: asOptionalNumber(item.quantityInput),
+    unitsPerPackage: asOptionalNumber(item.unitsPerPackage),
+    productPackagingType: item.productPackagingType,
+    unitPrice: asNumber(item.unitPrice),
+    discount: asNumber(item.discount),
+    subtotal: asNumber(item.subtotal),
+    tax: asNumber(item.tax),
+    total: asNumber(item.total),
+    unit: asString(item.unit) || undefined,
+  });
+
+  const normalizePurchaseItemRecord = (item: Partial<PurchaseItem>): PurchaseItem => ({
+    id: asString(item.id || item.name),
+    name: asString(item.name),
+    qty: asNumber(item.qty),
+    unitCost: asNumber(item.unitCost),
+    discount: asNumber(item.discount),
+    tax: asNumber(item.tax),
+    lineTotal: asNumber(item.lineTotal),
+    lot: asString(item.lot) || undefined,
+    expiryDate: asString(item.expiryDate) || undefined,
+    margin: asOptionalNumber(item.margin),
+    sellingPrice: asOptionalNumber(item.sellingPrice),
+  });
+
+  const normalizePurchaseReturnItemRecord = (item: Partial<PurchaseReturnItem>): PurchaseReturnItem => ({
+    productId: asString(item.productId || item.productName),
+    productName: asString(item.productName),
+    lotNumber: asString(item.lotNumber) || undefined,
+    expDate: asString(item.expDate) || undefined,
+    quantity: asNumber(item.quantity),
+    unitPrice: asNumber(item.unitPrice),
+    subtotal: asNumber(item.subtotal),
+  });
+
+  const normalizeSellReturnItemRecord = (item: Partial<SellReturnItem>): SellReturnItem => ({
+    productId: asString(item.productId || item.productName),
+    productName: asString(item.productName),
+    qty: asNumber(item.qty),
+    unitPrice: asNumber(item.unitPrice),
+    lineTotal: asNumber(item.lineTotal),
+    soldQty: asNumber(item.soldQty, undefined as unknown as number),
+    unit: asString(item.unit) || undefined,
+  });
+
+  const normalizeOrderItemRecord = (item: Partial<OrderItem>): OrderItem => ({
+    id: String(item.id ?? item.productId ?? item.name ?? ''),
+    productId: asString(item.productId) || undefined,
+    productSku: asString(item.productSku) || undefined,
+    name: asString(item.name),
+    qty: asNumber(item.qty),
+    quantityMode: item.quantityMode,
+    quantityInput: asOptionalNumber(item.quantityInput),
+    unitsPerPackage: asOptionalNumber(item.unitsPerPackage),
+    productPackagingType: item.productPackagingType,
+    price: asNumber(item.price),
+    total: asNumber(item.total),
+  });
+
+  const normalizePurchaseRequisitionItemRecord = (item: Partial<PurchaseRequisitionItem>): PurchaseRequisitionItem => ({
+    productId: asString(item.productId || item.productName),
+    productName: asString(item.productName),
+    alertQty: asNumber(item.alertQty),
+    requiredQty: asNumber(item.requiredQty),
+  });
+
+  const normalizePurchaseOrderItemRecord = (item: Partial<PurchaseOrderItem>): PurchaseOrderItem => ({
+    productId: asString(item.productId || item.productName),
+    productName: asString(item.productName),
+    orderQty: asNumber(item.orderQty),
+    unitCostBeforeDiscount: asNumber(item.unitCostBeforeDiscount),
+    discountPercent: asNumber(item.discountPercent),
+    unitCostBeforeTax: asNumber(item.unitCostBeforeTax),
+    lineTotal: asNumber(item.lineTotal),
+  });
+
+  const normalizeSaleRecordLoaded = (sale: Sale): Sale => {
+    const normalizedStatus = normalizeSaleLifecycleStatus(sale.status || sale.saleStatus) || 'Final';
+
+    return {
+      ...sale,
+      id: asString(sale.id || sale.invoiceNo),
+      date: asString(sale.date),
+      paymentDate: asString(sale.paymentDate) || undefined,
+      invoiceNo: asString(sale.invoiceNo),
+      invoiceScheme: asString(sale.invoiceScheme) || undefined,
+      invoiceLayout: asString(sale.invoiceLayout) || undefined,
+      customerId: asString(sale.customerId),
+      customerName: asString(sale.customerName) || undefined,
+      customerGroupId: asString(sale.customerGroupId) || undefined,
+      customerGroup: asString(sale.customerGroup) || undefined,
+      contactNumber: asString(sale.contactNumber) || undefined,
+      billingAddress: asString(sale.billingAddress) || undefined,
+      shippingAddress: asString(sale.shippingAddress) || undefined,
+      location: asString(sale.location) || undefined,
+      saleType: asString(sale.saleType) || undefined,
+      saleStatus: normalizedStatus,
+      paymentStatus: normalizeSalePaymentStatus(sale.paymentStatus),
+      paymentMethod: asString(sale.paymentMethod) || undefined,
+      paymentAccount: asString(sale.paymentAccount) || undefined,
+      paymentNote: asString(sale.paymentNote) || undefined,
+      totalAmount: asNumber(sale.totalAmount),
+      totalPaid: asNumber(sale.totalPaid),
+      sellDue: asNumber(sale.sellDue),
+      sellReturnDue: asNumber(sale.sellReturnDue),
+      discount: asString(sale.discount) || undefined,
+      orderTax: asString(sale.orderTax) || undefined,
+      shippingStatus: sale.shippingStatus,
+      shippingDetails: asString(sale.shippingDetails) || undefined,
+      shippingCharges: asNumber(sale.shippingCharges),
+      deliveredTo: asString(sale.deliveredTo) || undefined,
+      deliveryPerson: asString(sale.deliveryPerson) || undefined,
+      shippingNote: asString(sale.shippingNote) || undefined,
+      shippingDocName: asString(sale.shippingDocName) || undefined,
+      totalItems: asNumber(sale.totalItems),
+      addedBy: asString(sale.addedBy) || undefined,
+      sellNote: asString(sale.sellNote) || undefined,
+      staffNote: asString(sale.staffNote) || undefined,
+      document: asString(sale.document) || undefined,
+      items: Array.isArray(sale.items) ? sale.items.map((item) => normalizeSaleItemRecord(item)) : [],
+      subTotal: asNumber(sale.subTotal),
+      discountType: asString(sale.discountType),
+      discountAmount: asNumber(sale.discountAmount),
+      tax: asString(sale.tax),
+      grandTotal: asNumber(sale.grandTotal),
+      status: normalizedStatus,
+    };
+  };
+
+  const normalizePaymentRecordLoaded = (payment: Payment): Payment => ({
+    ...payment,
+    id: asString(payment.id || payment.referenceNo),
+    date: asString(payment.date),
+    contactId: asString(payment.contactId),
+    contactName: asString(payment.contactName),
+    contactType: payment.contactType === 'Supplier' || payment.contactType === 'Expense' ? payment.contactType : 'Customer',
+    amount: asNumber(payment.amount),
+    method: asString(payment.method),
+    account: asString(payment.account),
+    location: asString(payment.location) || undefined,
+    referenceNo: asString(payment.referenceNo),
+    note: asString(payment.note),
+    type: payment.type === 'sent' ? 'sent' : 'received',
+    linkedInvoices: Array.isArray(payment.linkedInvoices)
+      ? payment.linkedInvoices.map((value) => asString(value)).filter(Boolean)
+      : undefined,
+    strictLinkedAllocation: Boolean(payment.strictLinkedAllocation),
+    addedBy: asString(payment.addedBy) || undefined,
+    attachmentName: asString(payment.attachmentName) || undefined,
+    attachmentData: asString(payment.attachmentData) || undefined,
+    expenseId: asString(payment.expenseId) || undefined,
+    rebatePercent: asNumber(payment.rebatePercent),
+    rebateAmount: asNumber(payment.rebateAmount),
+    rebateApplied: Boolean(payment.rebateApplied),
+    chequeDate: asString(payment.chequeDate) || undefined,
+    chequeNo: asString(payment.chequeNo) || undefined,
+    bankName: asString(payment.bankName) || undefined,
+    drawerName: asString(payment.drawerName) || undefined,
+    chequeCleared: Boolean(payment.chequeCleared),
+  });
+
+  const normalizePurchaseRecordLoaded = (purchase: Purchase): Purchase => ({
+    ...purchase,
+    id: asString(purchase.id || purchase.refNo),
+    refNo: asString(purchase.refNo),
+    date: asString(purchase.date),
+    location: asString(purchase.location),
+    supplier: asString(purchase.supplier),
+    supplierId: asString(purchase.supplierId) || undefined,
+    status: normalizePurchaseStatus(purchase.status),
+    paymentStatus: normalizePurchasePaymentStatus(purchase.paymentStatus),
+    grandTotal: asNumber(purchase.grandTotal),
+    paymentDue: asNumber(purchase.paymentDue),
+    addedBy: asString(purchase.addedBy),
+    items: Array.isArray(purchase.items) ? purchase.items.map((item) => normalizePurchaseItemRecord(item)) : [],
+    subTotal: asNumber(purchase.subTotal),
+    discountType: asString(purchase.discountType) || undefined,
+    discountAmount: asNumber(purchase.discountAmount),
+    purchaseTaxId: asString(purchase.purchaseTaxId) || undefined,
+    purchaseTaxName: asString(purchase.purchaseTaxName) || undefined,
+    purchaseTaxAmount: asNumber(purchase.purchaseTaxAmount),
+    shippingCharges: asNumber(purchase.shippingCharges),
+    shippingDetails: asString(purchase.shippingDetails) || undefined,
+    attachDocumentName: asString(purchase.attachDocumentName) || undefined,
+    purchaseOrderId: asString(purchase.purchaseOrderId) || undefined,
+    purchaseOrderRef: asString(purchase.purchaseOrderRef) || undefined,
+    purchaseRequisitionId: asString(purchase.purchaseRequisitionId) || undefined,
+    purchaseRequisitionRef: asString(purchase.purchaseRequisitionRef) || undefined,
+    paidOn: asString(purchase.paidOn) || undefined,
+    paymentNote: asString(purchase.paymentNote) || undefined,
+    notes: asString(purchase.notes) || undefined,
+    paymentMethod: asString(purchase.paymentMethod) || undefined,
+    paymentAmount: asNumber(purchase.paymentAmount),
+  });
+
+  const normalizeExpenseRecordLoaded = (expense: Expense): Expense => ({
+    ...expense,
+    id: asString(expense.id || expense.refNo),
+    refNo: asString(expense.refNo),
+    date: asString(expense.date),
+    category: asString(expense.category),
+    subCategory: asString(expense.subCategory),
+    location: asString(expense.location),
+    amount: asNumber(expense.amount),
+    tax: asNumber(expense.tax),
+    taxRateId: asString(expense.taxRateId) || undefined,
+    taxName: asString(expense.taxName) || undefined,
+    totalAmount: asNumber(expense.totalAmount),
+    paymentStatus: normalizeExpensePaymentStatus(expense.paymentStatus),
+    paymentDue: asNumber(expense.paymentDue),
+    expenseFor: asString(expense.expenseFor),
+    contact: asString(expense.contact),
+    paymentAccount: asString(expense.paymentAccount),
+    paymentMethod: asString(expense.paymentMethod),
+    note: asString(expense.note),
+    paidAmount: asNumber(expense.paidAmount),
+    paidOn: asString(expense.paidOn) || undefined,
+    paymentNote: asString(expense.paymentNote) || undefined,
+    addedById: asString(expense.addedById) || undefined,
+    attachmentName: asString(expense.attachmentName) || undefined,
+    addedBy: asString(expense.addedBy),
+    isRefund: Boolean(expense.isRefund),
+    isRecurring: Boolean(expense.isRecurring),
+    recurringInterval: asString(expense.recurringInterval) || undefined,
+    recurringUnit: asString(expense.recurringUnit) || undefined,
+    recurringRepetitions: asString(expense.recurringRepetitions) || undefined,
+  });
+
+  const normalizeSellReturnRecordLoaded = (record: SellReturn): SellReturn => ({
+    ...record,
+    id: asString(record.id || record.referenceNo),
+    referenceNo: asString(record.referenceNo),
+    parentSaleId: asString(record.parentSaleId),
+    parentInvoiceNo: asString(record.parentInvoiceNo),
+    date: asString(record.date),
+    customerId: asString(record.customerId),
+    customerName: asString(record.customerName),
+    location: asString(record.location),
+    discountType: record.discountType || 'None',
+    discountAmount: asNumber(record.discountAmount),
+    tax: asString(record.tax),
+    subTotal: asNumber(record.subTotal),
+    taxAmount: asNumber(record.taxAmount),
+    total: asNumber(record.total),
+    settlementMode: record.settlementMode,
+    appliedToSaleDue: asNumber(record.appliedToSaleDue),
+    creditedToAdvance: asNumber(record.creditedToAdvance),
+    autoRefundPaymentId: asString(record.autoRefundPaymentId) || undefined,
+    paymentStatus: normalizePurchasePaymentStatus(record.paymentStatus),
+    paymentDue: asNumber(record.paymentDue),
+    note: asString(record.note) || undefined,
+    items: Array.isArray(record.items) ? record.items.map((item) => normalizeSellReturnItemRecord(item)) : [],
+    addedBy: asString(record.addedBy),
+  });
+
+  const normalizePurchaseReturnRecordLoaded = (record: PurchaseReturn): PurchaseReturn => ({
+    ...record,
+    id: asString(record.id || record.referenceNo),
+    date: asString(record.date),
+    referenceNo: asString(record.referenceNo),
+    supplierId: asString(record.supplierId),
+    supplierName: asString(record.supplierName),
+    location: asString(record.location),
+    attachDocumentName: asString(record.attachDocumentName) || undefined,
+    parentPurchaseId: asString(record.parentPurchaseId) || undefined,
+    parentPurchaseRef: asString(record.parentPurchaseRef) || undefined,
+    items: Array.isArray(record.items) ? record.items.map((item) => normalizePurchaseReturnItemRecord(item)) : [],
+    purchaseTaxId: asString(record.purchaseTaxId) || undefined,
+    purchaseTaxName: asString(record.purchaseTaxName) || undefined,
+    purchaseTaxAmount: asNumber(record.purchaseTaxAmount),
+    subTotal: asNumber(record.subTotal),
+    grandTotal: asNumber(record.grandTotal),
+    paymentStatus: normalizePurchasePaymentStatus(record.paymentStatus),
+    paymentDue: asNumber(record.paymentDue),
+    addedBy: asString(record.addedBy),
+  });
+
+  const normalizeOrderRecordLoaded = (order: GlobalOrder): GlobalOrder => ({
+    ...order,
+    id: asString(order.id || order.orderNumber),
+    orderNumber: asString(order.orderNumber),
+    customerId: asString(order.customerId),
+    customerName: asString(order.customerName),
+    customerPhone: asString(order.customerPhone),
+    orderDate: asString(order.orderDate),
+    deliveryDate: asString(order.deliveryDate),
+    deliveryTimeSlot: asString(order.deliveryTimeSlot) || undefined,
+    status: normalizeOrderStatus(order.status),
+    paymentStatus: normalizeOrderPaymentStatus(order.paymentStatus),
+    orderType: normalizeOrderType(order.orderType),
+    paymentMethod: asString(order.paymentMethod) || undefined,
+    source: asString(order.source) || undefined,
+    businessLocation: asString(order.businessLocation) || undefined,
+    items: Array.isArray(order.items) ? order.items.map((item) => normalizeOrderItemRecord(item)) : [],
+    itemCount: asNumber(order.itemCount),
+    subTotal: asNumber(order.subTotal),
+    discountType: order.discountType,
+    discountAmount: asNumber(order.discountAmount),
+    taxType: asString(order.taxType),
+    taxAmount: asNumber(order.taxAmount),
+    total: asNumber(order.total),
+    driver: asString(order.driver) || undefined,
+    area: asString(order.area),
+    salesRep: asString(order.salesRep),
+    deliveryAddress: asString(order.deliveryAddress) || undefined,
+    note: asString(order.note) || undefined,
+    addedBy: asString(order.addedBy) || undefined,
+    convertedSaleId: asString(order.convertedSaleId) || undefined,
+    convertedInvoiceNo: asString(order.convertedInvoiceNo) || undefined,
+    convertedAt: asString(order.convertedAt) || undefined,
+    isApproved: Boolean(order.isApproved),
+    approvedBy: asString(order.approvedBy) || undefined,
+    approvedAt: asString(order.approvedAt) || undefined,
+    cancelledBy: asString(order.cancelledBy) || undefined,
+    cancelledAt: asString(order.cancelledAt) || undefined,
+    cancelReason: asString(order.cancelReason) || undefined,
+  });
+
+  const normalizeActivityLogRecordLoaded = (entry: ActivityLogEntry): ActivityLogEntry => ({
+    ...entry,
+    id: asString(entry.id || `${entry.date}-${entry.action}-${entry.module}`),
+    user: asString(entry.user),
+    action: asString(entry.action),
+    module: asString(entry.module),
+    description: asString(entry.description),
+    date: asString(entry.date),
+    ipAddress: asString(entry.ipAddress) || undefined,
+  });
+
+  const normalizePurchaseRequisitionRecordLoaded = (record: PurchaseRequisition): PurchaseRequisition => ({
+    ...record,
+    id: asString(record.id || record.referenceNo),
+    date: asString(record.date),
+    referenceNo: asString(record.referenceNo),
+    location: asString(record.location),
+    supplier: asString(record.supplier),
+    supplierId: asString(record.supplierId) || undefined,
+    status: normalizeText(record.status) === 'approved'
+      ? 'Approved'
+      : normalizeText(record.status) === 'ordered'
+        ? 'Ordered'
+        : 'Pending',
+    addedBy: asString(record.addedBy),
+    brand: asString(record.brand) || undefined,
+    category: asString(record.category) || undefined,
+    requiredByDate: asString(record.requiredByDate) || undefined,
+    items: Array.isArray(record.items) ? record.items.map((item) => normalizePurchaseRequisitionItemRecord(item)) : [],
+    note: asString(record.note) || undefined,
+  });
+
+  const normalizePurchaseOrderRecordLoaded = (record: PurchaseOrder): PurchaseOrder => ({
+    ...record,
+    id: asString(record.id || record.referenceNo),
+    orderDate: asString(record.orderDate),
+    referenceNo: asString(record.referenceNo),
+    supplierId: asString(record.supplierId),
+    supplierName: asString(record.supplierName),
+    supplierAddress: asString(record.supplierAddress) || undefined,
+    location: asString(record.location),
+    deliveryDate: asString(record.deliveryDate) || undefined,
+    payTermValue: asString(record.payTermValue) || undefined,
+    payTermType: record.payTermType,
+    attachDocumentName: asString(record.attachDocumentName) || undefined,
+    purchaseRequisitionId: asString(record.purchaseRequisitionId) || undefined,
+    purchaseRequisitionRef: asString(record.purchaseRequisitionRef) || undefined,
+    items: Array.isArray(record.items) ? record.items.map((item) => normalizePurchaseOrderItemRecord(item)) : [],
+    shippingDetails: asString(record.shippingDetails) || undefined,
+    shippingAddress: asString(record.shippingAddress) || undefined,
+    shippingCharges: asNumber(record.shippingCharges),
+    shippingStatus: record.shippingStatus,
+    deliveredTo: asString(record.deliveredTo) || undefined,
+    shippingDocumentName: asString(record.shippingDocumentName) || undefined,
+    additionalExpenses: asNumber(record.additionalExpenses),
+    additionalNotes: asString(record.additionalNotes) || undefined,
+    totalItems: asNumber(record.totalItems),
+    netTotalAmount: asNumber(record.netTotalAmount),
+    orderTotal: asNumber(record.orderTotal),
+    status: normalizeText(record.status) === 'sent'
+      ? 'Sent'
+      : normalizeText(record.status) === 'received'
+        ? 'Received'
+        : normalizeText(record.status) === 'partial'
+          ? 'Partial'
+          : 'Draft',
+    addedBy: asString(record.addedBy),
+  });
 
   // One-time safe migration for legacy name-only links:
   // - customers.customerGroup -> customers.customerGroupId
@@ -4200,21 +4794,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addSupplier = (supplier: Supplier) => {
-    setSuppliers(prev => [...prev, supplier]);
-    syncRecord('suppliers', supplier);
+    const normalized = normalizeSupplierRecord(supplier);
+    setSuppliers(prev => [...prev, normalized]);
+    syncRecord('suppliers', normalized);
     recordActivity({
       action: 'Created',
       module: 'Suppliers',
-      description: `Added supplier: ${supplier.businessName || supplier.name || supplier.id}`,
+      description: `Added supplier: ${normalized.businessName || normalized.name || normalized.id}`,
     });
   };
   const updateSupplier = (supplier: Supplier) => {
-    setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s));
-    syncRecord('suppliers', supplier);
+    const normalized = normalizeSupplierRecord(supplier);
+    setSuppliers(prev => prev.map(s => s.id === supplier.id ? normalized : s));
+    syncRecord('suppliers', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Suppliers',
-      description: `Updated supplier: ${supplier.businessName || supplier.name || supplier.id}`,
+      description: `Updated supplier: ${normalized.businessName || normalized.name || normalized.id}`,
     });
   };
   const deleteSupplier = (id: string) => {
@@ -4252,8 +4848,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         address: '',
         status: contact.status,
       };
-      setSuppliers(prev => [...prev.filter(row => row.id !== recordId), supplier]);
-      syncRecord('suppliers', supplier);
+      const normalizedSupplier = normalizeSupplierRecord(supplier);
+      setSuppliers(prev => [...prev.filter(row => row.id !== recordId), normalizedSupplier]);
+      syncRecord('suppliers', normalizedSupplier);
       return;
     }
 
@@ -4276,8 +4873,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       address: '',
       status: contact.status,
     };
-    setCustomers(prev => [...prev.filter(row => row.id !== recordId), customer]);
-    syncRecord('customers', customer);
+    const normalizedCustomer = normalizeCustomerRecord(customer, customerGroups);
+    setCustomers(prev => [...prev.filter(row => row.id !== recordId), normalizedCustomer]);
+    syncRecord('customers', normalizedCustomer);
   };
   const updateContact = (contact: Contact) => {
     addContact(contact);
@@ -4406,7 +5004,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addSale = (sale: Sale): boolean => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return false;
-    const saleWithSnapshot = withSaleCustomerGroupSnapshot(sale);
+    const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
     const linkedLocation = resolveLocationRecordByName(saleWithSnapshot.location);
     if (!linkedLocation || linkedLocation.isActive === false) {
       recordActivity({
@@ -4494,8 +5092,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateSale = (sale: Sale) => {
     if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Edit Sell'], 'Update sale')) return;
-    if (!canEditTransaction('Sales', String(sale.invoiceNo || sale.id || '').trim(), sale.date)) return;
-    const saleWithSnapshot = withSaleCustomerGroupSnapshot(sale);
+    const normalizedSale = normalizeSaleRecordLoaded(sale);
+    if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) return;
+    const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizedSale);
     setSales(prev => {
       const oldSale = prev.find(s => s.id === saleWithSnapshot.id);
       if (!oldSale) return prev;
@@ -5095,30 +5694,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addPurchase = (purchase: Purchase) => {
-    setPurchases(prev => [...prev, purchase]);
-    applyPurchaseEffects(purchase, 1);
-    syncRecord('purchases', purchase);
+    const normalized = normalizePurchaseRecordLoaded(purchase);
+    setPurchases(prev => [...prev, normalized]);
+    applyPurchaseEffects(normalized, 1);
+    syncRecord('purchases', normalized);
     recordActivity({
       action: 'Created',
       module: 'Purchases',
-      description: `Created purchase: ${purchase.refNo || purchase.id}`,
+      description: `Created purchase: ${normalized.refNo || normalized.id}`,
     });
   };
 
   const updatePurchase = (purchase: Purchase) => {
-    if (!canEditTransaction('Purchases', String(purchase.refNo || purchase.id || '').trim(), purchase.date)) return;
+    const normalized = normalizePurchaseRecordLoaded(purchase);
+    if (!canEditTransaction('Purchases', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
     setPurchases(prev => {
-      const existing = prev.find(item => item.id === purchase.id);
+      const existing = prev.find(item => item.id === normalized.id);
       if (!existing) return prev;
       applyPurchaseEffects(existing, -1);
-      applyPurchaseEffects(purchase, 1);
-      return prev.map(item => item.id === purchase.id ? purchase : item);
+      applyPurchaseEffects(normalized, 1);
+      return prev.map(item => item.id === normalized.id ? normalized : item);
     });
-    syncRecord('purchases', purchase);
+    syncRecord('purchases', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Purchases',
-      description: `Updated purchase: ${purchase.refNo || purchase.id}`,
+      description: `Updated purchase: ${normalized.refNo || normalized.id}`,
     });
   };
 
@@ -5146,22 +5747,24 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseRequisition = (requisition: PurchaseRequisition) => {
-    setPurchaseRequisitions(prev => [...prev, requisition]);
-    syncRecord('purchaseRequisitions', requisition);
+    const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
+    setPurchaseRequisitions(prev => [...prev, normalized]);
+    syncRecord('purchaseRequisitions', normalized);
     recordActivity({
       action: 'Created',
       module: 'Purchase Requisitions',
-      description: `Created requisition: ${requisition.referenceNo || requisition.id}`,
+      description: `Created requisition: ${normalized.referenceNo || normalized.id}`,
     });
   };
   const updatePurchaseRequisition = (requisition: PurchaseRequisition) => {
-    if (!canEditTransaction('Purchase Requisitions', String(requisition.referenceNo || requisition.id || '').trim(), requisition.date)) return;
-    setPurchaseRequisitions(prev => prev.map(item => item.id === requisition.id ? requisition : item));
-    syncRecord('purchaseRequisitions', requisition);
+    const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
+    if (!canEditTransaction('Purchase Requisitions', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
+    setPurchaseRequisitions(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    syncRecord('purchaseRequisitions', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Requisitions',
-      description: `Updated requisition: ${requisition.referenceNo || requisition.id}`,
+      description: `Updated requisition: ${normalized.referenceNo || normalized.id}`,
     });
   };
   const deletePurchaseRequisition = (id: string) => {
@@ -5185,22 +5788,24 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseOrder = (order: PurchaseOrder) => {
-    setPurchaseOrders(prev => [...prev, order]);
-    syncRecord('purchaseOrders', order);
+    const normalized = normalizePurchaseOrderRecordLoaded(order);
+    setPurchaseOrders(prev => [...prev, normalized]);
+    syncRecord('purchaseOrders', normalized);
     recordActivity({
       action: 'Created',
       module: 'Purchase Orders',
-      description: `Created order: ${order.referenceNo || order.id}`,
+      description: `Created order: ${normalized.referenceNo || normalized.id}`,
     });
   };
   const updatePurchaseOrder = (order: PurchaseOrder) => {
-    if (!canEditTransaction('Purchase Orders', String(order.referenceNo || order.id || '').trim(), order.orderDate)) return;
-    setPurchaseOrders(prev => prev.map(item => item.id === order.id ? order : item));
-    syncRecord('purchaseOrders', order);
+    const normalized = normalizePurchaseOrderRecordLoaded(order);
+    if (!canEditTransaction('Purchase Orders', String(normalized.referenceNo || normalized.id || '').trim(), normalized.orderDate)) return;
+    setPurchaseOrders(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    syncRecord('purchaseOrders', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Orders',
-      description: `Updated order: ${order.referenceNo || order.id}`,
+      description: `Updated order: ${normalized.referenceNo || normalized.id}`,
     });
   };
   const deletePurchaseOrder = (id: string) => {
@@ -5224,29 +5829,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addPurchaseReturn = (purchaseReturn: PurchaseReturn) => {
-    setPurchaseReturns(prev => [...prev, purchaseReturn]);
-    applyPurchaseReturnEffects(purchaseReturn, 1);
-    syncRecord('purchaseReturns', purchaseReturn);
+    const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
+    setPurchaseReturns(prev => [...prev, normalized]);
+    applyPurchaseReturnEffects(normalized, 1);
+    syncRecord('purchaseReturns', normalized);
     recordActivity({
       action: 'Created',
       module: 'Purchase Returns',
-      description: `Created purchase return: ${purchaseReturn.referenceNo || purchaseReturn.id}`,
+      description: `Created purchase return: ${normalized.referenceNo || normalized.id}`,
     });
   };
 
   const updatePurchaseReturn = (purchaseReturn: PurchaseReturn) => {
-    if (!canEditTransaction('Purchase Returns', String(purchaseReturn.referenceNo || purchaseReturn.id || '').trim(), purchaseReturn.date)) return;
+    const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
+    if (!canEditTransaction('Purchase Returns', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
     setPurchaseReturns(prev => {
-      const existing = prev.find(item => item.id === purchaseReturn.id);
+      const existing = prev.find(item => item.id === normalized.id);
       if (existing) applyPurchaseReturnEffects(existing, -1);
-      applyPurchaseReturnEffects(purchaseReturn, 1);
-      return prev.map(item => item.id === purchaseReturn.id ? purchaseReturn : item);
+      applyPurchaseReturnEffects(normalized, 1);
+      return prev.map(item => item.id === normalized.id ? normalized : item);
     });
-    syncRecord('purchaseReturns', purchaseReturn);
+    syncRecord('purchaseReturns', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Purchase Returns',
-      description: `Updated purchase return: ${purchaseReturn.referenceNo || purchaseReturn.id}`,
+      description: `Updated purchase return: ${normalized.referenceNo || normalized.id}`,
     });
   };
 
@@ -5270,24 +5877,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addOrder = (order: GlobalOrder) => {
-    if (order.status === 'Cancelled') {
+    const normalized = normalizeOrderRecordLoaded(order);
+    if (normalized.status === 'Cancelled') {
       recordActivity({
         action: 'Blocked',
         module: 'Orders',
-        description: `Blocked order creation for ${order.orderNumber || order.id}: orders cannot be created directly as Cancelled.`,
+        description: `Blocked order creation for ${normalized.orderNumber || normalized.id}: orders cannot be created directly as Cancelled.`,
       });
       return;
     }
-    setOrders(prev => [...prev, order]);
-    syncRecord('orders', order);
+    setOrders(prev => [...prev, normalized]);
+    syncRecord('orders', normalized);
     recordActivity({
       action: 'Created',
       module: 'Orders',
-      description: `Created order: ${order.orderNumber || order.id}`,
+      description: `Created order: ${normalized.orderNumber || normalized.id}`,
     });
   };
   const updateOrder = (order: GlobalOrder) => {
-    const existingOrder = orders.find(o => o.id === order.id);
+    const normalized = normalizeOrderRecordLoaded(order);
+    const existingOrder = orders.find(o => o.id === normalized.id);
     if (existingOrder?.status === 'Cancelled') {
       recordActivity({
         action: 'Blocked',
@@ -5297,28 +5906,28 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    const isCancellingNow = existingOrder?.status !== 'Cancelled' && order.status === 'Cancelled';
+    const isCancellingNow = existingOrder?.status !== 'Cancelled' && normalized.status === 'Cancelled';
     if (isCancellingNow) {
-      const cancelReason = String(order.cancelReason || '').trim();
-      const cancelledBy = String(order.cancelledBy || '').trim();
-      const cancelledAt = String(order.cancelledAt || '').trim();
+      const cancelReason = String(normalized.cancelReason || '').trim();
+      const cancelledBy = String(normalized.cancelledBy || '').trim();
+      const cancelledAt = String(normalized.cancelledAt || '').trim();
       if (!cancelReason || !cancelledBy || !cancelledAt) {
         recordActivity({
           action: 'Blocked',
           module: 'Orders',
-          description: `Blocked cancellation for ${order.orderNumber || order.id}: missing cancellation reason/by/at.`,
+          description: `Blocked cancellation for ${normalized.orderNumber || normalized.id}: missing cancellation reason/by/at.`,
         });
         return;
       }
     }
 
-    if (!canEditTransaction('Orders', String(order.orderNumber || order.id || '').trim(), order.orderDate)) return;
-    setOrders(prev => prev.map(o => o.id === order.id ? order : o));
-    syncRecord('orders', order);
+    if (!canEditTransaction('Orders', String(normalized.orderNumber || normalized.id || '').trim(), normalized.orderDate)) return;
+    setOrders(prev => prev.map(o => o.id === normalized.id ? normalized : o));
+    syncRecord('orders', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Orders',
-      description: `Updated order: ${order.orderNumber || order.id}`,
+      description: `Updated order: ${normalized.orderNumber || normalized.id}`,
     });
   };
   const deleteOrder = async (id: string): Promise<boolean> => {
@@ -5422,11 +6031,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return false;
     }
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
-    const normalizedPayment: Payment = {
+    const normalizedPayment = normalizePaymentRecordLoaded({
       ...payment,
       method: normalizedMethod,
       account: resolveDefaultAccountFromMethod(normalizedMethod),
-    };
+    });
     let customerAllocationBySaleId = new Map<string, number>();
     let customerAppliedToInvoices = 0;
     let customerUnappliedRemainder = 0;
@@ -5611,11 +6220,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updatePayment = (payment: Payment) => {
     if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Update payment')) return;
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
-    const normalizedPayment: Payment = {
+    const normalizedPayment = normalizePaymentRecordLoaded({
       ...payment,
       method: normalizedMethod,
       account: resolveDefaultAccountFromMethod(normalizedMethod),
-    };
+    });
     const existing = payments.find(p => p.id === normalizedPayment.id);
     if (!existing) {
       addPayment(normalizedPayment);
@@ -5835,22 +6444,24 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addExpense = (expense: Expense) => {
-    setExpenses(prev => [...prev, expense]);
-    syncRecord('expenses', expense);
+    const normalized = normalizeExpenseRecordLoaded(expense);
+    setExpenses(prev => [...prev, normalized]);
+    syncRecord('expenses', normalized);
     recordActivity({
       action: 'Created',
       module: 'Expenses',
-      description: `Added expense: ${expense.refNo || expense.id}`,
+      description: `Added expense: ${normalized.refNo || normalized.id}`,
     });
   };
   const updateExpense = (expense: Expense) => {
-    if (!canEditTransaction('Expenses', String(expense.refNo || expense.id || '').trim(), expense.date)) return;
-    setExpenses(prev => prev.map(e => e.id === expense.id ? expense : e));
-    syncRecord('expenses', expense);
+    const normalized = normalizeExpenseRecordLoaded(expense);
+    if (!canEditTransaction('Expenses', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
+    setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+    syncRecord('expenses', normalized);
     recordActivity({
       action: 'Updated',
       module: 'Expenses',
-      description: `Updated expense: ${expense.refNo || expense.id}`,
+      description: `Updated expense: ${normalized.refNo || normalized.id}`,
     });
   };
   const deleteExpense = (id: string) => {
