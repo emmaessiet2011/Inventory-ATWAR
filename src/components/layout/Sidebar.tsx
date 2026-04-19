@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Users, Package, ShoppingCart,
   CreditCard, Truck, RefreshCw, Settings,
@@ -31,7 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { settings, currentUser, roles, syncStatus } = useGlobalContext();
   const dbSyncEnabled = isCoreSyncEnabled();
-  const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+  const [expandedMenu, setExpandedMenu] = useState<string | null>(null);
 
   const currentRoleRecord = roles.find(r => r.name === currentUser?.role);
   const rolePermissions = currentRoleRecord?.permissions || [];
@@ -48,11 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
 
   const toggleMenu = (title: string) => {
-    setExpandedMenus(prev => 
-      prev.includes(title) 
-        ? prev.filter(t => t !== title)
-        : [...prev, title]
-    );
+    setExpandedMenu(prev => (prev === title ? null : title));
   };
 
   const handleNavigate = (path: string) => {
@@ -548,6 +544,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       return true;
     });
 
+  useEffect(() => {
+    const activeParent = menuItems.find(
+      (item) => item.subItems?.some((sub) => sub.path === currentPage),
+    );
+    if (!activeParent) return;
+    setExpandedMenu(activeParent.title);
+  }, [currentPage]);
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -623,7 +627,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     onClick={() => (isCollapsed && !isMobileOpen) ? onToggleCollapse() : toggleMenu(item.title)}
                     className={`w-full flex items-center justify-between px-3 py-3 rounded-xl transition-all duration-200 group relative ${
-                      isActiveParent || expandedMenus.includes(item.title)
+                      isActiveParent || expandedMenu === item.title
                         ? 'text-white' 
                         : 'text-slate-400 hover:text-white hover:bg-slate-900'
                     }`}
@@ -640,7 +644,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     {(!isCollapsed || isMobileOpen) && (
                       <ChevronDown 
                           size={14} 
-                          className={`transition-transform duration-300 text-slate-500 ${expandedMenus.includes(item.title) ? 'rotate-180 text-white' : ''}`} 
+                          className={`transition-transform duration-300 text-slate-500 ${expandedMenu === item.title ? 'rotate-180 text-white' : ''}`} 
                       />
                     )}
                     
@@ -652,7 +656,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   {(!isCollapsed || isMobileOpen) && (
                     <div className={`
                         transition-all duration-300 ease-in-out overflow-hidden
-                        ${expandedMenus.includes(item.title) ? 'max-h-[800px] opacity-100 mt-1' : 'max-h-0 opacity-0'}
+                        ${expandedMenu === item.title ? 'max-h-[800px] opacity-100 mt-1' : 'max-h-0 opacity-0'}
                     `}>
                       <div className="relative pl-4 ml-3.5 border-l border-slate-800 space-y-0.5 pb-2">
                           {item.subItems.map((sub) => (
