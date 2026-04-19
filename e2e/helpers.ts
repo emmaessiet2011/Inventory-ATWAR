@@ -1,10 +1,30 @@
 import { expect, Page } from '@playwright/test';
 
 const E2E_SESSION_KEY = 'atwar_secure_session_user_v1';
+const E2E_AUTH_TOKEN_KEY = 'atwar_auth_token';
+
+const buildE2EFallbackJwt = (): string => {
+  const encode = (value: Record<string, unknown>): string =>
+    Buffer
+      .from(JSON.stringify(value), 'utf8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+
+  const header = encode({ alg: 'HS256', typ: 'JWT' });
+  const payload = encode({
+    sub: 'USR-E2E-ADMIN',
+    role: 'Admin',
+    exp: Math.floor(Date.now() / 1000) + 60 * 60,
+  });
+  return `${header}.${payload}.e2e-signature`;
+};
 
 const seedFallbackSession = async (page: Page) => {
+  const fallbackToken = buildE2EFallbackJwt();
   await page.evaluate(
-    ({ sessionKey }) => {
+    ({ sessionKey, tokenKey, fallbackTokenValue }) => {
       const user = {
         id: 'USR-E2E-ADMIN',
         username: 'admin',
@@ -18,9 +38,9 @@ const seedFallbackSession = async (page: Page) => {
         enableServiceStaffPin: false,
       };
       sessionStorage.setItem(sessionKey, JSON.stringify(user));
-      localStorage.removeItem('atwar_auth_token');
+      localStorage.setItem(tokenKey, fallbackTokenValue);
     },
-    { sessionKey: E2E_SESSION_KEY },
+    { sessionKey: E2E_SESSION_KEY, tokenKey: E2E_AUTH_TOKEN_KEY, fallbackTokenValue: fallbackToken },
   );
   await page.reload();
 };
