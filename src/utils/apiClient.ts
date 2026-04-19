@@ -89,9 +89,15 @@ export async function apiFetchAll<T>(resource: string): Promise<T[]> {
   if (!res.ok) throw new Error(`apiFetchAll(${resource}): HTTP ${res.status}`);
   const json = await res.json();
   if (!Array.isArray(json.data)) return [];
-  return json.data.map((row: Record<string, unknown>) =>
-    row.meta && typeof row.meta === 'object' ? (row.meta as T) : (row as T),
-  );
+  return json.data.map((row: Record<string, unknown>) => {
+    const meta = row.meta;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+      // Merge canonical DB row + meta snapshot so partial meta payloads
+      // never drop required fields and cause runtime page crashes.
+      return ({ ...row, ...(meta as Record<string, unknown>) } as T);
+    }
+    return row as T;
+  });
 }
 
 /**

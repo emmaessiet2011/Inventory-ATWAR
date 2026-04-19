@@ -1148,7 +1148,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                             autoFocus
                                         />
                                     ) : (
-                                        <>{product.stock.toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
+                                        <>{Number(product.stock || 0).toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
                                     )}
                                 </td>}
                                 {!hiddenCols.includes('type') && <td className="px-4 py-3">

@@ -2940,7 +2940,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         // In DB sync mode, apply successful fetches even when arrays are empty
         // so stale browser cache cannot survive a refresh.
-        if (remoteProducts) setProducts(remoteProducts);
+        if (remoteProducts) {
+          const availableCategories = (remoteProductCategories as ProductCategory[] | null) ?? [];
+          const availableBrands = (remoteProductBrands as ProductBrand[] | null) ?? [];
+          setProducts(
+            (remoteProducts as Product[]).map((product) =>
+              normalizeProductRecord(product, availableCategories, availableBrands, warranties),
+            ),
+          );
+        }
         if (remoteCustomers) setCustomers(remoteCustomers);
         if (remoteSuppliers) setSuppliers(remoteSuppliers);
         if (remoteSales) setSales(remoteSales);
@@ -3083,7 +3091,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<ProductBrand>('productBrands').catch(() => null),
           apiFetchAll<ProductUnit>('productUnits').catch(() => null),
         ]);
-        if (freshProducts) setProducts(freshProducts);
+        if (freshProducts) {
+          const availableCategories = (freshProductCategories as ProductCategory[] | null) ?? [];
+          const availableBrands = (freshProductBrands as ProductBrand[] | null) ?? [];
+          setProducts(
+            (freshProducts as Product[]).map((product) =>
+              normalizeProductRecord(product, availableCategories, availableBrands, warranties),
+            ),
+          );
+        }
         if (freshSales) setSales(freshSales);
         if (freshPayments) setPayments(freshPayments);
         if (freshCustomers) setCustomers(freshCustomers);
@@ -3817,10 +3833,52 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       product.warranty,
       availableWarranties
     );
+    const normalizedTypeKey = normalizeText((product as any)?.type);
+    const normalizedType: Product['type'] =
+      normalizedTypeKey === 'variable'
+        ? 'Variable'
+        : normalizedTypeKey === 'combo'
+          ? 'Combo'
+          : 'Single';
+    const normalizedUnitPurchasePrice = Number(
+      Math.max(0, toFiniteNumber((product as any)?.unitPurchasePrice, 0)).toFixed(3),
+    );
+    const normalizedSellingPrice = Number(
+      Math.max(0, toFiniteNumber((product as any)?.sellingPrice, 0)).toFixed(3),
+    );
+    const normalizedStock = Number(
+      Math.max(0, toFiniteNumber((product as any)?.stock, 0)).toFixed(3),
+    );
+    const normalizedOpeningStockRaw = Number((product as any)?.openingStock);
+    const normalizedAlertQuantityRaw = Number((product as any)?.alertQuantity);
+    const normalizedWeightRaw = Number((product as any)?.weight);
+    const normalizedServiceTimerRaw = Number((product as any)?.serviceStaffTimer);
     const resolvedPackagingType = normalizePackagingType((product as any)?.packagingType);
     const resolvedUnitsPerPackage = normalizeUnitsPerPackage((product as any)?.unitsPerPackage);
     return {
       ...product,
+      name: String((product as any)?.name || '').trim(),
+      sku: String((product as any)?.sku || '').trim(),
+      type: normalizedType,
+      tax: String((product as any)?.tax || '--').trim() || '--',
+      businessLocation: String((product as any)?.businessLocation || '').trim(),
+      unit: String((product as any)?.unit || 'Pc(s)').trim() || 'Pc(s)',
+      image: String((product as any)?.image || ''),
+      unitPurchasePrice: normalizedUnitPurchasePrice,
+      sellingPrice: normalizedSellingPrice,
+      stock: normalizedStock,
+      openingStock: Number.isFinite(normalizedOpeningStockRaw)
+        ? Number(Math.max(0, normalizedOpeningStockRaw).toFixed(3))
+        : undefined,
+      alertQuantity: Number.isFinite(normalizedAlertQuantityRaw)
+        ? Math.max(0, Math.trunc(normalizedAlertQuantityRaw))
+        : undefined,
+      weight: Number.isFinite(normalizedWeightRaw)
+        ? Number(Math.max(0, normalizedWeightRaw).toFixed(3))
+        : undefined,
+      serviceStaffTimer: Number.isFinite(normalizedServiceTimerRaw)
+        ? Number(Math.max(0, normalizedServiceTimerRaw).toFixed(3))
+        : undefined,
       categoryId: linkedCategory.id,
       category: linkedCategory.name,
       brandId: linkedBrand.id,

@@ -347,8 +347,8 @@ const Products: React.FC = () => {
     const headers = ['Name', 'SKU', 'Type', 'Category', 'Brand', 'Unit', 'Purchase Price', 'Selling Price', 'Stock', 'Tax', 'Location'];
     const lines = rows.map(p => [
       `"${p.name}"`, `"${p.sku}"`, p.type, `"${p.category}"`, `"${p.brand}"`,
-      p.unit, p.unitPurchasePrice.toFixed(3), p.sellingPrice.toFixed(3),
-      p.stock.toFixed(3), p.tax, `"${p.businessLocation}"`,
+      p.unit, Number(p.unitPurchasePrice || 0).toFixed(3), Number(p.sellingPrice || 0).toFixed(3),
+      Number(p.stock || 0).toFixed(3), p.tax, `"${p.businessLocation}"`,
     ].join(','));
     const csv = [headers.join(','), ...lines].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -364,7 +364,7 @@ const Products: React.FC = () => {
     const headers = ['Name', 'SKU', 'Type', 'Category', 'Brand', 'Unit', 'Purchase Price', 'Selling Price', 'Stock', 'Tax', 'Location'];
     const lines = rows.map(p => [
       p.name, p.sku, p.type, p.category, p.brand, p.unit,
-      p.unitPurchasePrice.toFixed(3), p.sellingPrice.toFixed(3), p.stock.toFixed(3),
+      Number(p.unitPurchasePrice || 0).toFixed(3), Number(p.sellingPrice || 0).toFixed(3), Number(p.stock || 0).toFixed(3),
       p.tax, p.businessLocation,
     ].join('\t'));
     const tsv = [headers.join('\t'), ...lines].join('\n');
@@ -383,7 +383,7 @@ const Products: React.FC = () => {
       <tr>
         <td>${p.name}</td><td>${p.sku}</td><td>${p.type}</td><td>${p.category}</td><td>${p.brand}</td>
         <td>${p.unit}</td><td>${formatCurrency(p.unitPurchasePrice || 0)}</td><td>${formatCurrency(p.sellingPrice || 0)}</td>
-        <td>${p.stock.toFixed(3)}</td><td>${p.tax}</td><td>${p.businessLocation}</td>
+        <td>${Number(p.stock || 0).toFixed(3)}</td><td>${p.tax}</td><td>${p.businessLocation}</td>
       </tr>
     `).join('');
     const w = window.open('', '_blank', 'width=1200,height=800');
@@ -723,7 +723,7 @@ const Products: React.FC = () => {
                         else if (col.key === 'sellingPrice') cell = <span className="font-medium">{formatCurrency(product.sellingPrice)}</span>;
                         else if (col.key === 'stock') cell = (
                           <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${product.stock > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            {product.stock.toFixed(3)} {product.unit}
+                            {Number(product.stock || 0).toFixed(3)} {product.unit}
                           </span>
                         );
                         else if (col.key === 'type') cell = (
