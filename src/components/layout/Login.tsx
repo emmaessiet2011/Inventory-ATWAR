@@ -3,6 +3,7 @@ import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
+import { AUTH_REMEMBER_ME_STORAGE_KEY } from '@/utils/hardenedStorage';
 
 interface LoginProps {
   onLogin: () => void;
@@ -117,7 +118,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(() => {
     try {
-      return Boolean(localStorage.getItem(REMEMBER_IDENTIFIER_KEY));
+      return localStorage.getItem(AUTH_REMEMBER_ME_STORAGE_KEY) === '1';
     } catch {
       return false;
     }
@@ -137,8 +138,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     try {
       const persistRememberIdentifier = () => {
         try {
-          if (rememberMe && identifier) localStorage.setItem(REMEMBER_IDENTIFIER_KEY, identifier);
-          if (!rememberMe) localStorage.removeItem(REMEMBER_IDENTIFIER_KEY);
+          if (rememberMe) {
+            localStorage.setItem(AUTH_REMEMBER_ME_STORAGE_KEY, '1');
+            if (identifier) localStorage.setItem(REMEMBER_IDENTIFIER_KEY, identifier);
+          } else {
+            localStorage.removeItem(AUTH_REMEMBER_ME_STORAGE_KEY);
+            localStorage.removeItem(REMEMBER_IDENTIFIER_KEY);
+          }
         } catch {
           // ignore browser storage failures
         }
@@ -243,7 +249,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="mt-2 text-slate-500">Please enter your details to sign in.</p>
           </div>
 
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <form className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on">
             {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
                     {error}
@@ -258,6 +264,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
                   <input
                     type="text"
+                    name="username"
+                    autoComplete="username"
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
                     placeholder="manager@atwar.com or manager1"
@@ -275,6 +283,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
                   <input
                     type="password"
+                    name="password"
+                    autoComplete="current-password"
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
                     placeholder="••••••••"

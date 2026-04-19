@@ -38,6 +38,8 @@ import {
   hashPasswordSecret,
 } from '../utils/authSecurity';
 import {
+  AUTH_PERSISTENT_STORAGE_KEY,
+  AUTH_REMEMBER_ME_STORAGE_KEY,
   AUTH_SESSION_STORAGE_KEY,
   readHardenedState,
   removeLegacyKeys,
@@ -1579,6 +1581,17 @@ const ensureRequiredRoles = (input: Role[]): Role[] => {
   return additions.length > 0 ? [...normalized, ...additions] : normalized;
 };
 
+const shouldRememberAuthSession = (): boolean => {
+  try {
+    return (
+      localStorage.getItem(AUTH_REMEMBER_ME_STORAGE_KEY) === '1'
+      || Boolean(localStorage.getItem('atwar_login_identifier'))
+    );
+  } catch {
+    return false;
+  }
+};
+
 const normalizeCommissionAgentRecord = (agent: CommissionAgent): CommissionAgent => {
   const normalizedName = String(agent.name || '').trim();
   const resolvedPrefix = String(agent.prefix || '').trim();
@@ -2635,6 +2648,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ---- Auth ----
   const [currentUser, setCurrentUser] = useState<AppUser | null>(() => {
     try {
+      if (isLiveSyncEnabled() && !hasValidAuthToken()) {
+        try {
+          sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+          localStorage.removeItem(AUTH_PERSISTENT_STORAGE_KEY);
+        } catch {
+          // ignore storage failures
+        }
+        return null;
+      }
+
+      if (shouldRememberAuthSession()) {
+        const persistentUser = readHardenedState<AppUser | null>(
+          localStorage,
+          AUTH_PERSISTENT_STORAGE_KEY,
+          null,
+        );
+        if (persistentUser) return normalizeUserRecord(persistentUser);
+      }
+
       const sessionUser = readHardenedState<AppUser | null>(
         sessionStorage,
         AUTH_SESSION_STORAGE_KEY,
@@ -3406,8 +3438,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     if (currentUser) {
       writeHardenedState(sessionStorage, AUTH_SESSION_STORAGE_KEY, currentUser);
+      if (shouldRememberAuthSession()) {
+        writeHardenedState(localStorage, AUTH_PERSISTENT_STORAGE_KEY, currentUser);
+      } else {
+        localStorage.removeItem(AUTH_PERSISTENT_STORAGE_KEY);
+      }
     } else {
       sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+      localStorage.removeItem(AUTH_PERSISTENT_STORAGE_KEY);
     }
     removeLegacyKeys(localStorage, ['app_current_user']);
   }, [currentUser]);

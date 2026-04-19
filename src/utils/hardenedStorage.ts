@@ -1,6 +1,8 @@
 const ENVELOPE_VERSION = 1;
 
 export const AUTH_SESSION_STORAGE_KEY = 'atwar_secure_session_user_v1';
+export const AUTH_PERSISTENT_STORAGE_KEY = 'atwar_secure_persistent_user_v1';
+export const AUTH_REMEMBER_ME_STORAGE_KEY = 'atwar_auth_remember_me_v1';
 export const CORE_SALES_STORAGE_KEY = 'atwar_secure_sales_v1';
 export const CORE_PAYMENTS_STORAGE_KEY = 'atwar_secure_payments_v1';
 export const CORE_USERS_STORAGE_KEY = 'atwar_secure_users_v1';
