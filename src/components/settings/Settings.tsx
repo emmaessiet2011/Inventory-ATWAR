@@ -16,6 +16,7 @@ import {
 } from '@/utils/backupRestore';
 import { buildAvailableCurrencyOptions, type CurrencyOption } from '@/utils/currencyOptions';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 
 const Settings: React.FC = () => {
   const { settings: globalSettings, updateSettings, taxRates, productUnits, currentUser, roles } = useGlobalContext();
@@ -164,16 +165,22 @@ const Settings: React.FC = () => {
     }
   }, [activeTab, filteredTabs]);
 
-  const handleLogoSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        handleChange('businessLogo', reader.result);
-      }
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFileToDataUrl(file, {
+        maxWidth: 640,
+        maxHeight: 640,
+        targetMaxKB: 120,
+        quality: 0.62,
+        minQuality: 0.35,
+        format: 'image/webp',
+      });
+      handleChange('businessLogo', compressed);
+    } catch {
+      // keep UX silent here to avoid interrupting settings page flow
+    }
     event.target.value = '';
   };
 

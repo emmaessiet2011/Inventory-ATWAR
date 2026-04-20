@@ -14,6 +14,7 @@ import {
   normalizePackagingType,
   normalizeUnitsPerPackage,
 } from '@/utils/productPackaging';
+import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 import type { ProductPackagingType } from '@/utils/productPackaging';
 
 interface AddProductProps {
@@ -289,14 +290,24 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   };
 
   // ── Image upload ─────────────────────────────────────────────
-  const handleImageUpload = (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      addNotification({ title: 'Error', message: 'Image must be under 5MB.', type: 'error' });
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      addNotification({ title: 'Error', message: 'Please select a valid image file.', type: 'error' });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => setProductImage(e.target?.result as string);
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFileToDataUrl(file, {
+        maxWidth: 640,
+        maxHeight: 640,
+        targetMaxKB: 120,
+        quality: 0.62,
+        minQuality: 0.35,
+        format: 'image/webp',
+      });
+      setProductImage(compressed);
+    } catch {
+      addNotification({ title: 'Error', message: 'Unable to process this image.', type: 'error' });
+    }
   };
 
   const handleBrochureUpload = (file: File) => {
@@ -1435,7 +1446,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                 <X size={12} /> Remove Image
               </button>
             )}
-            <p className="text-[10px] text-slate-400 mt-4 text-left w-full">Max size: 5MB. Formats: JPG, PNG, WEBP.</p>
+            <p className="text-[10px] text-slate-400 mt-4 text-left w-full">Formats: JPG, PNG, WEBP. Images are auto-compressed to a very small size.</p>
           </div>
 
           {/* Organization */}

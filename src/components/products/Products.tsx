@@ -9,6 +9,7 @@ import { useGlobalContext, Product } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
+import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 import ViewProduct from './ViewProduct';
 
 const Products: React.FC = () => {
@@ -140,14 +141,24 @@ const Products: React.FC = () => {
   };
 
   // ── Image upload ─────────────────────────────────────────────
-  const handleImageUpload = (file: File) => {
-    if (file.size > 5 * 1024 * 1024) {
-      addNotification({ title: 'Error', message: 'Image must be under 5MB.', type: 'error' });
+  const handleImageUpload = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      addNotification({ title: 'Error', message: 'Please select a valid image file.', type: 'error' });
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (e) => setProductImage(e.target?.result as string);
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImageFileToDataUrl(file, {
+        maxWidth: 640,
+        maxHeight: 640,
+        targetMaxKB: 120,
+        quality: 0.62,
+        minQuality: 0.35,
+        format: 'image/webp',
+      });
+      setProductImage(compressed);
+    } catch {
+      addNotification({ title: 'Error', message: 'Unable to process this image.', type: 'error' });
+    }
   };
 
   // ── Save ─────────────────────────────────────────────────────
@@ -1005,7 +1016,7 @@ const Products: React.FC = () => {
                         <Upload size={24} />
                       </div>
                       <p className="text-sm font-bold text-slate-700">Upload Product Image</p>
-                      <p className="text-xs text-slate-400 mt-1">PNG, JPG up to 5MB · click or drag</p>
+                      <p className="text-xs text-slate-400 mt-1">PNG, JPG, WEBP · auto-compressed after upload</p>
                     </>
                   )}
                 </div>
