@@ -619,6 +619,43 @@ const normOptionalDate = (v) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 const normStatus = (v, allowed, fallback) => { const s = String(v || '').trim().toUpperCase(); return allowed.includes(s) ? s : fallback; };
+const normOptionalString = (v) => {
+  const s = String(v || '').trim();
+  return s ? s : null;
+};
+const isLookupPlaceholder = (v) => {
+  const normalized = String(v || '').trim().toLowerCase();
+  return (
+    normalized === '' ||
+    normalized === '--' ||
+    normalized === '-' ||
+    normalized === 'none' ||
+    normalized === 'n/a' ||
+    normalized === 'na' ||
+    normalized === 'null'
+  );
+};
+const resolveLookupId = async (delegate, explicitId, nameCandidates = [], nameFields = ['name']) => {
+  const id = normOptionalString(explicitId);
+  if (id) {
+    const byId = await delegate.findUnique({ where: { id }, select: { id: true } });
+    if (byId?.id) return byId.id;
+  }
+  for (const candidate of toArray(nameCandidates)) {
+    if (isLookupPlaceholder(candidate)) continue;
+    const value = String(candidate).trim();
+    const byName = await delegate.findFirst({
+      where: {
+        OR: nameFields.map((field) => ({
+          [field]: { equals: value, mode: 'insensitive' },
+        })),
+      },
+      select: { id: true },
+    });
+    if (byName?.id) return byName.id;
+  }
+  return null;
+};
 
 app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   const resource = String(req.params.resource || '').trim();
@@ -629,15 +666,30 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   try {
     switch (resource) {
       case 'products': {
+        const [categoryId, brandId, unitId, warrantyId, taxRateId] = await Promise.all([
+          resolveLookupId(prisma.productCategory, raw.categoryId, [raw.category]),
+          resolveLookupId(prisma.productBrand, raw.brandId, [raw.brand]),
+          resolveLookupId(prisma.productUnit, raw.unitId, [raw.unit], ['name', 'shortName']),
+          resolveLookupId(prisma.productWarranty, raw.warrantyId, [raw.warranty]),
+          resolveLookupId(prisma.taxRate, raw.taxRateId, [raw.tax, raw.taxName]),
+        ]);
+        const imageValue = normOptionalString(raw.image);
         const d = {
-          name: String(raw.name || `Product-${id}`),
-          sku: String(raw.sku || raw.name || id),
+          name: String(raw.name || `Product-${id}`).trim(),
+          sku: String(raw.sku || raw.name || id).trim(),
           type: normStatus(raw.type, ['SINGLE', 'VARIABLE', 'COMBO'], 'SINGLE'),
+          categoryId,
+          brandId,
+          unitId,
+          warrantyId,
+          taxRateId,
           packagingType: normStatus(raw.packagingType, ['PIECE', 'PACK', 'CARTON'], 'PIECE'),
           unitsPerPackage: toFiniteNumber(raw.unitsPerPackage, 0) > 0 ? Math.trunc(toFiniteNumber(raw.unitsPerPackage, 0)) : null,
           unitPurchasePrice: toFiniteNumber(raw.unitPurchasePrice, 0),
           sellingPrice: toFiniteNumber(raw.sellingPrice, 0),
           stock: toFiniteNumber(raw.stock, 0),
+          alertQuantity: toFiniteNumber(raw.alertQuantity, 0) > 0 ? Math.trunc(toFiniteNumber(raw.alertQuantity, 0)) : null,
+          image: imageValue,
           meta: raw,
         };
         await prisma.product.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -691,11 +743,18 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'customers': {
+        const customerGroupId = await resolveLookupId(
+          prisma.customerGroup,
+          raw.customerGroupId,
+          [raw.customerGroup],
+        );
         const d = {
           businessName: String(raw.businessName || raw.name || `Customer-${id}`),
           name: String(raw.name || raw.businessName || `Customer-${id}`),
           email: raw.email ? String(raw.email) : null,
           mobile: raw.mobile ? String(raw.mobile) : null,
+          taxNumber: normOptionalString(raw.taxNumber),
+          customerGroupId,
           status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
           creditLimit: toFiniteNumber(raw.creditLimit, 0),
           openingBalance: toFiniteNumber(raw.openingBalance, 0),
@@ -713,6 +772,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           name: String(raw.name || raw.businessName || `Supplier-${id}`),
           email: raw.email ? String(raw.email) : null,
           mobile: raw.mobile ? String(raw.mobile) : null,
+          taxNumber: normOptionalString(raw.taxNumber),
           status: normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
           openingBalance: toFiniteNumber(raw.openingBalance, 0),
           advanceBalance: toFiniteNumber(raw.advanceBalance, 0),
@@ -724,10 +784,34 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'sales': {
+        const [
+          customerId,
+          locationId,
+          taxRateId,
+          paymentAccountId,
+          addedById,
+          salesRepresentativeId,
+          deliveryPersonId,
+        ] = await Promise.all([
+          resolveLookupId(prisma.customer, raw.customerId, [raw.customerName, raw.customer, raw.contactName], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+          resolveLookupId(prisma.taxRate, raw.taxRateId, [raw.tax, raw.taxName], ['name']),
+          resolveLookupId(prisma.paymentAccount, raw.paymentAccountId || raw.accountId, [raw.account, raw.paymentAccount], ['name', 'accountNumber']),
+          resolveLookupId(prisma.appUser, raw.addedById, [raw.addedBy], ['name', 'username', 'email']),
+          resolveLookupId(prisma.salesRepresentative, raw.salesRepresentativeId || raw.salesRepId, [raw.salesRepName, raw.salesRep], ['name', 'contactNo']),
+          resolveLookupId(prisma.appUser, raw.deliveryPersonId || raw.driverId, [raw.deliveryPerson, raw.driver], ['name', 'username', 'email']),
+        ]);
         const taxAmountCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           invoiceNo: String(raw.invoiceNo || `INV-${id}`),
           date: normDate(raw.date),
+          customerId,
+          locationId,
+          taxRateId,
+          paymentAccountId,
+          addedById,
+          salesRepresentativeId,
+          deliveryPersonId,
           status: normStatus(raw.status || raw.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           shippingStatus: normStatus(raw.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
@@ -745,10 +829,22 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'payments': {
+        const [customerId, supplierId, expenseId, locationId, accountId] = await Promise.all([
+          resolveLookupId(prisma.customer, raw.customerId || raw.contactId, [raw.contactName, raw.customerName], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.supplier, raw.supplierId, [raw.contactName, raw.supplierName], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.expense, raw.expenseId, [raw.refNo, raw.referenceNo], ['refNo']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+          resolveLookupId(prisma.paymentAccount, raw.accountId || raw.paymentAccountId, [raw.account, raw.paymentAccount], ['name', 'accountNumber']),
+        ]);
         const d = {
           date: normDate(raw.date),
           contactType: normStatus(raw.contactType, ['CUSTOMER', 'SUPPLIER', 'EXPENSE'], 'CUSTOMER'),
           direction: normStatus(raw.direction || raw.type, ['RECEIVED', 'SENT'], 'RECEIVED'),
+          customerId,
+          supplierId,
+          expenseId,
+          locationId,
+          accountId,
           referenceNo: String(raw.referenceNo || raw.refNo || `PAY-${id}`),
           method: String(raw.method || raw.paymentMethod || 'Cash'),
           amount: toFiniteNumber(raw.amount, 0),
@@ -767,10 +863,16 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         const normalizedMeta = isCriticalAdmin
           ? { ...raw, email: normalizedEmail, status: 'Active', allowLogin: true }
           : raw;
+        const [roleId, locationId] = await Promise.all([
+          resolveLookupId(prisma.role, raw.roleId, [raw.role, raw.roleName], ['name']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.businessLocation, raw.location], ['name']),
+        ]);
         const updatePayload = {
           username: String(raw.username || normalizedEmail || `user-${id}`),
           name: String(raw.name || raw.username || `User-${id}`),
           email: normalizedEmail,
+          roleId,
+          locationId,
           mobile: raw.mobile ? String(raw.mobile) : null,
           status: isCriticalAdmin ? 'ACTIVE' : normStatus(raw.status, ['ACTIVE', 'INACTIVE'], 'ACTIVE'),
           commissionPercent: toFiniteNumber(raw.commissionPercent, 0),
@@ -801,6 +903,18 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           businessName: String(raw.businessName || 'ATWAR BSS'),
           currency: String(raw.currency || 'OMR'),
           currencySymbol: String(raw.currencySymbol || 'OMR'),
+          currencyPrecision: parseIntSafe(raw.currencyPrecision, 3, 0, 6),
+          quantityPrecision: parseIntSafe(raw.quantityPrecision, 3, 0, 6),
+          salesInvoicePrefix: String(raw.salesInvoicePrefix || raw.salePrefix || 'INV'),
+          purchasePrefix: String(raw.purchasePrefix || 'PO'),
+          quotationPrefix: String(raw.quotationPrefix || 'QT'),
+          paymentPrefix: String(raw.paymentPrefix || 'PAY'),
+          stockTransferPrefix: String(raw.stockTransferPrefix || 'ST'),
+          stockAdjustmentPrefix: String(raw.stockAdjustmentPrefix || 'SA'),
+          sellReturnPrefix: String(raw.sellReturnPrefix || 'CN'),
+          defaultSalePaymentMethod: String(raw.defaultSalePaymentMethod || 'Cash'),
+          defaultPurchasePaymentMethod: String(raw.defaultPurchasePaymentMethod || 'Cash'),
+          themeColor: String(raw.themeColor || 'default'),
           meta: raw,
         };
         await prisma.appSetting.upsert({ where: { id: 'SETTINGS' }, update: d, create: { id: 'SETTINGS', ...d } });
@@ -863,9 +977,21 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'expenses': {
+        const [categoryId, locationId, taxRateId, paymentAccountId, addedById] = await Promise.all([
+          resolveLookupId(prisma.expenseCategory, raw.categoryId, [raw.category], ['name']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location], ['name']),
+          resolveLookupId(prisma.taxRate, raw.taxRateId, [raw.taxName, raw.taxRate], ['name']),
+          resolveLookupId(prisma.paymentAccount, raw.paymentAccountId || raw.accountId, [raw.paymentAccount, raw.account], ['name', 'accountNumber']),
+          resolveLookupId(prisma.appUser, raw.addedById, [raw.addedBy], ['name', 'username', 'email']),
+        ]);
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `EXP-${id}`),
           date: normDate(raw.date),
+          categoryId,
+          locationId,
+          taxRateId,
+          paymentAccountId,
+          addedById,
           amount: toFiniteNumber(raw.amount, 0),
           tax: toFiniteNumber(raw.tax, 0),
           totalAmount: toFiniteNumber(raw.totalAmount ?? raw.amount, 0),
@@ -880,10 +1006,20 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'purchases': {
+        const [supplierId, locationId, taxRateId, addedById] = await Promise.all([
+          resolveLookupId(prisma.supplier, raw.supplierId, [raw.supplierName, raw.supplier], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+          resolveLookupId(prisma.taxRate, raw.taxRateId, [raw.taxName, raw.taxRate], ['name']),
+          resolveLookupId(prisma.appUser, raw.addedById, [raw.addedBy], ['name', 'username', 'email']),
+        ]);
         const purchaseTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `PUR-${id}`),
           date: normDate(raw.date),
+          supplierId,
+          locationId,
+          taxRateId,
+          addedById,
           status: normStatus(raw.status, ['RECEIVED', 'PENDING', 'ORDERED'], 'PENDING'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           subTotal: toFiniteNumber(raw.subTotal, 0),
@@ -950,10 +1086,18 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'sellReturns': {
+        const [saleId, customerId, locationId] = await Promise.all([
+          resolveLookupId(prisma.sale, raw.saleId || raw.parentSaleId, [raw.parentInvoiceNo, raw.invoiceNo], ['invoiceNo']),
+          resolveLookupId(prisma.customer, raw.customerId, [raw.customerName, raw.customer], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+        ]);
         const sellReturnTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `SR-${id}`),
           date: normDate(raw.date),
+          saleId,
+          customerId,
+          locationId,
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           subTotal: toFiniteNumber(raw.subTotal, 0),
           discountAmount: toFiniteNumber(raw.discountAmount, 0),
@@ -967,10 +1111,18 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'purchaseReturns': {
+        const [purchaseId, supplierId, locationId] = await Promise.all([
+          resolveLookupId(prisma.purchase, raw.purchaseId || raw.parentPurchaseId, [raw.parentPurchaseRef, raw.refNo], ['refNo']),
+          resolveLookupId(prisma.supplier, raw.supplierId, [raw.supplierName, raw.supplier], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+        ]);
         const purchaseReturnTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           refNo: String(raw.refNo || raw.referenceNo || `PR-${id}`),
           date: normDate(raw.date),
+          purchaseId,
+          supplierId,
+          locationId,
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           subTotal: toFiniteNumber(raw.subTotal, 0),
           discountAmount: toFiniteNumber(raw.discountAmount, 0),
@@ -984,12 +1136,24 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'orders': {
+        const [customerId, locationId, addedById, approvedById] = await Promise.all([
+          resolveLookupId(prisma.customer, raw.customerId, [raw.customerName, raw.customer], ['businessName', 'name', 'mobile']),
+          resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+          resolveLookupId(prisma.appUser, raw.addedById, [raw.addedBy], ['name', 'username', 'email']),
+          resolveLookupId(prisma.appUser, raw.approvedById, [raw.approvedBy], ['name', 'username', 'email']),
+        ]);
         const orderTaxCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           orderNumber: String(raw.orderNumber || raw.refNo || `ORD-${id}`),
           orderDate: normDate(raw.orderDate || raw.date),
+          customerId,
+          locationId,
+          addedById,
+          approvedById,
+          deliveryDate: normOptionalDate(raw.deliveryDate),
           status: normStatus(raw.status, ['PENDING', 'PROCESSING', 'READY', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
+          orderType: normStatus(raw.orderType, ['PAID', 'CREDIT'], 'CREDIT'),
           subTotal: toFiniteNumber(raw.subTotal, 0),
           taxAmount: toFiniteNumber(orderTaxCandidate, 0),
           discountAmount: toFiniteNumber(raw.discountAmount, 0),
@@ -1015,6 +1179,12 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'locations': {
+        const [invoiceSchemeId, invoiceLayoutPosId, invoiceLayoutSaleId, receiptPrinterId] = await Promise.all([
+          resolveLookupId(prisma.invoiceScheme, raw.invoiceSchemeId, [raw.invoiceScheme], ['name', 'prefix']),
+          resolveLookupId(prisma.invoiceLayout, raw.invoiceLayoutPosId, [raw.invoiceLayoutPos], ['name']),
+          resolveLookupId(prisma.invoiceLayout, raw.invoiceLayoutSaleId, [raw.invoiceLayoutSale], ['name']),
+          resolveLookupId(prisma.receiptPrinter, raw.receiptPrinterId, [raw.receiptPrinter], ['name']),
+        ]);
         const d = {
           name: String(raw.name || `Location-${id}`),
           city: raw.city ? String(raw.city) : null,
@@ -1023,6 +1193,10 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           mobile: raw.mobile ? String(raw.mobile) : null,
           email: raw.email ? String(raw.email) : null,
           isActive: raw.isActive !== false,
+          invoiceSchemeId,
+          invoiceLayoutPosId,
+          invoiceLayoutSaleId,
+          receiptPrinterId,
           meta: raw,
         };
         await prisma.location.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -1137,9 +1311,15 @@ app.put('/api/sync/field-payments/:id', requireAuth, async (req, res) => {
   const customerId = String(raw.customerId || '').trim();
   if (!customerId) return res.status(400).json({ ok: false, error: 'customerId is required' });
   try {
+    const [locationId, accountId] = await Promise.all([
+      resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+      resolveLookupId(prisma.paymentAccount, raw.accountId || raw.paymentAccountId, [raw.account, raw.paymentAccount], ['name', 'accountNumber']),
+    ]);
     const d = {
       referenceNo: String(raw.referenceNo || id),
       customerId,
+      locationId,
+      accountId,
       date: normDate(raw.date),
       amount: toFiniteNumber(raw.amount, 0),
       method: String(raw.method || 'Cash'),
@@ -1176,8 +1356,14 @@ app.put('/api/sync/payment-accounts/:id', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
   try {
+    const [locationId, typeId] = await Promise.all([
+      resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+      resolveLookupId(prisma.paymentAccountType, raw.typeId, [raw.typeName, raw.type], ['name']),
+    ]);
     const d = {
       name: String(raw.name || `Account-${id}`),
+      locationId,
+      typeId,
       accountNumber: raw.accountNumber ? String(raw.accountNumber) : null,
       balance: toFiniteNumber(raw.balance, 0),
       status: String(raw.status || 'ACTIVE').toUpperCase() === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
@@ -1212,11 +1398,17 @@ app.put('/api/sync/register-sessions/:id', requireAuth, async (req, res) => {
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
-  const locationId = String(raw.locationId || '').trim();
+  const locationId = await resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']);
   if (!locationId) return res.status(400).json({ ok: false, error: 'locationId is required' });
   try {
+    const [openedById, closedById] = await Promise.all([
+      resolveLookupId(prisma.appUser, raw.openedById, [raw.openedBy], ['name', 'username', 'email']),
+      resolveLookupId(prisma.appUser, raw.closedById, [raw.closedBy], ['name', 'username', 'email']),
+    ]);
     const d = {
       locationId,
+      openedById,
+      closedById,
       openedAt: normDate(raw.openedAt || raw.openedAt),
       closedAt: raw.closedAt ? normDate(raw.closedAt) : null,
       status: String(raw.status || 'OPEN').toUpperCase() === 'CLOSED' ? 'CLOSED' : 'OPEN',
@@ -1284,8 +1476,14 @@ app.put('/api/sync/stock-ledger/:id', requireAuth, async (req, res) => {
   const productId = String(raw.productId || '').trim();
   if (!productId) return res.status(400).json({ ok: false, error: 'productId is required' });
   try {
+    const [saleId, locationId] = await Promise.all([
+      resolveLookupId(prisma.sale, raw.saleId || raw.parentSaleId, [raw.invoiceNo, raw.ref], ['invoiceNo']),
+      resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+    ]);
     const d = {
       productId,
+      saleId,
+      locationId,
       entryType: String(raw.type || raw.entryType || 'Adjustment'),
       changeQty: toFiniteNumber(raw.change ?? raw.changeQty, 0),
       newQty: toFiniteNumber(raw.newQty, 0),
@@ -1315,7 +1513,7 @@ app.put('/api/sync/stock-adjustments/:id', requireAuth, async (req, res) => {
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
-  const locationId = String(raw.locationId || raw.location || '').trim();
+  const locationId = await resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']);
   if (!locationId) return res.status(400).json({ ok: false, error: 'locationId is required' });
   try {
     const d = {
@@ -1356,8 +1554,10 @@ app.put('/api/sync/stock-transfers/:id', requireAuth, async (req, res) => {
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
-  const locationFromId = String(raw.locationFromId || raw.locationFrom || '').trim();
-  const locationToId = String(raw.locationToId || raw.locationTo || '').trim();
+  const [locationFromId, locationToId] = await Promise.all([
+    resolveLookupId(prisma.location, raw.locationFromId, [raw.locationFrom], ['name']),
+    resolveLookupId(prisma.location, raw.locationToId, [raw.locationTo], ['name']),
+  ]);
   if (!locationFromId || !locationToId) return res.status(400).json({ ok: false, error: 'locationFromId and locationToId are required' });
   try {
     const d = {
@@ -1400,7 +1600,7 @@ app.put('/api/sync/stock-lots/:id', requireAuth, async (req, res) => {
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
   const productId = String(raw.productId || '').trim();
-  const locationId = String(raw.locationId || raw.location || '').trim();
+  const locationId = await resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']);
   if (!productId || !locationId) return res.status(400).json({ ok: false, error: 'productId and locationId are required' });
   try {
     const d = {
@@ -1549,7 +1749,36 @@ const ensureCriticalAdminAtBoot = async () => {
   }
 };
 
+const backfillProductImageColumnFromMeta = async () => {
+  try {
+    const rows = await prisma.product.findMany({
+      select: { id: true, image: true, meta: true },
+      where: { OR: [{ image: null }, { image: '' }] },
+    });
+    if (!rows.length) return;
+    const updates = [];
+    for (const row of rows) {
+      const meta = toObject(row.meta);
+      const metaImage = normOptionalString(meta.image);
+      if (!metaImage) continue;
+      updates.push(
+        prisma.product.update({
+          where: { id: row.id },
+          data: { image: metaImage },
+        }),
+      );
+    }
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
+      console.log(`[ATWAR BSS API] backfilled image column for ${updates.length} product(s) from meta`);
+    }
+  } catch (error) {
+    console.error('[ATWAR BSS API] product image backfill failed at boot', error);
+  }
+};
+
 await ensureCriticalAdminAtBoot();
+await backfillProductImageColumnFromMeta();
 
 console.log(`[ATWAR BSS API] booting with Node ${process.version} on ${host}:${port}`);
 const server = app.listen(port, host, () => {
