@@ -41,6 +41,12 @@ interface StockExpiryItem {
 
 const STATUS_OPTIONS: StockStatus[] = ['Expired', 'Expiring', 'Good'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const EXPIRY_WINDOWS = {
+  firstWarning: 90,
+  mediumWarning: 60,
+  highWarning: 30,
+  criticalWarning: 7,
+} as const;
 
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const toCsvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -393,6 +399,35 @@ const ReportStockExpiry: React.FC = () => {
     });
   }, [reportData, searchTerm, filters]);
 
+  const expirySummary = useMemo(() => {
+    const todayTimestamp = toDateOnlyTimestamp(new Date());
+    let expired = 0;
+    let dueIn90Days = 0;
+    let dueIn60Days = 0;
+    let dueIn30Days = 0;
+    let dueIn7Days = 0;
+
+    filteredData.forEach((item) => {
+      const diffDays = Math.floor((item.expiryTimestamp - todayTimestamp) / DAY_MS);
+      if (diffDays < 0) {
+        expired += 1;
+        return;
+      }
+      if (diffDays <= EXPIRY_WINDOWS.firstWarning) dueIn90Days += 1;
+      if (diffDays <= EXPIRY_WINDOWS.mediumWarning) dueIn60Days += 1;
+      if (diffDays <= EXPIRY_WINDOWS.highWarning) dueIn30Days += 1;
+      if (diffDays <= EXPIRY_WINDOWS.criticalWarning) dueIn7Days += 1;
+    });
+
+    return {
+      dueIn90Days,
+      dueIn60Days,
+      dueIn30Days,
+      dueIn7Days,
+      expired,
+    };
+  }, [filteredData]);
+
   useEffect(() => setCurrentPage(1), [searchTerm, filters, entriesPerPage]);
 
   const totalPages = Math.max(1, Math.ceil(filteredData.length / entriesPerPage));
@@ -555,6 +590,28 @@ const ReportStockExpiry: React.FC = () => {
 
       <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden flex flex-col relative">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-slate-800 to-slate-600"></div>
+        <div className="px-4 pt-4 pb-1 grid grid-cols-2 xl:grid-cols-5 gap-2 text-xs">
+          <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50">
+            <p className="text-slate-500">Due ≤ 90 days</p>
+            <p className="text-lg font-black text-slate-900">{expirySummary.dueIn90Days}</p>
+          </div>
+          <div className="border border-blue-200 rounded-lg p-2.5 bg-blue-50">
+            <p className="text-blue-700">Due ≤ 60 days</p>
+            <p className="text-lg font-black text-blue-900">{expirySummary.dueIn60Days}</p>
+          </div>
+          <div className="border border-amber-200 rounded-lg p-2.5 bg-amber-50">
+            <p className="text-amber-700">Due ≤ 30 days</p>
+            <p className="text-lg font-black text-amber-900">{expirySummary.dueIn30Days}</p>
+          </div>
+          <div className="border border-orange-200 rounded-lg p-2.5 bg-orange-50">
+            <p className="text-orange-700">Due ≤ 7 days</p>
+            <p className="text-lg font-black text-orange-900">{expirySummary.dueIn7Days}</p>
+          </div>
+          <div className="border border-rose-200 rounded-lg p-2.5 bg-rose-50">
+            <p className="text-rose-700">Expired</p>
+            <p className="text-lg font-black text-rose-900">{expirySummary.expired}</p>
+          </div>
+        </div>
         <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4 bg-white">
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-600 font-bold">Show</span>

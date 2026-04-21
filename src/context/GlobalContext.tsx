@@ -2028,7 +2028,7 @@ const defaultSettings: AppSettings = {
   enableCategories: true,
   enableSerialNumbers: false,
   enableLotNumbers: true,
-  productExpiryAction: 'Keep Selling',
+  productExpiryAction: 'Stop Selling',
   productExpiryGraceDays: '0',
   enablePriceTaxInfo: true,
   enableRacks: true,
@@ -2101,7 +2101,7 @@ const defaultSettings: AppSettings = {
   defaultUnit: '',
   enableSubCategories: true,
   // Dashboard
-  stockExpiryAlertDays: '200',
+  stockExpiryAlertDays: '60',
   // System
   defaultTableEntries: '25',
   // Sale (extended)
@@ -2345,6 +2345,13 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   merged.salesPriceIsMinimumSellingPrice = !!merged.salesPriceIsMinimumSellingPrice;
   merged.strictCashDenominationCheck = !!merged.strictCashDenominationCheck;
   merged.filterProductsByLocation = !!merged.filterProductsByLocation;
+  const expiryAction = String(merged.productExpiryAction || '').trim();
+  merged.productExpiryAction = expiryAction === 'Keep Selling' ? 'Keep Selling' : 'Stop Selling';
+  const graceDays = Number.parseInt(String(merged.productExpiryGraceDays || '0').trim(), 10);
+  merged.productExpiryGraceDays = Number.isFinite(graceDays) && graceDays >= 0 ? String(graceDays) : '0';
+  const stockExpiryAlertDays = Number.parseInt(String(merged.stockExpiryAlertDays || '60').trim(), 10);
+  const normalizedStockAlertDays = Number.isFinite(stockExpiryAlertDays) ? Math.min(365, Math.max(1, stockExpiryAlertDays)) : 60;
+  merged.stockExpiryAlertDays = String(normalizedStockAlertDays);
   return merged;
 };
 

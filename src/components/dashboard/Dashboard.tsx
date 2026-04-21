@@ -820,6 +820,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return buckets.map((bucket) => ({ ...bucket, value: Number(bucket.value.toFixed(3)) }));
   }, [scopedPurchases, agingReferenceMs]);
 
+  const mediumExpiryAlertDays = useMemo(() => {
+    const parsed = Number(settings.stockExpiryAlertDays);
+    if (!Number.isFinite(parsed)) return 60;
+    return clamp(Math.trunc(parsed), 1, 365);
+  }, [settings.stockExpiryAlertDays]);
+
   const inventoryRisk = useMemo(() => {
     const nowMs = Date.now();
     const soldWindowMs = nowMs - 90 * DAY_MS;
@@ -837,6 +843,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     let outOfStock = 0;
     let belowAlert = 0;
     let nearExpiry = 0;
+    let expiringIn90Days = 0;
+    let expiringIn30Days = 0;
+    let criticalExpiry = 0;
+    let expiredStock = 0;
     let deadStock = 0;
     const reorderCandidates: Array<{ id: string; name: string; stock: number; alert: number; suggestedQty: number }> = [];
 
@@ -851,7 +861,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       const expiryMs = toMs(product.expiryDate);
       if (Number.isFinite(expiryMs) && stock > 0) {
         const daysToExpiry = Math.ceil((expiryMs - nowMs) / DAY_MS);
-        if (daysToExpiry >= 0 && daysToExpiry <= 30) nearExpiry += 1;
+        if (daysToExpiry < 0) expiredStock += 1;
+        if (daysToExpiry >= 0 && daysToExpiry <= 90) expiringIn90Days += 1;
+        if (daysToExpiry >= 0 && daysToExpiry <= mediumExpiryAlertDays) nearExpiry += 1;
+        if (daysToExpiry >= 0 && daysToExpiry <= 30) expiringIn30Days += 1;
+        if (daysToExpiry >= 0 && daysToExpiry <= 7) criticalExpiry += 1;
       }
 
       if (stock <= alertQty) {
@@ -870,10 +884,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       outOfStock,
       belowAlert,
       nearExpiry,
+      expiringIn90Days,
+      expiringIn30Days,
+      criticalExpiry,
+      expiredStock,
       deadStock,
       reorderCandidates: reorderCandidates.slice(0, 5),
     };
-  }, [locationProducts, scopedFinalSales]);
+  }, [locationProducts, scopedFinalSales, mediumExpiryAlertDays]);
 
   const scopedOrders = useMemo(
     () =>
@@ -1163,7 +1181,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       { id: 'pending-field-payments', label: 'Field payments to confirm', count: pendingFieldPaymentsData.count, severity: 4, page: 'field-payments' },
       { id: 'overdue-invoices', label: 'Overdue invoices', count: overdueInvoices, severity: 4, page: 'sales' },
       { id: 'low-stock', label: 'Items running low on stock', count: lowStockCount, severity: 3, page: 'report-stock' },
-      { id: 'near-expiry', label: 'Items expiring soon', count: inventoryRisk.nearExpiry, severity: 3, page: 'report-stock-expiry' },
+      { id: 'expired-stock', label: 'Expired stock on hand', count: inventoryRisk.expiredStock, severity: 4, page: 'report-stock-expiry' },
+      { id: 'critical-expiry', label: 'Items expiring in 7 days', count: inventoryRisk.criticalExpiry, severity: 4, page: 'report-stock-expiry' },
+      { id: 'near-expiry', label: `Items expiring in ${mediumExpiryAlertDays} days`, count: inventoryRisk.nearExpiry, severity: 3, page: 'report-stock-expiry' },
       { id: 'pending-shipments', label: 'Deliveries not yet completed', count: pendingShipments, severity: 2, page: 'shipments' },
       { id: 'failed-shipments', label: 'Cancelled deliveries', count: failedShipments, severity: 3, page: 'shipments' },
       { id: 'expense-due', label: 'Expense bills due', count: unpaidExpenses, severity: 2, page: 'report-expense' },
@@ -1173,7 +1193,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       .filter((row) => row.count > 0)
       .sort((a, b) => b.severity - a.severity || b.count - a.count)
       .slice(0, 8);
-  }, [scopedFinalSales, finalSales, lowStockCount, inventoryRisk.nearExpiry, filteredExpenses, agingReferenceMs, pendingApprovalCount, pendingFieldPaymentsData]);
+  }, [
+    scopedFinalSales,
+    finalSales,
+    lowStockCount,
+    inventoryRisk.nearExpiry,
+    inventoryRisk.criticalExpiry,
+    inventoryRisk.expiredStock,
+    filteredExpenses,
+    agingReferenceMs,
+    pendingApprovalCount,
+    pendingFieldPaymentsData,
+    mediumExpiryAlertDays,
+  ]);
 
   const presetVisibility = useMemo(() => {
     const allVisible = {
@@ -1758,8 +1790,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
                 <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Out of Stock</p><p className="text-xl font-black text-rose-700">{inventoryRisk.outOfStock}</p></div>
                 <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Below Alert</p><p className="text-xl font-black text-amber-700">{inventoryRisk.belowAlert}</p></div>
-                <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Near Expiry</p><p className="text-xl font-black text-orange-700">{inventoryRisk.nearExpiry}</p></div>
-                <div className="border border-slate-200 rounded-lg p-3"><p className="text-xs text-slate-500">Not Sold (90 Days)</p><p className="text-xl font-black text-slate-700">{inventoryRisk.deadStock}</p></div>
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">Expiring (≤{mediumExpiryAlertDays} days)</p>
+                  <p className="text-xl font-black text-orange-700">{inventoryRisk.nearExpiry}</p>
+                  <p className="text-[10px] text-slate-500 mt-1">≤90d: {inventoryRisk.expiringIn90Days} · ≤30d: {inventoryRisk.expiringIn30Days} · ≤7d: {inventoryRisk.criticalExpiry}</p>
+                </div>
+                <div className="border border-slate-200 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">Not Sold (90 Days)</p>
+                  <p className="text-xl font-black text-slate-700">{inventoryRisk.deadStock}</p>
+                  <p className="text-[10px] text-rose-600 mt-1">Expired on hand: {inventoryRisk.expiredStock}</p>
+                </div>
               </div>
               <p className="text-xs font-bold text-slate-600 mb-2">Suggested Items to Reorder</p>
               <div className="space-y-2">
