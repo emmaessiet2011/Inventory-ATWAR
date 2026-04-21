@@ -3,7 +3,12 @@ import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
-import { AUTH_REMEMBER_ME_STORAGE_KEY } from '@/utils/hardenedStorage';
+import {
+  AUTH_PERSISTENT_STORAGE_KEY,
+  AUTH_REMEMBER_ME_STORAGE_KEY,
+  AUTH_SESSION_STORAGE_KEY,
+  writeHardenedState,
+} from '@/utils/hardenedStorage';
 
 interface LoginProps {
   onLogin: () => void;
@@ -149,6 +154,18 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           // ignore browser storage failures
         }
       };
+      const persistAuthenticatedUser = (user: any) => {
+        try {
+          writeHardenedState(sessionStorage, AUTH_SESSION_STORAGE_KEY, user);
+          if (rememberMe) {
+            writeHardenedState(localStorage, AUTH_PERSISTENT_STORAGE_KEY, user);
+          } else {
+            localStorage.removeItem(AUTH_PERSISTENT_STORAGE_KEY);
+          }
+        } catch {
+          // ignore browser storage failures
+        }
+      };
 
       // --- Production path: API login with warm-up + retry for cold starts ---
       if (liveSyncEnabled) {
@@ -160,6 +177,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         if (result.ok) {
           persistRememberIdentifier();
           localStorage.setItem('atwar_auth_token', result.token);
+          persistAuthenticatedUser(result.user);
           updateUser(result.user);
           setCurrentUser(result.user);
           onLogin();
@@ -198,6 +216,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       }
       persistRememberIdentifier();
       const updated = { ...match, lastLogin: new Date().toISOString() };
+      persistAuthenticatedUser(updated);
       updateUser(updated);
       setCurrentUser(updated);
       onLogin();

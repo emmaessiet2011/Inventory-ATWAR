@@ -1592,6 +1592,45 @@ const shouldRememberAuthSession = (): boolean => {
   }
 };
 
+const getAuthTokenPayload = (): Record<string, unknown> | null => {
+  try {
+    const token = String(localStorage.getItem('atwar_auth_token') || '').trim();
+    if (!token) return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const decoded = atob(padded);
+    const parsed = JSON.parse(decoded);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const resolveUserFromAuthToken = (users: AppUser[]): AppUser | null => {
+  const payload = getAuthTokenPayload();
+  if (!payload) return null;
+  const tokenId = String(payload.id || '').trim();
+  const tokenEmail = normalizeUserEmail(payload.email);
+  const tokenUsername = String(payload.username || '').trim().toLowerCase();
+  if (!tokenId && !tokenEmail && !tokenUsername) return null;
+
+  const matched = users.find((user) => {
+    const userId = String(user.id || '').trim();
+    const userEmail = normalizeUserEmail(user.email);
+    const userUsername = String(user.username || '').trim().toLowerCase();
+    return (
+      (tokenId && userId === tokenId)
+      || (tokenEmail && userEmail === tokenEmail)
+      || (tokenUsername && userUsername === tokenUsername)
+    );
+  });
+  return matched ? normalizeUserRecord(matched) : null;
+};
+
 const normalizeCommissionAgentRecord = (agent: CommissionAgent): CommissionAgent => {
   const normalizedName = String(agent.name || '').trim();
   const resolvedPrefix = String(agent.prefix || '').trim();
@@ -2673,6 +2712,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         null,
       );
       if (sessionUser) return normalizeUserRecord(sessionUser);
+
+      if (isLiveSyncEnabled() && hasValidAuthToken()) {
+        const tokenUser = resolveUserFromAuthToken(users);
+        if (tokenUser) return tokenUser;
+      }
     } catch {
       // ignore storage failures
     }
@@ -2703,6 +2747,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       normalizeUserEmail(normalizedCurrent.email) === normalizeUserEmail(effectiveUser.email);
     if (!sameIdentity) {
       setCurrentUser(effectiveUser);
+    }
+  }, [currentUser, users]);
+
+  useEffect(() => {
+    if (currentUser) return;
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+    const tokenUser = resolveUserFromAuthToken(users);
+    if (tokenUser && isUserLoginEnabled(tokenUser)) {
+      setCurrentUser(tokenUser);
     }
   }, [currentUser, users]);
 

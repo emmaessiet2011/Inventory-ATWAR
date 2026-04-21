@@ -99,6 +99,7 @@ import AddUser from '@/components/users/AddUser';
 import ViewUser from '@/components/users/ViewUser';
 import ViewSaleDetails from '@/components/sales/ViewSaleDetails';
 import { applyAutoHelpTitles } from '@/utils/helpHints';
+import { hasValidAuthToken } from '@/utils/apiClient';
 
 const App: React.FC = () => {
   return (
@@ -112,7 +113,7 @@ const App: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { settings, currentUser, setCurrentUser, roles, products, orders } = useGlobalContext();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!currentUser);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!currentUser || hasValidAuthToken());
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -192,7 +193,7 @@ const AppContent: React.FC = () => {
   };
 
   useEffect(() => {
-    setIsAuthenticated(!!currentUser);
+    setIsAuthenticated(!!currentUser || hasValidAuthToken());
   }, [currentUser]);
 
   // When the JWT expires the server returns 401. apiClient dispatches this
