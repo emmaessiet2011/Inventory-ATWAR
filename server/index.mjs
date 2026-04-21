@@ -673,7 +673,19 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           resolveLookupId(prisma.productWarranty, raw.warrantyId, [raw.warranty]),
           resolveLookupId(prisma.taxRate, raw.taxRateId, [raw.tax, raw.taxName]),
         ]);
-        const imageValue = normOptionalString(raw.image);
+        const rawImageCandidate =
+          raw.image ??
+          raw.imageLink ??
+          raw.imageUrl ??
+          raw.imageURL ??
+          raw.productImage ??
+          raw.productImageUrl ??
+          raw.productImageURL;
+        const imageValue = normOptionalString(rawImageCandidate);
+        const normalizedMeta = { ...raw };
+        if (imageValue) {
+          normalizedMeta.image = imageValue;
+        }
         const d = {
           name: String(raw.name || `Product-${id}`).trim(),
           sku: String(raw.sku || raw.name || id).trim(),
@@ -690,7 +702,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           stock: toFiniteNumber(raw.stock, 0),
           alertQuantity: toFiniteNumber(raw.alertQuantity, 0) > 0 ? Math.trunc(toFiniteNumber(raw.alertQuantity, 0)) : null,
           image: imageValue,
-          meta: raw,
+          meta: normalizedMeta,
         };
         await prisma.product.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
@@ -1759,12 +1771,23 @@ const backfillProductImageColumnFromMeta = async () => {
     const updates = [];
     for (const row of rows) {
       const meta = toObject(row.meta);
-      const metaImage = normOptionalString(meta.image);
+      const metaImage = normOptionalString(
+        meta.image ??
+        meta.imageLink ??
+        meta.imageUrl ??
+        meta.imageURL ??
+        meta.productImage ??
+        meta.productImageUrl ??
+        meta.productImageURL,
+      );
       if (!metaImage) continue;
       updates.push(
         prisma.product.update({
           where: { id: row.id },
-          data: { image: metaImage },
+          data: {
+            image: metaImage,
+            meta: { ...meta, image: metaImage },
+          },
         }),
       );
     }

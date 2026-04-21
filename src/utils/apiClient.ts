@@ -96,9 +96,9 @@ export async function apiFetchAll<T>(resource: string): Promise<T[]> {
   return rows.map((row) => {
     const meta = row.meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-      // Merge canonical DB row + meta snapshot so partial meta payloads
-      // never drop required fields and cause runtime page crashes.
-      return ({ ...row, ...(meta as Record<string, unknown>) } as T);
+      // Merge meta snapshot + canonical DB row so relational columns from
+      // Postgres stay authoritative while still preserving meta-only fields.
+      return ({ ...(meta as Record<string, unknown>), ...row } as T);
     }
     return row as T;
   });

@@ -3998,7 +3998,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const productMeta = ((product as any)?.meta && typeof (product as any).meta === 'object' && !Array.isArray((product as any).meta))
       ? ((product as any).meta as Record<string, unknown>)
       : {};
-    const legacyImage = typeof productMeta.image === 'string' ? productMeta.image : '';
+    const legacyImageCandidates = [
+      productMeta.image,
+      (productMeta as any).imageLink,
+      (productMeta as any).imageUrl,
+      (productMeta as any).imageURL,
+      (productMeta as any).productImage,
+      (productMeta as any).productImageUrl,
+      (productMeta as any).productImageURL,
+    ];
+    const legacyImage = legacyImageCandidates.find((value) => typeof value === 'string' && String(value).trim().length > 0);
     return {
       ...product,
       name: String((product as any)?.name || '').trim(),
@@ -4007,7 +4016,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       tax: String((product as any)?.tax || '--').trim() || '--',
       businessLocation: String((product as any)?.businessLocation || '').trim(),
       unit: String((product as any)?.unit || 'Pc(s)').trim() || 'Pc(s)',
-      image: String((product as any)?.image || legacyImage || ''),
+      image: String((product as any)?.image || legacyImage || '').trim(),
       unitPurchasePrice: normalizedUnitPurchasePrice,
       sellingPrice: normalizedSellingPrice,
       stock: normalizedStock,

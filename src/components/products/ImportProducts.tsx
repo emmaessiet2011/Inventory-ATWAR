@@ -152,7 +152,7 @@ const columns: ColumnDefinition[] = [
   { key: 'rack', name: 'Rack', required: false, instruction: 'Rack details separated by |', aliases: [] },
   { key: 'row', name: 'Row', required: false, instruction: 'Row details separated by |', aliases: [] },
   { key: 'position', name: 'Position', required: false, instruction: 'Position details separated by |', aliases: [] },
-  { key: 'image', name: 'Image', required: false, instruction: 'Image name with extension', aliases: [] },
+  { key: 'image', name: 'Image', required: false, instruction: 'Image URL or image filename with extension', aliases: ['Image Link', 'Image URL', 'Image Url', 'Product Image', 'Product Image URL', 'Product Image Url'] },
   { key: 'productDescription', name: 'Product Description', required: false, instruction: '', aliases: ['Description'] },
   { key: 'notForSelling', name: 'Not for selling', required: false, instruction: '1 = Yes, 0 = No', aliases: [] },
   { key: 'productLocations', name: 'Product locations', required: false, instruction: 'Comma separated business location names', aliases: ['Product Locations'] },
