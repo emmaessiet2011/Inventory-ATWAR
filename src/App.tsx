@@ -126,10 +126,30 @@ const AppContent: React.FC = () => {
   const [calculatorExpression, setCalculatorExpression] = useState('');
   const [calculatorResult, setCalculatorResult] = useState('');
   const [calendarDate, setCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [keepAliveFormPages, setKeepAliveFormPages] = useState<string[]>([]);
   const { notifications, unreadCount, actionCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
   const notificationRef = useRef<HTMLDivElement>(null);
   const calculatorRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
+
+  const shouldKeepFormPageAlive = (page: string): boolean => {
+    const normalized = String(page || '').trim();
+    if (!normalized || normalized === 'public-view-invoice') return false;
+    if (normalized.startsWith('add-')) return true;
+    if (normalized.startsWith('convert-order-to-invoice/')) return true;
+    if (normalized.startsWith('purchase-order/')) return true;
+    if (normalized.startsWith('purchase-return/')) return true;
+    if (
+      normalized === 'purchase-requisition' ||
+      normalized === 'purchase-order' ||
+      normalized === 'purchase-return' ||
+      normalized === 'new-payment' ||
+      normalized === 'pos'
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   // Apply theme colour to <html> data-theme attribute so index.css overrides take effect
   useEffect(() => {
@@ -293,6 +313,16 @@ const AppContent: React.FC = () => {
   const handleNavigate = (page: string) => {
     setCurrentPage(page);
   };
+
+  useEffect(() => {
+    if (!shouldKeepFormPageAlive(currentPage)) return;
+    setKeepAliveFormPages((prev) => {
+      if (prev.includes(currentPage)) return prev;
+      const next = [...prev, currentPage];
+      const MAX_KEPT_PAGES = 10;
+      return next.length > MAX_KEPT_PAGES ? next.slice(next.length - MAX_KEPT_PAGES) : next;
+    });
+  }, [currentPage]);
 
   const handleContactSelect = (contactId: string, tab?: string) => {
     if (!contactId) return;
@@ -474,8 +504,11 @@ const AppContent: React.FC = () => {
   const canViewTaxRates = hasRolePermission('Tax rate', 'View tax rate');
   const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
 
+  const currentPageValue = currentPage;
+
   // Simple page router
-  const renderPage = () => {
+  const renderPage = (pageOverride?: string) => {
+    const currentPage = pageOverride ?? currentPageValue;
     // Handle parameterized EditSale route: edit-sale/{id}
     if (currentPage.startsWith('edit-sale/')) {
         const parts = currentPage.split('/');
@@ -1031,7 +1064,7 @@ const AppContent: React.FC = () => {
   if (currentPage === 'public-view-invoice') {
      return (
         <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4 print:p-0 print:bg-white">
-           {renderPage()}
+           {renderPage(currentPage)}
         </div>
      );
   }
@@ -1039,6 +1072,13 @@ const AppContent: React.FC = () => {
   if (!isAuthenticated) {
     return <Login onLogin={() => setIsAuthenticated(true)} />;
   }
+
+  const shouldKeepCurrentPageAlive = shouldKeepFormPageAlive(currentPageValue);
+  const keepAlivePagesToRender = (
+    shouldKeepCurrentPageAlive && !keepAliveFormPages.includes(currentPageValue)
+      ? [...keepAliveFormPages, currentPageValue]
+      : keepAliveFormPages
+  );
 
   return (
     <div className="flex bg-slate-50 min-h-screen font-sans text-slate-900">
@@ -1348,7 +1388,16 @@ const AppContent: React.FC = () => {
         </header>
 
         <main>
-          {renderPage()}
+          {keepAlivePagesToRender.map((page) => (
+            <section
+              key={`keep-alive-${page}`}
+              className={page === currentPageValue ? 'block' : 'hidden'}
+              aria-hidden={page !== currentPageValue}
+            >
+              {renderPage(page)}
+            </section>
+          ))}
+          {!shouldKeepCurrentPageAlive && renderPage(currentPageValue)}
         </main>
 
         <footer className="mt-10 pt-4 border-t border-slate-200 text-center print:hidden">
