@@ -1242,14 +1242,22 @@ const ListPOS: React.FC<ListPOSProps> = ({
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeleteSale(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!pendingDeleteSale) return;
-          globalDeleteSale(pendingDeleteSale.id);
-          addNotification({
-            title: 'Sale Deleted',
-            message: `${pendingDeleteSale.invoiceNo} has been deleted.`,
-            type: 'success',
-          });
+          const deleted = await globalDeleteSale(pendingDeleteSale.id);
+          if (deleted) {
+            addNotification({
+              title: 'Sale Deleted',
+              message: `${pendingDeleteSale.invoiceNo} has been deleted.`,
+              type: 'success',
+            });
+          } else {
+            addNotification({
+              title: 'Delete failed',
+              message: `Could not delete ${pendingDeleteSale.invoiceNo} from Postgres.`,
+              type: 'error',
+            });
+          }
           setPendingDeleteSale(null);
         }}
       />

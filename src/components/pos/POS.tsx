@@ -435,7 +435,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     return true;
   };
 
-  const createSaleFromCart = (mode: CheckoutMode) => {
+  const createSaleFromCart = async (mode: CheckoutMode) => {
     if ((mode === 'draft' || mode === 'suspend') && settings.disableDraft) {
       addNotification({
         title: 'Action blocked',
@@ -551,11 +551,11 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         : undefined,
     };
 
-    const created = addSale(newSale);
+    const created = await addSale(newSale);
     if (!created) {
       addNotification({
         title: 'Invoice Not Created',
-        message: 'Selected customer/location is inactive or permission denied.',
+        message: 'Could not save this invoice to Postgres. Check customer/location status or permissions.',
         type: 'error',
       });
       return;

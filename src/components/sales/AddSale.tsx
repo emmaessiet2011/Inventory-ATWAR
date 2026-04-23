@@ -1560,7 +1560,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   };
 
   // --- Action Handlers ---
-  const handleSave = (andPrint = false) => {
+  const handleSave = async (andPrint = false) => {
       if (!location) {
           addNotification({ title: 'Error', message: 'Please select a Business Location.', type: 'error' });
           return;
@@ -1639,13 +1639,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       const newSale = buildSaleObject(existingSale);
 
       if (isEdit) {
-          updateSale(newSale);
+          const updated = await updateSale(newSale);
+          if (!updated) {
+            addNotification({
+              title: 'Invoice Not Updated',
+              message: 'Could not update this invoice in Postgres. Please check permissions and try again.',
+              type: 'error',
+            });
+            return;
+          }
       } else {
-          const created = addSale(newSale);
+          const created = await addSale(newSale);
           if (!created) {
             addNotification({
               title: 'Invoice Not Created',
-              message: 'You do not have permission to create this invoice.',
+              message: 'Could not save this invoice to Postgres. Please check permissions and try again.',
               type: 'error',
             });
             return;

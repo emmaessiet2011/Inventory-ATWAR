@@ -166,7 +166,7 @@ const Sales: React.FC<SalesProps> = ({
   const [addPaymentModalOpen, setAddPaymentModalOpen] = useState(false);
   const [viewPaymentsModalOpen, setViewPaymentsModalOpen] = useState(false);
   const [invoiceURLModalOpen, setInvoiceURLModalOpen] = useState(false);
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void | Promise<void>} | null>(null);
   
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [invoiceAutoPrintRequestId, setInvoiceAutoPrintRequestId] = useState<string | null>(null);
@@ -607,9 +607,17 @@ const Sales: React.FC<SalesProps> = ({
       isOpen: true,
       title: `Delete ${documentLabel}`,
       message: `Are you sure you want to delete ${documentLabel.toLowerCase()} ${sale?.invoiceNo}? This will restore stock for Final sales only.`,
-      onConfirm: () => {
-        globalDeleteSale(saleId);
-        addNotification({ title: `${documentLabel} Deleted`, message: `${documentLabel} ${sale?.invoiceNo} has been removed.`, type: 'success' });
+      onConfirm: async () => {
+        const deleted = await globalDeleteSale(saleId);
+        if (deleted) {
+          addNotification({ title: `${documentLabel} Deleted`, message: `${documentLabel} ${sale?.invoiceNo} has been removed.`, type: 'success' });
+        } else {
+          addNotification({
+            title: `${documentLabel} Not Deleted`,
+            message: `Could not delete ${documentLabel.toLowerCase()} ${sale?.invoiceNo} from Postgres.`,
+            type: 'error',
+          });
+        }
         setConfirmModal(null);
       },
     });

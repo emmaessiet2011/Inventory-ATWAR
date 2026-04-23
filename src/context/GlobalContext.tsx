@@ -1120,9 +1120,9 @@ interface GlobalContextType {
   // --- Sales ---
   sales: Sale[];
   setSales: React.Dispatch<React.SetStateAction<Sale[]>>;
-  addSale: (sale: Sale) => boolean;
-  updateSale: (sale: Sale) => void;
-  deleteSale: (id: string) => void;
+  addSale: (sale: Sale) => Promise<boolean>;
+  updateSale: (sale: Sale) => Promise<boolean>;
+  deleteSale: (id: string) => Promise<boolean>;
 
   // --- Sell Returns ---
   sellReturns: SellReturn[];
@@ -5113,7 +5113,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }));
   };
 
-  const addSale = (sale: Sale): boolean => {
+  const refreshSalesFromServer = async (): Promise<void> => {
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+    const freshSales = await apiFetchAll<Sale>('sales').catch(() => null);
+    if (!freshSales) return;
+    setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)));
+  };
+
+  const addSale = async (sale: Sale): Promise<boolean> => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return false;
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
     const linkedLocation = resolveLocationRecordByName(saleWithSnapshot.location);
@@ -5147,8 +5154,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
     }
-    setSales(prev => [...prev, saleWithSnapshot]);
-    syncRecord('sales', saleWithSnapshot);
+
+    const syncOutcome = await syncRecordStrict('sales', saleWithSnapshot);
+    if (!syncOutcome.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sales',
+        description: `Failed to save sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} to Postgres (${syncOutcome.status || 0}).`,
+      });
+      return false;
+    }
+
+    setSales(prev => {
+      const exists = prev.some(existing => String(existing.id || '').trim() === String(saleWithSnapshot.id || '').trim());
+      if (exists) {
+        return prev.map(existing =>
+          String(existing.id || '').trim() === String(saleWithSnapshot.id || '').trim() ? saleWithSnapshot : existing,
+        );
+      }
+      return [...prev, saleWithSnapshot];
+    });
     recordActivity({
       action: 'Created',
       module: 'Sales',
@@ -5198,14 +5223,24 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         syncRecord('payments', payRecord);
       }
     }
+    void refreshSalesFromServer();
     return true;
   };
 
-  const updateSale = (sale: Sale) => {
-    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Edit Sell'], 'Update sale')) return;
+  const updateSale = async (sale: Sale): Promise<boolean> => {
+    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Edit Sell'], 'Update sale')) return false;
     const normalizedSale = normalizeSaleRecordLoaded(sale);
-    if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) return;
+    if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) return false;
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizedSale);
+    const syncOutcome = await syncRecordStrict('sales', saleWithSnapshot);
+    if (!syncOutcome.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sales',
+        description: `Failed to update sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} in Postgres (${syncOutcome.status || 0}).`,
+      });
+      return false;
+    }
     setSales(prev => {
       const oldSale = prev.find(s => s.id === saleWithSnapshot.id);
       if (!oldSale) return prev;
@@ -5240,7 +5275,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       return prev.map(s => s.id === saleWithSnapshot.id ? saleWithSnapshot : s);
     });
-    syncRecord('sales', saleWithSnapshot);
     recordActivity({
       action: 'Updated',
       module: 'Sales',
@@ -5299,18 +5333,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setPayments(prev => prev.filter(p => p.id !== payId));
       deleteRecord('payments', payId);
     }
+    void refreshSalesFromServer();
+    return true;
   };
 
-  const deleteSale = (id: string) => {
-    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Delete Sell'], 'Delete sale')) return;
+  const deleteSale = async (id: string): Promise<boolean> => {
+    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Delete Sell'], 'Delete sale')) return false;
     const normalizedSaleId = String(id || '').trim();
     const hasLinkedSellReturn = (saleId: string) =>
       sellReturns.some(ret => String(ret.parentSaleId || '').trim() === saleId);
+    if (hasLinkedSellReturn(normalizedSaleId)) return false;
     const existingSale = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
+    const deleteOutcome = await deleteRecordStrict('sales', normalizedSaleId);
+    if (!deleteOutcome.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sales',
+        description: `Failed to delete sale ${existingSale?.invoiceNo || normalizedSaleId} from Postgres (${deleteOutcome.status || 0}).`,
+      });
+      return false;
+    }
     setSales(prev => {
       const saleToDelete = prev.find(s => String(s.id || '').trim() === normalizedSaleId);
       if (!saleToDelete) return prev.filter(s => String(s.id || '').trim() !== normalizedSaleId);
-      if (hasLinkedSellReturn(normalizedSaleId)) return prev;
 
       if (isFinalizedSale(saleToDelete)) {
         applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
@@ -5332,15 +5377,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
     // Remove the auto-generated payment record for this sale
     setPayments(prev => prev.filter(p => p.id !== `pay-${normalizedSaleId}`));
-    deleteRecord('sales', normalizedSaleId);
-    deleteRecord('payments', `pay-${normalizedSaleId}`);
-    if (!hasLinkedSellReturn(normalizedSaleId)) {
-      recordActivity({
-        action: 'Deleted',
-        module: 'Sales',
-        description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId}`,
-      });
-    }
+    void deleteRecordStrict('payments', `pay-${normalizedSaleId}`);
+    recordActivity({
+      action: 'Deleted',
+      module: 'Sales',
+      description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId}`,
+    });
+    void refreshSalesFromServer();
+    return true;
   };
 
   // ============================================================

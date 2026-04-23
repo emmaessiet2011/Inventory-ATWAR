@@ -448,7 +448,7 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
     reader.readAsText(selectedFile);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     const validSales = groupedSales.filter(group => !group.error);
     if (validSales.length === 0) {
       addNotification({ type: 'error', title: 'No Valid Invoices', message: 'Please fix the errors and try again.' });
@@ -474,7 +474,7 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
       return candidate;
     };
 
-    validSales.forEach((group) => {
+    for (const group of validSales) {
       const items: SaleItem[] = group.lines.map((line) => {
         const subtotal = round3((line.unitPrice * line.quantity) - line.itemDiscount);
         return {
@@ -523,13 +523,13 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
         addedBy: currentUser?.name || 'System',
       };
 
-      const created = addSale(sale);
+      const created = await addSale(sale);
       if (created) {
         imported += 1;
       } else {
         skipped += 1;
       }
-    });
+    }
 
     skipped += groupedSales.length - validSales.length;
     const batch: ImportBatchRecord = {

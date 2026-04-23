@@ -512,9 +512,17 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       setActiveActionId(null);
   }
 
-  const handleDeleteSaleConfirm = () => {
+  const handleDeleteSaleConfirm = async () => {
     if (!selectedSaleId) return;
-    globalDeleteSale(selectedSaleId); // restores stock + updates customer balance via GlobalContext
+    const deleted = await globalDeleteSale(selectedSaleId); // restores stock + updates customer balance via GlobalContext
+    if (!deleted) {
+      addNotification({
+        title: 'Delete failed',
+        message: 'Could not delete this sale from Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     setDeleteSaleModalOpen(false);
   };
 
