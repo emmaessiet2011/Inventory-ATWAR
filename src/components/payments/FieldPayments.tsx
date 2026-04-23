@@ -18,7 +18,11 @@ import {
   PAYMENT_ACCOUNTS_UPDATED_EVENT,
   resolveDefaultAccountFromMethod,
 } from '@/utils/paymentAccounts';
-import { fetchDedicated, syncDedicated, deleteDedicated } from '@/utils/apiClient';
+import {
+  fetchDedicated,
+  syncDedicatedStrict,
+  deleteDedicatedStrict,
+} from '@/utils/apiClient';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 
 type FieldPaymentStatus = 'Pending' | 'Approved';
@@ -198,13 +202,23 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     window.dispatchEvent(new CustomEvent(FIELD_PAYMENTS_UPDATED_EVENT, { detail: rows }));
   };
 
-  const persistRecords = (next: FieldPaymentRecord[], changedRecord?: FieldPaymentRecord, deleted?: string) => {
+  const persistRecords = async (
+    next: FieldPaymentRecord[],
+    changedRecord?: FieldPaymentRecord,
+    deleted?: string,
+  ): Promise<boolean> => {
+    if (changedRecord) {
+      const saved = await syncDedicatedStrict('/api/sync/field-payments', changedRecord.id, changedRecord);
+      if (!saved.ok) return false;
+    }
+    if (deleted) {
+      const removed = await deleteDedicatedStrict('/api/sync/field-payments', deleted);
+      if (!removed.ok) return false;
+    }
     const sorted = sortByDateDesc(next);
     setRecords(sorted);
     publishFieldPaymentCache(sorted);
-    // Sync changed/deleted record to database
-    if (changedRecord) syncDedicated('/api/sync/field-payments', changedRecord.id, changedRecord);
-    if (deleted) deleteDedicated('/api/sync/field-payments', deleted);
+    return true;
   };
 
   useEffect(() => {
@@ -285,17 +299,18 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   }, []);
 
   useEffect(() => {
-    setRecords(prev => {
+    let cancelled = false;
+    const reconcile = async () => {
       let changed = false;
-      const next = prev.map(record => {
+      const next = records.map((record) => {
         if (record.status !== 'Approved') return record;
 
         const postedById = record.postedPaymentId
-          ? payments.find(payment => payment.id === record.postedPaymentId)
+          ? payments.find((payment) => payment.id === record.postedPaymentId)
           : undefined;
         if (postedById) return record;
 
-        const fallbackLinked = payments.find(payment =>
+        const fallbackLinked = payments.find((payment) =>
           payment.contactType === 'Customer' &&
           payment.type === 'received' &&
           normalizeText(payment.referenceNo) === normalizeText(record.referenceNo) &&
@@ -307,17 +322,22 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         if (fallbackLinked) return { ...record, postedPaymentId: fallbackLinked.id };
         return { ...record, status: 'Pending', postedPaymentId: undefined, approvedBy: undefined, approvedAt: undefined };
       });
-
-      if (changed) {
-        publishFieldPaymentCache(next);
-        next.forEach((r, idx) => {
-          if (r !== prev[idx]) syncDedicated('/api/sync/field-payments', r.id, r);
-        });
-        return next;
+      if (!changed) return;
+      const changedRows = next.filter((row, index) => row !== records[index]);
+      for (const row of changedRows) {
+        const saved = await syncDedicatedStrict('/api/sync/field-payments', row.id, row);
+        if (!saved.ok || cancelled) return;
       }
-      return prev;
-    });
-  }, [payments]);
+      if (cancelled) return;
+      const sorted = sortByDateDesc(next);
+      setRecords(sorted);
+      publishFieldPaymentCache(sorted);
+    };
+    void reconcile();
+    return () => {
+      cancelled = true;
+    };
+  }, [payments, records]);
 
   const customerRebatePercent = Number(selectedCustomer?.rebatePercent || 0);
 
@@ -532,7 +552,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
   const requiresAttachment = (method: string) =>
     /bank.?transfer|cheque|check|wire|transfer/i.test(method);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const paymentAmount = Number(toFixedPrecision(amountInput || 0, currencyPrecision));
     if (!selectedCustomer || !paymentAmount || paymentAmount <= 0) {
       addNotification({ title: 'Validation Error', message: 'Select customer and enter a valid amount.', type: 'error' });
@@ -621,7 +641,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
         rebateApplied: rebateEnabled && rebateAmt > 0,
       };
-      persistRecords(records.map(record => record.id === editingId ? updated : record), updated);
+      const saved = await persistRecords(records.map(record => record.id === editingId ? updated : record), updated);
+      if (!saved) {
+        addNotification({ title: 'Save Failed', message: 'Unable to update field payment in Postgres.', type: 'error' });
+        return;
+      }
       addNotification({ title: 'Field Payment Updated', message: `${current.referenceNo} was updated.`, type: 'success' });
       addActivityLog({
         action: 'Updated',
@@ -655,7 +679,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       rebateAmount: rebateEnabled && rebateAmt > 0 ? rebateAmt : undefined,
       rebateApplied: rebateEnabled && rebateAmt > 0,
     };
-    persistRecords([newRecord, ...records], newRecord);
+    const saved = await persistRecords([newRecord, ...records], newRecord);
+    if (!saved) {
+      addNotification({ title: 'Save Failed', message: 'Unable to save field payment to Postgres.', type: 'error' });
+      return;
+    }
     addNotification({ title: 'Field Payment Added', message: `${referenceNo} created and pending approval.`, type: 'success' });
     addActivityLog({
       action: 'Created',
@@ -683,7 +711,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     const paymentId = existingGlobal?.id || record.postedPaymentId || `PAY-FIELD-${Date.now()}`;
     let paymentPosted = !!existingGlobal;
     if (!existingGlobal) {
-      paymentPosted = globalAddPayment({
+      paymentPosted = await globalAddPayment({
         id: paymentId,
         date: record.date,
         contactId: record.customerId,
@@ -718,7 +746,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     if (activeRegister && (!record.location || activeRegister.locationName === record.location)) {
-      addRegisterTransaction({
+      const registerSaved = await addRegisterTransaction({
         id: `RTX-FIELD-${Date.now()}`,
         sessionId: activeRegister.id,
         date: new Date().toISOString(),
@@ -729,6 +757,13 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         note: `Approved field payment ${record.referenceNo}`,
         addedBy: currentUser?.name || 'Admin',
       });
+      if (!registerSaved) {
+        addNotification({
+          title: 'Register Sync Failed',
+          message: 'Field payment approved, but register transaction could not be saved to Postgres.',
+          type: 'warning',
+        });
+      }
     }
 
     const approvedRecord = {
@@ -738,7 +773,11 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       approvedBy: currentUser?.name || 'Admin',
       approvedAt: toDateTimeLocalInput(new Date().toISOString()),
     };
-    persistRecords(records.map(row => row.id === record.id ? approvedRecord : row), approvedRecord);
+    const saved = await persistRecords(records.map(row => row.id === record.id ? approvedRecord : row), approvedRecord);
+    if (!saved) {
+      addNotification({ title: 'Approval Failed', message: 'Unable to finalize approval in Postgres.', type: 'error' });
+      return;
+    }
     addNotification({ title: 'Field Payment Approved', message: `${record.referenceNo} posted to payment ledger.`, type: 'success' });
     addActivityLog({
       action: 'Approved',
@@ -747,7 +786,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deletingRecord) return;
     if (!canDelete) {
       addNotification({ title: 'Access Denied', message: 'You do not have permission to delete field payments.', type: 'error' });
@@ -762,8 +801,12 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       Math.abs(Number(payment.amount || 0) - Number(deletingRecord.amount || 0)) < 0.0001
     );
     const linkedPaymentId = deletingRecord.postedPaymentId || fallbackPayment?.id || '';
-    if (linkedPaymentId) globalDeletePayment(linkedPaymentId);
-    persistRecords(records.filter(record => record.id !== deletingRecord.id), undefined, deletingRecord.id);
+    if (linkedPaymentId) await globalDeletePayment(linkedPaymentId);
+    const removed = await persistRecords(records.filter(record => record.id !== deletingRecord.id), undefined, deletingRecord.id);
+    if (!removed) {
+      addNotification({ title: 'Delete Failed', message: 'Unable to delete field payment from Postgres.', type: 'error' });
+      return;
+    }
     addNotification({ title: 'Field Payment Deleted', message: `${deletingRecord.referenceNo} was deleted.`, type: 'success' });
     addActivityLog({
       action: 'Deleted',

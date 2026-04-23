@@ -1,5 +1,5 @@
 import { Product } from '../context/GlobalContext';
-import { syncDedicated, fetchDedicated } from '@/utils/apiClient';
+import { syncDedicatedStrict, fetchDedicated } from '@/utils/apiClient';
 
 import type { StockLotAdjustment } from './stockLots';
 
@@ -154,16 +154,27 @@ export const fetchStockAdjustmentsFromDB = async (): Promise<StockAdjustmentReco
   return readStockAdjustments();
 };
 
-export const writeStockAdjustments = (rows: StockAdjustmentRecord[], changedId?: string) => {
-  stockAdjustmentsCache = parseRows(rows);
-  notify();
+export const writeStockAdjustments = async (
+  rows: StockAdjustmentRecord[],
+  changedId?: string,
+): Promise<boolean> => {
+  const normalizedRows = parseRows(rows);
   if (changedId) {
-    const record = rows.find(r => r.id === changedId);
-    if (record) syncDedicated('/api/sync/stock-adjustments', record.id, record);
+    const record = normalizedRows.find((r) => r.id === changedId);
+    if (record) {
+      const saved = await syncDedicatedStrict('/api/sync/stock-adjustments', record.id, record);
+      if (!saved.ok) return false;
+    }
   } else {
     // Bulk write: sync all records (used when deleting — sync remaining)
-    rows.forEach(r => syncDedicated('/api/sync/stock-adjustments', r.id, r));
+    for (const record of normalizedRows) {
+      const saved = await syncDedicatedStrict('/api/sync/stock-adjustments', record.id, record);
+      if (!saved.ok) return false;
+    }
   }
+  stockAdjustmentsCache = normalizedRows;
+  notify();
+  return true;
 };
 
 /**

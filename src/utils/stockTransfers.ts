@@ -1,5 +1,9 @@
 import { Product } from '../context/GlobalContext';
-import { syncDedicated, deleteDedicated, fetchDedicated } from './apiClient';
+import {
+  syncDedicatedStrict,
+  deleteDedicatedStrict,
+  fetchDedicated,
+} from './apiClient';
 
 export type StockTransferStatus = 'Pending' | 'In Transit' | 'Completed';
 
@@ -130,17 +134,30 @@ export const fetchStockTransfersFromDB = async (): Promise<StockTransferRecord[]
   return readStockTransfers();
 };
 
-export const writeStockTransfers = (rows: StockTransferRecord[], changedId?: string, deletedId?: string) => {
-  stockTransfersCache = normalizeTransferRows(rows);
-  notify(STOCK_TRANSFERS_UPDATED_EVENT);
+export const writeStockTransfers = async (
+  rows: StockTransferRecord[],
+  changedId?: string,
+  deletedId?: string,
+): Promise<boolean> => {
+  const normalizedRows = normalizeTransferRows(rows);
   if (deletedId) {
-    deleteDedicated('/api/sync/stock-transfers', deletedId);
+    const deleted = await deleteDedicatedStrict('/api/sync/stock-transfers', deletedId);
+    if (!deleted.ok) return false;
   } else if (changedId) {
-    const record = rows.find(r => r.id === changedId);
-    if (record) syncDedicated('/api/sync/stock-transfers', record.id, record);
+    const record = normalizedRows.find((r) => r.id === changedId);
+    if (record) {
+      const saved = await syncDedicatedStrict('/api/sync/stock-transfers', record.id, record);
+      if (!saved.ok) return false;
+    }
   } else {
-    rows.forEach(r => syncDedicated('/api/sync/stock-transfers', r.id, r));
+    for (const record of normalizedRows) {
+      const saved = await syncDedicatedStrict('/api/sync/stock-transfers', record.id, record);
+      if (!saved.ok) return false;
+    }
   }
+  stockTransfersCache = normalizedRows;
+  notify(STOCK_TRANSFERS_UPDATED_EVENT);
+  return true;
 };
 
 export const readStockLedger = (): StockLedgerEntry[] => {
@@ -155,12 +172,17 @@ export const fetchStockLedgerFromDB = async (): Promise<StockLedgerEntry[]> => {
   return readStockLedger();
 };
 
-export const appendStockLedgerEntries = (entries: StockLedgerEntry[]) => {
-  if (entries.length === 0) return;
-  const next = [...readStockLedger(), ...normalizeLedgerRows(entries)];
+export const appendStockLedgerEntries = async (entries: StockLedgerEntry[]): Promise<boolean> => {
+  if (entries.length === 0) return true;
+  const normalizedEntries = normalizeLedgerRows(entries);
+  for (const entry of normalizedEntries) {
+    const saved = await syncDedicatedStrict('/api/sync/stock-ledger', entry.id, entry);
+    if (!saved.ok) return false;
+  }
+  const next = [...readStockLedger(), ...normalizedEntries];
   stockLedgerCache = normalizeLedgerRows(next);
   notify(STOCK_LEDGER_UPDATED_EVENT);
-  entries.forEach((e) => syncDedicated('/api/sync/stock-ledger', e.id, e));
+  return true;
 };
 
 /**

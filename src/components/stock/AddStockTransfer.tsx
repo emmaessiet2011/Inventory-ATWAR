@@ -319,16 +319,22 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         ledgerEntries.push(...applied.ledgerEntries);
       }
 
-      setProducts(workingProducts);
-      appendStockLedgerEntries(ledgerEntries);
+      const ledgerSaved = await appendStockLedgerEntries(ledgerEntries);
+      if (!ledgerSaved) {
+        throw new Error('Unable to save stock ledger entries in Postgres.');
+      }
 
       const mergedTransfers = editingRecord
         ? allTransfers.map(row => (row.id === editingRecord.id ? nextRecord : row))
         : [nextRecord, ...allTransfers];
-      writeStockTransfers(
+      const transferSaved = await writeStockTransfers(
         mergedTransfers.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
         nextRecord.id,
       );
+      if (!transferSaved) {
+        throw new Error('Unable to save stock transfer in Postgres.');
+      }
+      setProducts(workingProducts);
 
       addNotification({
         title: editingRecord ? 'Transfer Updated' : 'Transfer Saved',

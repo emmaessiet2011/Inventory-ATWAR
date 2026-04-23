@@ -1,4 +1,8 @@
-import { syncDedicated, deleteDedicated, fetchDedicated } from './apiClient';
+import {
+  syncDedicatedStrict,
+  deleteDedicatedStrict,
+  fetchDedicated,
+} from './apiClient';
 
 export interface StockLotBalance {
   id: string;
@@ -118,19 +122,28 @@ export const fetchStockLotsFromDB = async (): Promise<StockLotBalance[]> => {
   return readStockLotBalances();
 };
 
-export const writeStockLotBalances = (rows: StockLotBalance[], prevRows?: StockLotBalance[]) => {
-  stockLotsCache = parseRows(rows);
-  notify();
-  // Sync changed/added rows
-  const prevIds = new Set((prevRows || []).map(r => r.id));
-  rows.forEach(r => syncDedicated('/api/sync/stock-lots', r.id, r));
+export const writeStockLotBalances = async (
+  rows: StockLotBalance[],
+  prevRows?: StockLotBalance[],
+): Promise<boolean> => {
+  const normalizedRows = parseRows(rows);
+  // Sync changed/added rows first
+  for (const row of normalizedRows) {
+    const saved = await syncDedicatedStrict('/api/sync/stock-lots', row.id, row);
+    if (!saved.ok) return false;
+  }
   // Delete rows that were removed
   if (prevRows) {
-    const nextIds = new Set(rows.map(r => r.id));
-    prevRows.forEach(r => { if (!nextIds.has(r.id)) deleteDedicated('/api/sync/stock-lots', r.id); });
+    const nextIds = new Set(normalizedRows.map((row) => row.id));
+    for (const previous of prevRows) {
+      if (nextIds.has(previous.id)) continue;
+      const deleted = await deleteDedicatedStrict('/api/sync/stock-lots', previous.id);
+      if (!deleted.ok) return false;
+    }
   }
-  // Suppress unused variable lint warning
-  void prevIds;
+  stockLotsCache = normalizedRows;
+  notify();
+  return true;
 };
 
 /**
@@ -148,8 +161,10 @@ const compareExpiryAsc = (left: string, right: string): number => {
   return left.localeCompare(right);
 };
 
-export const applyStockLotAdjustments = (adjustments: StockLotAdjustment[]) => {
-  if (!Array.isArray(adjustments) || adjustments.length === 0) return;
+export const applyStockLotAdjustments = async (
+  adjustments: StockLotAdjustment[],
+): Promise<boolean> => {
+  if (!Array.isArray(adjustments) || adjustments.length === 0) return true;
 
   const existing = readStockLotBalances();
   const map = new Map<string, StockLotBalance>();
@@ -228,5 +243,5 @@ export const applyStockLotAdjustments = (adjustments: StockLotAdjustment[]) => {
       if (byExpiry !== 0) return byExpiry;
       return normalize(a.lotNumber).localeCompare(normalize(b.lotNumber));
     });
-  writeStockLotBalances(nextRows, existing);
+  return writeStockLotBalances(nextRows, existing);
 };

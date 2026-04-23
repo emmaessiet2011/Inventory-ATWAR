@@ -599,7 +599,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     }
 
     if (registerSession) {
-      addRegisterTransaction({
+      const registerSaved = await addRegisterTransaction({
         id: `RTX-POS-${Date.now()}`,
         sessionId: registerSession.id,
         date: new Date().toISOString(),
@@ -617,6 +617,13 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         note: `POS ${mode} transaction`,
         addedBy: currentUser?.name || 'Admin',
       });
+      if (!registerSaved) {
+        addNotification({
+          title: 'Register Sync Failed',
+          message: 'Sale was saved, but register transaction could not be saved to Postgres.',
+          type: 'warning',
+        });
+      }
     }
 
     const actionLabel =
@@ -704,7 +711,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       return;
     }
 
-    const closed = closeRegisterSession(
+    const closed = await closeRegisterSession(
       registerSession.id,
       currentUser?.name || 'Admin',
       Number(parsed.toFixed(3))
@@ -717,7 +724,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       });
       return;
     }
-    addRegisterTransaction({
+    await addRegisterTransaction({
       id: `RTX-CLOSE-${Date.now()}`,
       sessionId: registerSession.id,
       date: new Date().toISOString(),

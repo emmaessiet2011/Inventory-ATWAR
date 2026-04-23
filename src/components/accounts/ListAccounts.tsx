@@ -18,7 +18,12 @@ import {
 } from '@/utils/paymentAccounts';
 import { paymentLocationCandidates } from '@/utils/accountingSnapshot';
 import { buildPaginationItems } from '@/utils/pagination';
-import { apiFetchAll, fetchDedicated, syncDedicated, deleteDedicated } from '@/utils/apiClient';
+import {
+  apiFetchAll,
+  fetchDedicated,
+  syncDedicatedStrict,
+  deleteDedicatedStrict,
+} from '@/utils/apiClient';
 
 interface ListAccountsProps {
   onNavigate?: (page: string) => void;
@@ -176,7 +181,6 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
 
   useEffect(() => {
     setStoredPaymentAccountTypes(accountTypes);
-    void pushPaymentAccountTypesToDB(accountTypes);
     dispatchPaymentAccountsUpdated();
   }, [accountTypes]);
 
@@ -331,7 +335,7 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     setActiveDropdown(null);
   };
 
-  const handleSaveAccount = () => {
+  const handleSaveAccount = async () => {
     if (!canEditAccountTransactions) {
       addNotification({
         title: 'Access Denied',
@@ -371,12 +375,19 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     }
 
     if (editingId) {
-      setCustomAccounts(prev => prev.map(a => {
-        if (a.id !== editingId) return a;
-        const updated = { ...a, ...form, name };
-        syncDedicated('/api/sync/payment-accounts', editingId, updated);
-        return updated;
-      }));
+      const existing = customAccounts.find((a) => a.id === editingId);
+      if (!existing) return;
+      const updated = { ...existing, ...form, name };
+      const saved = await syncDedicatedStrict('/api/sync/payment-accounts', editingId, updated);
+      if (!saved.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: 'Unable to update payment account in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
+      setCustomAccounts(prev => prev.map(a => (a.id === editingId ? updated : a)));
       addNotification({
         title: 'Account Updated',
         message: `${name} has been updated successfully.`,
@@ -391,8 +402,16 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
         balance: 0,
         addedBy: currentUser?.name || 'Admin',
       };
+      const saved = await syncDedicatedStrict('/api/sync/payment-accounts', newId, newAccount);
+      if (!saved.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: 'Unable to create payment account in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       setCustomAccounts(prev => [...prev, newAccount]);
-      syncDedicated('/api/sync/payment-accounts', newId, newAccount);
       addNotification({
         title: 'Account Added',
         message: `${name} has been created successfully.`,
@@ -466,7 +485,7 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     setActiveDropdown(null);
   };
 
-  const handleDeleteConfirmed = () => {
+  const handleDeleteConfirmed = async () => {
     if (!pendingDeleteId) return;
     const account = customAccounts.find(a => a.id === pendingDeleteId);
     if (!account) {
@@ -485,8 +504,16 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
       return;
     }
 
+    const deleted = await deleteDedicatedStrict('/api/sync/payment-accounts', pendingDeleteId);
+    if (!deleted.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: `Unable to delete "${account.name}" from Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     setCustomAccounts(prev => prev.filter(acc => acc.id !== pendingDeleteId));
-    deleteDedicated('/api/sync/payment-accounts', pendingDeleteId);
     setPendingDeleteId(null);
     addNotification({
       title: 'Account Deleted',
@@ -495,7 +522,7 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
     });
   };
 
-  const handleSaveType = () => {
+  const handleSaveType = async () => {
     const cleaned = newType.trim();
     if (!cleaned) {
       addNotification({
@@ -513,7 +540,9 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
       });
       return;
     }
-    setAccountTypes(prev => [...prev, cleaned]);
+    const nextTypes = [...accountTypes, cleaned];
+    await pushPaymentAccountTypesToDB(nextTypes);
+    setAccountTypes(nextTypes);
     setNewType('');
     setIsAddTypeModalOpen(false);
     addNotification({

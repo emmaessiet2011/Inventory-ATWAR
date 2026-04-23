@@ -74,8 +74,15 @@ export const isLiveSyncEnabled = (): boolean => {
   return true;
 };
 
-const isTestRuntime = (): boolean =>
-  String(import.meta.env.MODE || '').trim().toLowerCase() === 'test';
+const isTestRuntime = (): boolean => {
+  const mode = String(import.meta.env.MODE || '').trim().toLowerCase();
+  if (mode === 'test') return true;
+  const globalProcess = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
+  const nodeEnv = String(globalProcess?.env?.NODE_ENV || '').trim().toLowerCase();
+  if (nodeEnv === 'test') return true;
+  const vitestFlag = String(globalProcess?.env?.VITEST || '').trim().toLowerCase();
+  return vitestFlag === 'true' || vitestFlag === '1';
+};
 
 /**
  * Fetch ALL records for a resource (no pagination).
@@ -191,6 +198,10 @@ export async function syncRecordStrict(
     if (res.status === 401) {
       handle401();
       return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (res.status === 404) {
+      // Idempotent delete: already absent server-side.
+      return { ok: true, status: 404 };
     }
     if (!res.ok) {
       let detail = '';
@@ -350,6 +361,94 @@ export function deleteDedicated(path: string, id: string): void {
     .catch(() => {});
 }
 
+/** Awaited upsert to a dedicated endpoint like /api/sync/field-payments/:id */
+export async function syncDedicatedStrict(
+  path: string,
+  id: string,
+  data: object,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200 };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  try {
+    const res = await fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      console.error(`[syncDedicatedStrict] ${path}:${id} failed (${res.status})`, detail || data);
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+/** Awaited delete to a dedicated endpoint like /api/sync/field-payments/:id */
+export async function deleteDedicatedStrict(
+  path: string,
+  id: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200 };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  try {
+    const res = await fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (res.status === 404) {
+      // Idempotent delete: already absent server-side.
+      return { ok: true, status: 404 };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      console.error(`[deleteDedicatedStrict] ${path}:${id} failed (${res.status})`, detail);
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
 /**
  * Fire-and-forget atomic stock increment/decrement.
  * Uses POST /api/sync/stock-delta so the server applies the change with
@@ -371,4 +470,51 @@ export function syncStockDelta(productId: string, delta: number): void {
   )
     .then(res => { if (res.status === 401) handle401(); })
     .catch(() => {});
+}
+
+/** Awaited atomic stock increment/decrement. */
+export async function syncStockDeltaStrict(
+  productId: string,
+  delta: number,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200 };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  if (!delta) {
+    return { ok: true, status: 200 };
+  }
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/sync/stock-delta`,
+      {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ productId, delta }),
+      },
+    );
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
 }

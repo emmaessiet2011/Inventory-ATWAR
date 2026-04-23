@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
+import { syncRecordStrict } from '@/utils/apiClient';
 
 interface ExpenseCategoriesProps {
   canAdd?: boolean;
@@ -31,6 +32,7 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
   const {
     expenseCategories,
     expenses,
+    payments,
     setExpenses,
     setPayments,
     addExpenseCategory,
@@ -85,30 +87,42 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
     setIsAddModalOpen(true);
   };
 
-  const propagateExpenseCategoryName = (fromName: string, toName: string) => {
+  const propagateExpenseCategoryName = async (fromName: string, toName: string) => {
     if (!fromName || !toName || normalize(fromName) === normalize(toName)) return 0;
-    const affectedExpenseIds = expenses
-      .filter((expense) => normalize(expense.category) === normalize(fromName))
-      .map((expense) => expense.id);
-    if (affectedExpenseIds.length === 0) return 0;
+    const affectedExpenses = expenses.filter((expense) => normalize(expense.category) === normalize(fromName));
+    if (affectedExpenses.length === 0) return 0;
 
-    setExpenses((prev) => prev.map((expense) => (
-      normalize(expense.category) === normalize(fromName)
-        ? { ...expense, category: toName }
-        : expense
-    )));
+    const persistedExpensesById = new Map<string, typeof affectedExpenses[number]>();
+    for (const expense of affectedExpenses) {
+      const updatedExpense = { ...expense, category: toName };
+      const saved = await syncRecordStrict('expenses', updatedExpense);
+      if (!saved.ok) continue;
+      persistedExpensesById.set(updatedExpense.id, updatedExpense);
+    }
+    if (persistedExpensesById.size > 0) {
+      setExpenses((prev) => prev.map((expense) => persistedExpensesById.get(expense.id) || expense));
+    }
 
-    const affectedIds = new Set(affectedExpenseIds);
-    setPayments((prev) => prev.map((payment) => {
-      if (payment.contactType !== 'Expense') return payment;
-      if (!affectedIds.has(payment.expenseId || payment.contactId)) return payment;
-      return { ...payment, contactName: toName };
-    }));
+    const affectedIds = new Set(Array.from(persistedExpensesById.keys()));
+    const affectedPayments = payments.filter((payment) =>
+      payment.contactType === 'Expense' &&
+      affectedIds.has(payment.expenseId || payment.contactId),
+    );
+    const persistedPaymentsById = new Map<string, typeof affectedPayments[number]>();
+    for (const payment of affectedPayments) {
+      const updatedPayment = { ...payment, contactName: toName };
+      const saved = await syncRecordStrict('payments', updatedPayment);
+      if (!saved.ok) continue;
+      persistedPaymentsById.set(updatedPayment.id, updatedPayment);
+    }
+    if (persistedPaymentsById.size > 0) {
+      setPayments((prev) => prev.map((payment) => persistedPaymentsById.get(payment.id) || payment));
+    }
 
-    return affectedExpenseIds.length;
+    return persistedExpensesById.size;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
     const trimmedCode = formData.code.trim();
     const trimmedDescription = formData.description.trim();
@@ -137,7 +151,7 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
       });
 
       const propagatedCount = existing
-        ? propagateExpenseCategoryName(existing.name, trimmedName)
+        ? await propagateExpenseCategoryName(existing.name, trimmedName)
         : 0;
       addNotification({
         title: 'Category Updated',
@@ -162,7 +176,7 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
     setIsAddModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canDelete) {
       addNotification({ title: 'Access Denied', message: 'You do not have permission to delete expense categories.', type: 'error' });
       return;
@@ -181,7 +195,15 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
         });
         return;
       }
-      const movedCount = propagateExpenseCategoryName(category.name, target.name);
+      const movedCount = await propagateExpenseCategoryName(category.name, target.name);
+      if (movedCount < inUseCount) {
+        addNotification({
+          title: 'Delete Blocked',
+          message: `Only ${movedCount}/${inUseCount} expense record(s) could be moved to Postgres. Fix connection and retry.`,
+          type: 'error',
+        });
+        return;
+      }
       deleteExpenseCategory(id);
       setConfirmDeleteId(null);
       setReassignCategoryId('');

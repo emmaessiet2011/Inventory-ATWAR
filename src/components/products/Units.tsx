@@ -9,6 +9,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import type { ProductUnit } from '@/context/GlobalContext';
 import { buildPaginationItems } from '@/utils/pagination';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import { syncRecordStrict } from '@/utils/apiClient';
 
 const normalizeText = (value: string) => value.replace(/\s+/g, ' ').trim();
 const escapeHtml = (value: string) =>
@@ -179,7 +180,7 @@ const Units: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const nextName = normalizeText(formData.name);
     const nextShortName = normalizeText(formData.shortName);
     if (!nextName || !nextShortName) {
@@ -208,13 +209,20 @@ const Units: React.FC = () => {
       updateProductUnit(updatedUnit);
 
       // Keep product unit values aligned when unit label/short name changes.
-      setProducts(prev => prev.map(product => {
+      const affectedProducts = products.filter((product) => {
         const productUnitKey = normalizeText(product.unit || '').toLowerCase();
-        if (productUnitKey === prevShortKey || productUnitKey === prevNameKey) {
-          return { ...product, unit: updatedUnit.shortName };
-        }
-        return product;
-      }));
+        return productUnitKey === prevShortKey || productUnitKey === prevNameKey;
+      });
+      const persistedProducts = new Map<string, typeof affectedProducts[number]>();
+      for (const product of affectedProducts) {
+        const updatedProduct = { ...product, unit: updatedUnit.shortName };
+        const saved = await syncRecordStrict('products', updatedProduct);
+        if (!saved.ok) continue;
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
 
       const defaultUnitKey = normalizeText(settings.defaultUnit || '').toLowerCase();
       if (defaultUnitKey === prevShortKey || defaultUnitKey === prevNameKey) {

@@ -391,18 +391,18 @@ const AddExpense: React.FC<AddExpenseProps> = ({
       updateExpense(expense);
       if (expensePaymentAmount > 0) {
         if (linkedPayment) {
-          updatePayment(expensePayment);
+          await updatePayment(expensePayment);
         } else {
-          addPayment(expensePayment);
+          await addPayment(expensePayment);
         }
       } else if (linkedPayment) {
-        deletePayment(linkedPayment.id);
+        await deletePayment(linkedPayment.id);
       }
       addNotification({ title: 'Expense Updated', message: `Expense ${expense.refNo} has been updated.`, type: 'success' });
     } else {
       addExpense(expense);
       if (expensePaymentAmount > 0) {
-        addPayment(expensePayment);
+        await addPayment(expensePayment);
       }
 
       // Generate recurring instances (skip the first which was just saved above)
@@ -450,7 +450,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
       const expenseLocation = normalize(expense.location);
       const registerLocation = normalize(activeRegister?.locationName);
       if (activeRegister && (!expenseLocation || expenseLocation === registerLocation)) {
-        addRegisterTransaction({
+        const registerSaved = await addRegisterTransaction({
           id: registerTxId,
           sessionId: activeRegister.id,
           date: expensePayment.date,
@@ -463,9 +463,16 @@ const AddExpense: React.FC<AddExpenseProps> = ({
             : `Expense payment ${expense.refNo || expense.id}`,
           addedBy: currentUser?.name || 'Admin',
         });
+        if (!registerSaved) {
+          addNotification({
+            title: 'Register Sync Failed',
+            message: 'Expense was saved, but register entry could not be saved to Postgres.',
+            type: 'warning',
+          });
+        }
       }
     } else {
-      deleteRegisterTransaction(registerTxId);
+      await deleteRegisterTransaction(registerTxId);
     }
 
     onNavigate?.('expenses');

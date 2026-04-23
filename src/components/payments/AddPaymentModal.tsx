@@ -19,7 +19,7 @@ interface AddPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   sale: any;
-  onSave?: (payment: any) => void;
+  onSave?: (payment: any) => void | Promise<boolean>;
   paymentType?: 'received' | 'sent';
   documentLabel?: string;
 }
@@ -30,7 +30,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   isOpen,
   onClose,
   sale,
-  onSave = (_payment: any) => {},
+  onSave = (_payment: any) => true,
   paymentType = 'received',
   documentLabel = 'Invoice No.',
 }) => {
@@ -158,7 +158,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
       });
       return;
     }
-    onSave({
+    const saved = await Promise.resolve(onSave({
       id: `PAY-${Date.now()}`,
       date,
       contactId: sale.customerId?.toString() || '',
@@ -184,13 +184,21 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
         bankName: chequeBankName || undefined,
         drawerName: chequeDrawerName || undefined,
       } : {}),
-    });
+    }));
+    if (saved === false) {
+      addNotification({
+        title: 'Payment Failed',
+        message: 'Unable to save payment in Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(sale.location);
     const registerLocation = normalizeText(activeRegister?.locationName);
     if (activeRegister && (!paymentLocation || paymentLocation === registerLocation)) {
-      addRegisterTransaction({
+      const registerSaved = await addRegisterTransaction({
         id: `RTX-PAY-${Date.now()}`,
         sessionId: activeRegister.id,
         date: new Date().toISOString(),
@@ -203,6 +211,13 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
           : `Payment received for ${sale.invoiceNo || 'invoice'}`,
         addedBy: currentUser?.name || 'Admin',
       });
+      if (!registerSaved) {
+        addNotification({
+          title: 'Register Sync Failed',
+          message: 'Payment saved, but register transaction could not be saved to Postgres.',
+          type: 'warning',
+        });
+      }
     }
     onClose();
   };

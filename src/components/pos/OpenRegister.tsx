@@ -49,7 +49,7 @@ const OpenRegister: React.FC<OpenRegisterProps> = ({ onNavigate }) => {
     };
   }, []);
 
-  const handleOpen = () => {
+  const handleOpen = async () => {
     if (existingSession?.status === 'Open') {
       addNotification({
         title: 'Register already open',
@@ -91,7 +91,15 @@ const OpenRegister: React.FC<OpenRegisterProps> = ({ onNavigate }) => {
       status: 'Open',
     };
 
-    startRegisterSession(registerSession);
+    const opened = await startRegisterSession(registerSession);
+    if (!opened) {
+      addNotification({
+        title: 'Open Failed',
+        message: 'Unable to open register session in Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     onNavigate('pos');
   };
 

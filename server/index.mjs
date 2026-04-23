@@ -1214,6 +1214,120 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         await prisma.location.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
+      case 'roles': {
+        const d = {
+          name: String(raw.name || `Role-${id}`),
+          description: String(raw.description || ''),
+          isSystem: raw.isSystem === true,
+          meta: raw,
+        };
+        await prisma.role.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'commissionAgents': {
+        const userId = await resolveLookupId(
+          prisma.appUser,
+          raw.userId || raw.linkedUserId,
+          [raw.name, raw.email, raw.username],
+          ['name', 'email', 'username'],
+        );
+        const d = {
+          userId,
+          name: String(raw.name || `Agent-${id}`),
+          contactNo: normOptionalString(raw.contactNo || raw.mobile || raw.phone),
+          commissionPercentage: toFiniteNumber(raw.commissionPercentage ?? raw.commissionPercent, 0),
+          isActive: raw.isActive !== false,
+          meta: raw,
+        };
+        await prisma.salesRepresentative.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
+      case 'invoiceSchemes': {
+        const d = {
+          name: String(raw.name || `Scheme-${id}`),
+          prefix: String(raw.prefix || 'INV-'),
+          startFrom: parseIntSafe(raw.startFrom, 1, 1, 1_000_000),
+          digitLength: parseIntSafe(raw.numberOfDigits ?? raw.digitLength, 4, 1, 16),
+          isDefault: raw.isDefault === true,
+          meta: raw,
+        };
+        if (d.isDefault) {
+          await prisma.$transaction(async (tx) => {
+            await tx.invoiceScheme.updateMany({ data: { isDefault: false } });
+            await tx.invoiceScheme.upsert({ where: { id }, update: d, create: { id, ...d } });
+          });
+        } else {
+          await prisma.invoiceScheme.upsert({ where: { id }, update: d, create: { id, ...d } });
+        }
+        break;
+      }
+      case 'invoiceLayouts': {
+        const layoutType = normStatus(
+          raw.type || raw.layoutType || (String(raw.design || '').toLowerCase().includes('pos') ? 'POS' : 'SALE'),
+          ['SALE', 'POS'],
+          'SALE',
+        );
+        const d = {
+          name: String(raw.name || `Layout-${id}`),
+          type: layoutType,
+          headerHtml: normOptionalString(raw.headerHtml),
+          footerHtml: normOptionalString(raw.footerHtml),
+          bodyTemplate: (raw.bodyTemplate && typeof raw.bodyTemplate === 'object') ? raw.bodyTemplate : null,
+          showClientLogo: raw.showClientLogo !== false,
+          isDefault: raw.isDefault === true,
+          meta: raw,
+        };
+        if (d.isDefault) {
+          await prisma.$transaction(async (tx) => {
+            await tx.invoiceLayout.updateMany({ data: { isDefault: false } });
+            await tx.invoiceLayout.upsert({ where: { id }, update: d, create: { id, ...d } });
+          });
+        } else {
+          await prisma.invoiceLayout.upsert({ where: { id }, update: d, create: { id, ...d } });
+        }
+        break;
+      }
+      case 'receiptPrinters': {
+        const d = {
+          name: String(raw.name || `Printer-${id}`),
+          connection: normOptionalString(raw.connection || raw.connectionType),
+          charactersPerLine: parseIntSafe(raw.charactersPerLine, 48, 16, 120),
+          paperWidthMm: parseIntSafe(raw.paperWidthMm ?? raw.paperWidth, 80, 40, 200),
+          isDefault: raw.isDefault === true,
+          meta: raw,
+        };
+        if (d.isDefault) {
+          await prisma.$transaction(async (tx) => {
+            await tx.receiptPrinter.updateMany({ data: { isDefault: false } });
+            await tx.receiptPrinter.upsert({ where: { id }, update: d, create: { id, ...d } });
+          });
+        } else {
+          await prisma.receiptPrinter.upsert({ where: { id }, update: d, create: { id, ...d } });
+        }
+        break;
+      }
+      case 'barcodeSettings': {
+        const d = {
+          name: String(raw.name || `Barcode-${id}`),
+          paperWidthMm: toFiniteNumber(raw.paperWidthMm ?? raw.paperWidth, 210),
+          paperHeightMm: toFiniteNumber(raw.paperHeightMm ?? raw.paperHeight, 297),
+          labelWidthMm: toFiniteNumber(raw.labelWidthMm ?? raw.stickerWidth, 50),
+          labelHeightMm: toFiniteNumber(raw.labelHeightMm ?? raw.stickerHeight, 25),
+          labelsPerRow: parseIntSafe(raw.labelsPerRow ?? raw.stickersInOneRow, 4, 1, 100),
+          labelsPerPage: parseIntSafe(raw.labelsPerPage ?? raw.stickersInOneSheet, 40, 1, 5000),
+          isDefault: raw.isDefault === true,
+          meta: raw,
+        };
+        if (d.isDefault) {
+          await prisma.$transaction(async (tx) => {
+            await tx.barcodeSetting.updateMany({ data: { isDefault: false } });
+            await tx.barcodeSetting.upsert({ where: { id }, update: d, create: { id, ...d } });
+          });
+        } else {
+          await prisma.barcodeSetting.upsert({ where: { id }, update: d, create: { id, ...d } });
+        }
+        break;
+      }
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
     }
@@ -1263,6 +1377,12 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       case 'sellingPriceGroups': await prisma.sellingPriceGroup.deleteMany({ where: { id } }); break;
       case 'discounts':       await prisma.discount.deleteMany({ where: { id } }); break;
       case 'expenseCategories': await prisma.expenseCategory.deleteMany({ where: { id } }); break;
+      case 'roles':           await prisma.role.deleteMany({ where: { id } }); break;
+      case 'commissionAgents': await prisma.salesRepresentative.deleteMany({ where: { id } }); break;
+      case 'invoiceSchemes':  await prisma.invoiceScheme.deleteMany({ where: { id } }); break;
+      case 'invoiceLayouts':  await prisma.invoiceLayout.deleteMany({ where: { id } }); break;
+      case 'receiptPrinters': await prisma.receiptPrinter.deleteMany({ where: { id } }); break;
+      case 'barcodeSettings': await prisma.barcodeSetting.deleteMany({ where: { id } }); break;
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
     }

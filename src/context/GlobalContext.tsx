@@ -54,12 +54,10 @@ import {
   apiFetchAllWithRetry,
   hasValidAuthToken,
   isLiveSyncEnabled,
-  syncRecord,
   syncRecordStrict,
-  deleteRecord,
   deleteRecordStrict,
-  syncStockDelta,
-  syncDedicated,
+  syncDedicatedStrict,
+  syncStockDeltaStrict,
   fetchDedicated,
 } from '../utils/apiClient';
 import {
@@ -1162,9 +1160,9 @@ interface GlobalContextType {
   // --- Payments ---
   payments: Payment[];
   setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
-  addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => boolean;
-  updatePayment: (payment: Payment) => void;
-  deletePayment: (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean }) => void;
+  addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => Promise<boolean>;
+  updatePayment: (payment: Payment) => Promise<boolean>;
+  deletePayment: (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean; skipPermissionBoundary?: boolean }) => Promise<boolean>;
 
   // --- Expenses ---
   expenses: Expense[];
@@ -2925,15 +2923,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (missingAutoPayments.length === 0) return;
 
-    setPayments((prev) => {
-      const seen = new Set(prev.map((payment) => String(payment.id || '').trim()).filter(Boolean));
-      const additions = missingAutoPayments.filter((payment) => !seen.has(payment.id));
-      if (additions.length === 0) return prev;
-      return [...prev, ...additions];
-    });
-    missingAutoPayments.forEach((payment) => {
-      syncRecord('payments', payment);
-    });
+    let cancelled = false;
+    void (async () => {
+      const persisted: Payment[] = [];
+      for (const payment of missingAutoPayments) {
+        const saved = await syncRecordStrict('payments', payment);
+        if (!saved.ok || cancelled) continue;
+        persisted.push(payment);
+      }
+      if (cancelled || persisted.length === 0) return;
+      setPayments((prev) => {
+        const seen = new Set(prev.map((payment) => String(payment.id || '').trim()).filter(Boolean));
+        const additions = persisted.filter((payment) => !seen.has(payment.id));
+        if (additions.length === 0) return prev;
+        return [...prev, ...additions];
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [sales, payments, settings.sellPaymentPrefix]);
 
   // ─── ATOMIC BOOTSTRAP ────────────────────────────────────────────────────
@@ -3063,8 +3071,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const fallbackLocations = initialLocations
               .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
               .filter((row) => row.id && row.name);
-            setLocations(fallbackLocations);
-            fallbackLocations.forEach((row) => syncRecord('locations', row));
+            const persistedFallback: Location[] = [];
+            for (const row of fallbackLocations) {
+              const saved = await syncRecordStrict('locations', row);
+              if (saved.ok) persistedFallback.push(row);
+            }
+            if (persistedFallback.length > 0) {
+              setLocations(persistedFallback);
+            }
           }
         }
         if (remoteSettings && remoteSettings.length > 0) {
@@ -3461,7 +3475,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     dropdownSyncPushTimerRef.current = window.setTimeout(() => {
-      void pushDropdownCollections(collections);
+      void (async () => {
+        await pushDropdownCollections(collections);
+      })();
     }, 900);
 
     return () => {
@@ -3682,7 +3698,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ipAddress: entry.ipAddress || '',
     };
     setActivityLogs(prev => [next, ...prev].slice(0, 5000));
-    syncRecord('activityLogs', next);
+    void (async () => {
+      const saved = await syncRecordStrict('activityLogs', next);
+      if (saved.ok) return;
+      setActivityLogs(prev => prev.filter(entry => entry.id !== next.id));
+    })();
 
     // Broadcast bell notifications for key business activities
     const module = next.module;
@@ -4824,13 +4844,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addProduct = (product: Product) => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
-    setProducts(prev => [...prev, normalized]);
-    syncRecord('products', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Products',
-      description: `Added product: ${normalized.name || normalized.sku || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('products', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Products',
+          description: `Failed to add product ${normalized.name || normalized.sku || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setProducts(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Products',
+        description: `Added product: ${normalized.name || normalized.sku || normalized.id}`,
+      });
+    })();
   };
   const confirmDeleteFromPostgres = (
     resource: string,
@@ -4857,13 +4887,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateProduct = (product: Product) => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
-    setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
-    syncRecord('products', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Products',
-      description: `Updated product: ${normalized.name || normalized.sku || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('products', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Products',
+          description: `Failed to update product ${normalized.name || normalized.sku || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
+      recordActivity({
+        action: 'Updated',
+        module: 'Products',
+        description: `Updated product: ${normalized.name || normalized.sku || normalized.id}`,
+      });
+    })();
   };
   const deleteProduct = (id: string) => {
     const existing = products.find(p => p.id === id);
@@ -4883,34 +4923,84 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addCustomer = (customer: Customer) => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
-    setCustomers(prev => [...prev, normalized]);
-    syncRecord('customers', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Customers',
-      description: `Added customer: ${normalized.businessName || normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('customers', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customers',
+          description: `Failed to add customer ${normalized.businessName || normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCustomers(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Customers',
+        description: `Added customer: ${normalized.businessName || normalized.name || normalized.id}`,
+      });
+    })();
   };
   const updateCustomer = (customer: Customer) => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
-    setCustomers(prev => prev.map(c => c.id === customer.id ? normalized : c));
-    syncRecord('customers', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Customers',
-      description: `Updated customer: ${normalized.businessName || normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('customers', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customers',
+          description: `Failed to update customer ${normalized.businessName || normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCustomers(prev => prev.map(c => c.id === customer.id ? normalized : c));
+      recordActivity({
+        action: 'Updated',
+        module: 'Customers',
+        description: `Updated customer: ${normalized.businessName || normalized.name || normalized.id}`,
+      });
+    })();
   };
   const addCustomerRewardPoints = (customerId: string, points: number) => {
-    setCustomers(prev => prev.map(c =>
-      c.id === customerId ? { ...c, rewardPoints: Math.max(0, (c.rewardPoints || 0) + points) } : c
-    ));
+    const existing = customers.find(customer => customer.id === customerId);
+    if (!existing) return;
+    const updatedCustomer: Customer = {
+      ...existing,
+      rewardPoints: Math.max(0, Number(existing.rewardPoints || 0) + Number(points || 0)),
+    };
+    void (async () => {
+      const saved = await syncRecordStrict('customers', updatedCustomer);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customers',
+          description: `Failed to update reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
+    })();
   };
 
   const redeemCustomerRewardPoints = (customerId: string, points: number) => {
-    setCustomers(prev => prev.map(c =>
-      c.id === customerId ? { ...c, rewardPoints: Math.max(0, (c.rewardPoints || 0) - points) } : c
-    ));
+    const existing = customers.find(customer => customer.id === customerId);
+    if (!existing) return;
+    const updatedCustomer: Customer = {
+      ...existing,
+      rewardPoints: Math.max(0, Number(existing.rewardPoints || 0) - Number(points || 0)),
+    };
+    void (async () => {
+      const saved = await syncRecordStrict('customers', updatedCustomer);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customers',
+          description: `Failed to redeem reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
+    })();
   };
 
   const deleteCustomer = (id: string) => {
@@ -4931,23 +5021,43 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addSupplier = (supplier: Supplier) => {
     const normalized = normalizeSupplierRecord(supplier);
-    setSuppliers(prev => [...prev, normalized]);
-    syncRecord('suppliers', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Suppliers',
-      description: `Added supplier: ${normalized.businessName || normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('suppliers', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Suppliers',
+          description: `Failed to add supplier ${normalized.businessName || normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setSuppliers(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Suppliers',
+        description: `Added supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+      });
+    })();
   };
   const updateSupplier = (supplier: Supplier) => {
     const normalized = normalizeSupplierRecord(supplier);
-    setSuppliers(prev => prev.map(s => s.id === supplier.id ? normalized : s));
-    syncRecord('suppliers', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Suppliers',
-      description: `Updated supplier: ${normalized.businessName || normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('suppliers', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Suppliers',
+          description: `Failed to update supplier ${normalized.businessName || normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setSuppliers(prev => prev.map(s => s.id === supplier.id ? normalized : s));
+      recordActivity({
+        action: 'Updated',
+        module: 'Suppliers',
+        description: `Updated supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+      });
+    })();
   };
   const deleteSupplier = (id: string) => {
     const existing = suppliers.find(s => s.id === id);
@@ -4986,8 +5096,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         status: contact.status,
       };
       const normalizedSupplier = normalizeSupplierRecord(supplier);
-      setSuppliers(prev => [...prev.filter(row => row.id !== recordId), normalizedSupplier]);
-      syncRecord('suppliers', normalizedSupplier);
+      void (async () => {
+        const saved = await syncRecordStrict('suppliers', normalizedSupplier);
+        if (!saved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Suppliers',
+            description: `Failed to save supplier contact ${normalizedSupplier.businessName || normalizedSupplier.name || normalizedSupplier.id} to Postgres (${saved.status || 0}).`,
+          });
+          return;
+        }
+        setSuppliers(prev => [...prev.filter(row => row.id !== recordId), normalizedSupplier]);
+      })();
       return;
     }
 
@@ -5011,8 +5131,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       status: contact.status,
     };
     const normalizedCustomer = normalizeCustomerRecord(customer, customerGroups);
-    setCustomers(prev => [...prev.filter(row => row.id !== recordId), normalizedCustomer]);
-    syncRecord('customers', normalizedCustomer);
+    void (async () => {
+      const saved = await syncRecordStrict('customers', normalizedCustomer);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customers',
+          description: `Failed to save customer contact ${normalizedCustomer.businessName || normalizedCustomer.name || normalizedCustomer.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCustomers(prev => [...prev.filter(row => row.id !== recordId), normalizedCustomer]);
+    })();
   };
   const updateContact = (contact: Contact) => {
     addContact(contact);
@@ -5138,7 +5268,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const updated = { ...p, stock: p.stock + delta };
       // Use atomic stock delta so concurrent sales from different users/locations
       // both apply correctly instead of the last write overwriting the other.
-      syncStockDelta(p.id, delta);
+      void (async () => {
+        const outcome = await syncStockDeltaStrict(p.id, delta);
+        if (outcome.ok) return;
+        // Roll back local stock if Postgres delta failed.
+        setProducts(prev => prev.map(row => (
+          row.id === p.id ? { ...row, stock: row.stock - delta } : row
+        )));
+      })();
       return updated;
     }));
   };
@@ -5215,12 +5352,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
       if (!isWalkInSale(saleWithSnapshot)) {
         const dueToAdd = saleDueAmount(saleWithSnapshot);
-        setCustomers(prev => prev.map(c => {
-          if (!isSaleCustomerMatch(c, saleWithSnapshot)) return c;
-          const updated = { ...c, lastSellDate: getBusinessDateString(), totalSellDue: c.totalSellDue + dueToAdd };
-          syncRecord('customers', updated);
-          return updated;
-        }));
+        const customerToUpdate = customers.find((customer) => isSaleCustomerMatch(customer, saleWithSnapshot));
+        if (customerToUpdate) {
+          const updated = {
+            ...customerToUpdate,
+            lastSellDate: getBusinessDateString(),
+            totalSellDue: customerToUpdate.totalSellDue + dueToAdd,
+          };
+          const customerSaved = await syncRecordStrict('customers', updated);
+          if (customerSaved.ok) {
+            setCustomers(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+          }
+        }
       }
 
       // Auto-create a payment record if money was collected at time of sale
@@ -5244,13 +5387,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           linkedInvoices: saleWithSnapshot.invoiceNo ? [saleWithSnapshot.invoiceNo] : [],
           addedBy: saleWithSnapshot.addedBy || 'System',
         };
-        setPayments(prev => {
-          const exists = prev.some(payment => payment.id === payRecord.id);
-          return exists
-            ? prev.map(payment => payment.id === payRecord.id ? payRecord : payment)
-            : [...prev, payRecord];
-        });
-        syncRecord('payments', payRecord);
+        const paymentSaved = await syncRecordStrict('payments', payRecord);
+        if (paymentSaved.ok) {
+          setPayments(prev => {
+            const exists = prev.some(payment => payment.id === payRecord.id);
+            return exists
+              ? prev.map(payment => payment.id === payRecord.id ? payRecord : payment)
+              : [...prev, payRecord];
+          });
+        }
       }
     }
     void refreshSalesFromServer();
@@ -5271,21 +5416,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return false;
     }
-    setSales(prev => {
-      const oldSale = prev.find(s => s.id === saleWithSnapshot.id);
-      if (!oldSale) return prev;
+    const oldSale = sales.find(s => s.id === saleWithSnapshot.id);
+    if (!oldSale) return false;
 
-      const stockDelta: Record<string, number> = {};
-      if (isFinalizedSale(oldSale)) mergeStockDelta(stockDelta, buildSaleStockDelta(oldSale, +1)); // undo old
-      if (isFinalizedSale(saleWithSnapshot)) mergeStockDelta(stockDelta, buildSaleStockDelta(saleWithSnapshot, -1));       // apply new
-      applyStockDelta(stockDelta);
+    const stockDelta: Record<string, number> = {};
+    if (isFinalizedSale(oldSale)) mergeStockDelta(stockDelta, buildSaleStockDelta(oldSale, +1));
+    if (isFinalizedSale(saleWithSnapshot)) mergeStockDelta(stockDelta, buildSaleStockDelta(saleWithSnapshot, -1));
+    applyStockDelta(stockDelta);
 
-      const oldDue = isFinalizedSale(oldSale) && !isWalkInSale(oldSale) ? saleDueAmount(oldSale) : 0;
-      const newDue = isFinalizedSale(saleWithSnapshot) && !isWalkInSale(saleWithSnapshot) ? saleDueAmount(saleWithSnapshot) : 0;
-      const oldWasFinalized = isFinalizedSale(oldSale);
-      const newIsFinalized = isFinalizedSale(saleWithSnapshot);
-      setCustomers(prevCustomers => prevCustomers.map(c => {
-        let next = c;
+    const oldDue = isFinalizedSale(oldSale) && !isWalkInSale(oldSale) ? saleDueAmount(oldSale) : 0;
+    const newDue = isFinalizedSale(saleWithSnapshot) && !isWalkInSale(saleWithSnapshot) ? saleDueAmount(saleWithSnapshot) : 0;
+    const oldWasFinalized = isFinalizedSale(oldSale);
+    const newIsFinalized = isFinalizedSale(saleWithSnapshot);
+
+    const changedCustomers = customers
+      .map((customer) => {
+        let next = customer;
         const matchesOldSale = isSaleCustomerMatch(next, oldSale);
         const matchesNewSale = isSaleCustomerMatch(next, saleWithSnapshot);
         if (oldDue > 0 && matchesOldSale) {
@@ -5294,17 +5440,25 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (newDue > 0 && matchesNewSale) {
           next = { ...next, totalSellDue: next.totalSellDue + newDue };
         }
-        // Refresh customer last sell date only when the sale newly becomes final
-        // or ownership moves to a different customer.
         if (newIsFinalized && matchesNewSale && (!oldWasFinalized || !matchesOldSale)) {
           next = { ...next, lastSellDate: getBusinessDateString() };
         }
-        if (next !== c) syncRecord('customers', next);
-        return next;
-      }));
+        return next !== customer ? next : null;
+      })
+      .filter((entry): entry is Customer => !!entry);
 
-      return prev.map(s => s.id === saleWithSnapshot.id ? saleWithSnapshot : s);
-    });
+    if (changedCustomers.length > 0) {
+      const persisted = new Map<string, Customer>();
+      for (const customer of changedCustomers) {
+        const saved = await syncRecordStrict('customers', customer);
+        if (saved.ok) persisted.set(customer.id, customer);
+      }
+      if (persisted.size > 0) {
+        setCustomers(prev => prev.map(customer => persisted.get(customer.id) || customer));
+      }
+    }
+
+    setSales(prev => prev.map(s => s.id === saleWithSnapshot.id ? saleWithSnapshot : s));
     recordActivity({
       action: 'Updated',
       module: 'Sales',
@@ -5318,27 +5472,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const prefix = settings.sellPaymentPrefix || 'SP';
       const payRef = `${prefix}-${saleWithSnapshot.invoiceNo || Date.now()}`;
       if (paidAmount > 0) {
-        setPayments(prev => {
-          const exists = prev.find(p => p.id === payId);
-          const record: Payment = {
-            id: payId,
-            date: saleWithSnapshot.paymentDate || saleWithSnapshot.date,
-            contactId: String(saleWithSnapshot.customerId || 'WALK-IN'),
-            contactName: saleWithSnapshot.customerName || 'Walk-in Customer',
-            contactType: 'Customer',
-            amount: paidAmount,
-            method: saleWithSnapshot.paymentMethod || 'Cash',
-            account: resolveDefaultAccountFromMethod(saleWithSnapshot.paymentMethod || 'Cash'),
-            location: saleWithSnapshot.location || '',
-            referenceNo: payRef,
-            note: saleWithSnapshot.paymentNote || `Payment for invoice ${saleWithSnapshot.invoiceNo}`,
-            type: 'received',
-            linkedInvoices: saleWithSnapshot.invoiceNo ? [saleWithSnapshot.invoiceNo] : [],
-            addedBy: saleWithSnapshot.addedBy || 'System',
-          };
-          return exists ? prev.map(p => p.id === payId ? record : p) : [...prev, record];
-        });
-        syncRecord('payments', {
+        const paymentRecord: Payment = {
           id: payId,
           date: saleWithSnapshot.paymentDate || saleWithSnapshot.date,
           contactId: String(saleWithSnapshot.customerId || 'WALK-IN'),
@@ -5353,15 +5487,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           type: 'received',
           linkedInvoices: saleWithSnapshot.invoiceNo ? [saleWithSnapshot.invoiceNo] : [],
           addedBy: saleWithSnapshot.addedBy || 'System',
-        });
+        };
+        const paymentSaved = await syncRecordStrict('payments', paymentRecord);
+        if (paymentSaved.ok) {
+          setPayments(prev => {
+            const exists = prev.find(p => p.id === payId);
+            return exists ? prev.map(p => p.id === payId ? paymentRecord : p) : [...prev, paymentRecord];
+          });
+        }
       } else {
         // Payment was removed (changed to Credit Sale) — remove the auto record
-        setPayments(prev => prev.filter(p => p.id !== payId));
-        deleteRecord('payments', payId);
+        const removed = await deleteRecordStrict('payments', payId);
+        if (removed.ok) {
+          setPayments(prev => prev.filter(p => p.id !== payId));
+        }
       }
     } else {
-      setPayments(prev => prev.filter(p => p.id !== payId));
-      deleteRecord('payments', payId);
+      const removed = await deleteRecordStrict('payments', payId);
+      if (removed.ok) {
+        setPayments(prev => prev.filter(p => p.id !== payId));
+      }
     }
     void refreshSalesFromServer();
     return true;
@@ -5383,10 +5528,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return false;
     }
-    setSales(prev => {
-      const saleToDelete = prev.find(s => String(s.id || '').trim() === normalizedSaleId);
-      if (!saleToDelete) return prev.filter(s => String(s.id || '').trim() !== normalizedSaleId);
-
+    const saleToDelete = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
+    if (saleToDelete) {
       if (isFinalizedSale(saleToDelete)) {
         applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
       }
@@ -5394,20 +5537,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (!isWalkInSale(saleToDelete) && isFinalizedSale(saleToDelete)) {
         const dueToRemove = saleDueAmount(saleToDelete);
         if (dueToRemove > 0) {
-          setCustomers(prevCustomers => prevCustomers.map(c => {
-            if (!isSaleCustomerMatch(c, saleToDelete)) return c;
-            const updated = { ...c, totalSellDue: Math.max(0, c.totalSellDue - dueToRemove) };
-            syncRecord('customers', updated);
-            return updated;
-          }));
+          const customerToUpdate = customers.find(customer => isSaleCustomerMatch(customer, saleToDelete));
+          if (customerToUpdate) {
+            const updated = {
+              ...customerToUpdate,
+              totalSellDue: Math.max(0, customerToUpdate.totalSellDue - dueToRemove),
+            };
+            const customerSaved = await syncRecordStrict('customers', updated);
+            if (customerSaved.ok) {
+              setCustomers(prevCustomers => prevCustomers.map(c => (c.id === updated.id ? updated : c)));
+            }
+          }
         }
       }
+    }
 
-      return prev.filter(s => String(s.id || '').trim() !== normalizedSaleId);
-    });
+    setSales(prev => prev.filter(s => String(s.id || '').trim() !== normalizedSaleId));
     // Remove the auto-generated payment record for this sale
-    setPayments(prev => prev.filter(p => p.id !== `pay-${normalizedSaleId}`));
-    void deleteRecordStrict('payments', `pay-${normalizedSaleId}`);
+    const paymentDeleted = await deleteRecordStrict('payments', `pay-${normalizedSaleId}`);
+    if (paymentDeleted.ok) {
+      setPayments(prev => prev.filter(p => p.id !== `pay-${normalizedSaleId}`));
+    }
     recordActivity({
       action: 'Deleted',
       module: 'Sales',
@@ -5513,9 +5663,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
-  const upsertAutoRefundPaymentForSellReturn = (sellReturn: SellReturn) => {
-    if (sellReturn.settlementMode !== 'refund_now') return;
+  const upsertAutoRefundPaymentForSellReturn = async (sellReturn: SellReturn): Promise<boolean> => {
+    if (sellReturn.settlementMode !== 'refund_now') return true;
     const record = buildAutoRefundPaymentFromSellReturn(sellReturn);
+    const saved = await syncRecordStrict('payments', record);
+    if (!saved.ok) return false;
     setPayments(prev => {
       const exists = prev.some(payment => payment.id === record.id);
       if (exists) {
@@ -5523,13 +5675,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return [...prev, record];
     });
+    return true;
   };
 
-  const removeAutoRefundPaymentForSellReturn = (sellReturn?: SellReturn | null) => {
-    if (!sellReturn) return;
+  const removeAutoRefundPaymentForSellReturn = async (sellReturn?: SellReturn | null): Promise<boolean> => {
+    if (!sellReturn) return true;
     const paymentId = String(sellReturn.autoRefundPaymentId || `pay-sell-return-${sellReturn.id}`).trim();
-    if (!paymentId) return;
+    if (!paymentId) return true;
+    const deleted = await deleteRecordStrict('payments', paymentId);
+    if (!deleted.ok) return false;
     setPayments(prev => prev.filter(payment => payment.id !== paymentId));
+    return true;
   };
 
   const addSellReturn = (sellReturn: SellReturn) => {
@@ -5540,61 +5696,81 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         ? String(normalizedBase.autoRefundPaymentId || `pay-sell-return-${normalizedBase.id}`)
         : '',
     };
-    setSellReturns(prev => [...prev, normalized]);
-    applySellReturnEffects(normalized, 1);
-    applySellReturnFinancialEffects(normalized, 1);
-    if (normalized.settlementMode === 'refund_now') {
-      upsertAutoRefundPaymentForSellReturn(normalized);
-    } else {
-      removeAutoRefundPaymentForSellReturn(normalized);
-    }
-    syncRecord('sellReturns', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Sell Returns',
-      description: `Created sell return: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('sellReturns', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sell Returns',
+          description: `Failed to create sell return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setSellReturns(prev => [...prev, normalized]);
+      applySellReturnEffects(normalized, 1);
+      applySellReturnFinancialEffects(normalized, 1);
+      if (normalized.settlementMode === 'refund_now') {
+        await upsertAutoRefundPaymentForSellReturn(normalized);
+      } else {
+        await removeAutoRefundPaymentForSellReturn(normalized);
+      }
+      recordActivity({
+        action: 'Created',
+        module: 'Sell Returns',
+        description: `Created sell return: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
 
   const updateSellReturn = (sellReturn: SellReturn) => {
     if (!canEditTransaction('Sell Returns', String(sellReturn.referenceNo || sellReturn.id || '').trim(), sellReturn.date)) return;
+    const existing = sellReturns.find(record => record.id === sellReturn.id);
     const normalizedDraft = normalizeSellReturnRecord(sellReturn);
-    setSellReturns(prev => {
-      const existing = prev.find(record => record.id === normalizedDraft.id);
-      const normalized: SellReturn = {
-        ...normalizedDraft,
-        autoRefundPaymentId: normalizedDraft.settlementMode === 'refund_now'
-          ? String(
-            normalizedDraft.autoRefundPaymentId
-            || existing?.autoRefundPaymentId
-            || `pay-sell-return-${normalizedDraft.id}`
-          )
-          : '',
-      };
-      if (existing) {
-        applySellReturnEffects(existing, -1);
-        applySellReturnFinancialEffects(existing, -1);
-        removeAutoRefundPaymentForSellReturn(existing);
+    const normalized: SellReturn = {
+      ...normalizedDraft,
+      autoRefundPaymentId: normalizedDraft.settlementMode === 'refund_now'
+        ? String(
+          normalizedDraft.autoRefundPaymentId
+          || existing?.autoRefundPaymentId
+          || `pay-sell-return-${normalizedDraft.id}`
+        )
+        : '',
+    };
+    void (async () => {
+      const saved = await syncRecordStrict('sellReturns', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sell Returns',
+          description: `Failed to update sell return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setSellReturns(prev => {
+        const previous = prev.find(record => record.id === normalized.id);
+        if (previous) {
+          applySellReturnEffects(previous, -1);
+          applySellReturnFinancialEffects(previous, -1);
+          applySellReturnEffects(normalized, 1);
+          applySellReturnFinancialEffects(normalized, 1);
+          return prev.map(record => record.id === normalized.id ? normalized : record);
+        }
         applySellReturnEffects(normalized, 1);
         applySellReturnFinancialEffects(normalized, 1);
-        if (normalized.settlementMode === 'refund_now') {
-          upsertAutoRefundPaymentForSellReturn(normalized);
-        }
-        return prev.map(record => record.id === normalized.id ? normalized : record);
+        return [...prev, normalized];
+      });
+      if (existing) {
+        await removeAutoRefundPaymentForSellReturn(existing);
       }
-      applySellReturnEffects(normalized, 1);
-      applySellReturnFinancialEffects(normalized, 1);
       if (normalized.settlementMode === 'refund_now') {
-        upsertAutoRefundPaymentForSellReturn(normalized);
+        await upsertAutoRefundPaymentForSellReturn(normalized);
       }
-      return [...prev, normalized];
-    });
-    syncRecord('sellReturns', normalizedDraft);
-    recordActivity({
-      action: 'Updated',
-      module: 'Sell Returns',
-      description: `Updated sell return: ${normalizedDraft.referenceNo || normalizedDraft.id}`,
-    });
+      recordActivity({
+        action: 'Updated',
+        module: 'Sell Returns',
+        description: `Updated sell return: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
 
   const deleteSellReturn = async (id: string): Promise<boolean> => {
@@ -5622,7 +5798,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       existingReturn.autoRefundPaymentId || `pay-sell-return-${existingReturn.id}`,
     ).trim();
     if (autoRefundPaymentId) {
-      void deleteRecordStrict('payments', autoRefundPaymentId);
+      await deleteRecordStrict('payments', autoRefundPaymentId);
     }
     recordActivity({
       action: 'Deleted',
@@ -5645,7 +5821,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const normalizeName = (value: string): string => String(value || '').trim().toLowerCase();
 
-  const applyPurchaseEffects = (purchase: Purchase, factor: 1 | -1) => {
+  const applyPurchaseEffects = async (purchase: Purchase, factor: 1 | -1): Promise<boolean> => {
     if (purchase.status === 'Received' && purchase.items && purchase.items.length > 0) {
       const byId: Record<string, number> = {};
       const byName: Record<string, number> = {};
@@ -5756,13 +5932,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }));
 
       if (lotAdjustments.length > 0) {
-        applyStockLotAdjustments(lotAdjustments);
+        const lotSaved = await applyStockLotAdjustments(lotAdjustments);
+        if (!lotSaved) return false;
       }
     }
 
     const dueAmount = purchase.paymentStatus !== 'Paid' ? Number(purchase.paymentDue || 0) : 0;
     const dueDelta = dueAmount * factor;
-    if (!dueDelta) return;
+    if (!dueDelta) return true;
     setSuppliers(prev => prev.map(supplier => {
       if (supplier.id === purchase.supplierId || supplier.businessName === purchase.supplier) {
         return {
@@ -5772,9 +5949,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return supplier;
     }));
+    return true;
   };
 
-  const applyPurchaseReturnEffects = (purchaseReturn: PurchaseReturn, factor: 1 | -1) => {
+  const applyPurchaseReturnEffects = async (
+    purchaseReturn: PurchaseReturn,
+    factor: 1 | -1,
+  ): Promise<boolean> => {
     const amount = Number(purchaseReturn.grandTotal || 0);
     if (amount) {
       const returnDelta = amount * factor;
@@ -5889,56 +6070,109 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }));
 
       if (lotAdjustments.length > 0) {
-        applyStockLotAdjustments(lotAdjustments);
+        const lotSaved = await applyStockLotAdjustments(lotAdjustments);
+        if (!lotSaved) return false;
       }
     }
+    return true;
   };
 
   const addPurchase = (purchase: Purchase) => {
     const normalized = normalizePurchaseRecordLoaded(purchase);
-    setPurchases(prev => [...prev, normalized]);
-    applyPurchaseEffects(normalized, 1);
-    syncRecord('purchases', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Purchases',
-      description: `Created purchase: ${normalized.refNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchases', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchases',
+          description: `Failed to create purchase ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchases(prev => [...prev, normalized]);
+      const effectsApplied = await applyPurchaseEffects(normalized, 1);
+      if (!effectsApplied) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchases',
+          description: `Purchase ${normalized.refNo || normalized.id} saved but stock-lot sync failed.`,
+        });
+      }
+      recordActivity({
+        action: 'Created',
+        module: 'Purchases',
+        description: `Created purchase: ${normalized.refNo || normalized.id}`,
+      });
+    })();
   };
 
   const updatePurchase = (purchase: Purchase) => {
     const normalized = normalizePurchaseRecordLoaded(purchase);
     if (!canEditTransaction('Purchases', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
-    setPurchases(prev => {
-      const existing = prev.find(item => item.id === normalized.id);
-      if (!existing) return prev;
-      applyPurchaseEffects(existing, -1);
-      applyPurchaseEffects(normalized, 1);
-      return prev.map(item => item.id === normalized.id ? normalized : item);
-    });
-    syncRecord('purchases', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Purchases',
-      description: `Updated purchase: ${normalized.refNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchases', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchases',
+          description: `Failed to update purchase ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      const existing = purchases.find(item => item.id === normalized.id);
+      if (!existing) return;
+      const reverted = await applyPurchaseEffects(existing, -1);
+      if (!reverted) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchases',
+          description: `Failed to reverse effects for purchase ${existing.refNo || existing.id}.`,
+        });
+        return;
+      }
+      const applied = await applyPurchaseEffects(normalized, 1);
+      if (!applied) {
+        await applyPurchaseEffects(existing, 1);
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchases',
+          description: `Failed to apply updated effects for purchase ${normalized.refNo || normalized.id}.`,
+        });
+        return;
+      }
+      setPurchases(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+      recordActivity({
+        action: 'Updated',
+        module: 'Purchases',
+        description: `Updated purchase: ${normalized.refNo || normalized.id}`,
+      });
+    })();
   };
 
   const deletePurchase = (id: string) => {
     const existingPurchase = purchases.find(item => item.id === id);
     if (purchaseReturns.some(ret => ret.parentPurchaseId === id)) return;
     confirmDeleteFromPostgres('purchases', id, 'Purchases', existingPurchase?.refNo || existingPurchase?.id || id, () => {
-      setPurchases(prev => {
-        const existing = prev.find(item => item.id === id);
-        if (!existing) return prev;
-        applyPurchaseEffects(existing, -1);
-        return prev.filter(item => item.id !== id);
-      });
-      recordActivity({
-        action: 'Deleted',
-        module: 'Purchases',
-        description: `Deleted purchase: ${existingPurchase?.refNo || existingPurchase?.id || id}`,
-      });
+      void (async () => {
+        const existing = purchases.find(item => item.id === id);
+        if (existing) {
+          const reverted = await applyPurchaseEffects(existing, -1);
+          if (!reverted) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Purchases',
+              description: `Deleted purchase ${existing.refNo || existing.id}, but failed to sync stock lot reversal.`,
+            });
+            return;
+          }
+        }
+        setPurchases(prev => prev.filter(item => item.id !== id));
+        recordActivity({
+          action: 'Deleted',
+          module: 'Purchases',
+          description: `Deleted purchase: ${existingPurchase?.refNo || existingPurchase?.id || id}`,
+        });
+      })();
     });
   };
 
@@ -5948,24 +6182,44 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addPurchaseRequisition = (requisition: PurchaseRequisition) => {
     const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
-    setPurchaseRequisitions(prev => [...prev, normalized]);
-    syncRecord('purchaseRequisitions', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Purchase Requisitions',
-      description: `Created requisition: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseRequisitions', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Requisitions',
+          description: `Failed to create requisition ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchaseRequisitions(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Purchase Requisitions',
+        description: `Created requisition: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
   const updatePurchaseRequisition = (requisition: PurchaseRequisition) => {
     const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
     if (!canEditTransaction('Purchase Requisitions', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
-    setPurchaseRequisitions(prev => prev.map(item => item.id === normalized.id ? normalized : item));
-    syncRecord('purchaseRequisitions', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Purchase Requisitions',
-      description: `Updated requisition: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseRequisitions', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Requisitions',
+          description: `Failed to update requisition ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchaseRequisitions(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+      recordActivity({
+        action: 'Updated',
+        module: 'Purchase Requisitions',
+        description: `Updated requisition: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
   const deletePurchaseRequisition = (id: string) => {
     const existing = purchaseRequisitions.find(item => item.id === id);
@@ -5986,24 +6240,44 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addPurchaseOrder = (order: PurchaseOrder) => {
     const normalized = normalizePurchaseOrderRecordLoaded(order);
-    setPurchaseOrders(prev => [...prev, normalized]);
-    syncRecord('purchaseOrders', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Purchase Orders',
-      description: `Created order: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseOrders', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Orders',
+          description: `Failed to create purchase order ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchaseOrders(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Purchase Orders',
+        description: `Created order: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
   const updatePurchaseOrder = (order: PurchaseOrder) => {
     const normalized = normalizePurchaseOrderRecordLoaded(order);
     if (!canEditTransaction('Purchase Orders', String(normalized.referenceNo || normalized.id || '').trim(), normalized.orderDate)) return;
-    setPurchaseOrders(prev => prev.map(item => item.id === normalized.id ? normalized : item));
-    syncRecord('purchaseOrders', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Purchase Orders',
-      description: `Updated order: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseOrders', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Orders',
+          description: `Failed to update purchase order ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchaseOrders(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+      recordActivity({
+        action: 'Updated',
+        module: 'Purchase Orders',
+        description: `Updated order: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
   const deletePurchaseOrder = (id: string) => {
     const existing = purchaseOrders.find(item => item.id === id);
@@ -6024,46 +6298,100 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addPurchaseReturn = (purchaseReturn: PurchaseReturn) => {
     const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
-    setPurchaseReturns(prev => [...prev, normalized]);
-    applyPurchaseReturnEffects(normalized, 1);
-    syncRecord('purchaseReturns', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Purchase Returns',
-      description: `Created purchase return: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseReturns', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Returns',
+          description: `Failed to create purchase return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPurchaseReturns(prev => [...prev, normalized]);
+      const effectsApplied = await applyPurchaseReturnEffects(normalized, 1);
+      if (!effectsApplied) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Returns',
+          description: `Purchase return ${normalized.referenceNo || normalized.id} saved but stock-lot sync failed.`,
+        });
+      }
+      recordActivity({
+        action: 'Created',
+        module: 'Purchase Returns',
+        description: `Created purchase return: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
 
   const updatePurchaseReturn = (purchaseReturn: PurchaseReturn) => {
     const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
     if (!canEditTransaction('Purchase Returns', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
-    setPurchaseReturns(prev => {
-      const existing = prev.find(item => item.id === normalized.id);
-      if (existing) applyPurchaseReturnEffects(existing, -1);
-      applyPurchaseReturnEffects(normalized, 1);
-      return prev.map(item => item.id === normalized.id ? normalized : item);
-    });
-    syncRecord('purchaseReturns', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Purchase Returns',
-      description: `Updated purchase return: ${normalized.referenceNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('purchaseReturns', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Returns',
+          description: `Failed to update purchase return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      const existing = purchaseReturns.find(item => item.id === normalized.id);
+      if (existing) {
+        const reverted = await applyPurchaseReturnEffects(existing, -1);
+        if (!reverted) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Purchase Returns',
+            description: `Failed to reverse effects for purchase return ${existing.referenceNo || existing.id}.`,
+          });
+          return;
+        }
+      }
+      const applied = await applyPurchaseReturnEffects(normalized, 1);
+      if (!applied) {
+        if (existing) await applyPurchaseReturnEffects(existing, 1);
+        recordActivity({
+          action: 'Blocked',
+          module: 'Purchase Returns',
+          description: `Failed to apply updated effects for purchase return ${normalized.referenceNo || normalized.id}.`,
+        });
+        return;
+      }
+      setPurchaseReturns(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+      recordActivity({
+        action: 'Updated',
+        module: 'Purchase Returns',
+        description: `Updated purchase return: ${normalized.referenceNo || normalized.id}`,
+      });
+    })();
   };
 
   const deletePurchaseReturn = (id: string) => {
     const existingReturn = purchaseReturns.find(item => item.id === id);
     confirmDeleteFromPostgres('purchaseReturns', id, 'Purchase Returns', existingReturn?.referenceNo || existingReturn?.id || id, () => {
-      setPurchaseReturns(prev => {
-        const existing = prev.find(item => item.id === id);
-        if (existing) applyPurchaseReturnEffects(existing, -1);
-        return prev.filter(item => item.id !== id);
-      });
-      recordActivity({
-        action: 'Deleted',
-        module: 'Purchase Returns',
-        description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
-      });
+      void (async () => {
+        const existing = purchaseReturns.find(item => item.id === id);
+        if (existing) {
+          const reverted = await applyPurchaseReturnEffects(existing, -1);
+          if (!reverted) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Purchase Returns',
+              description: `Deleted purchase return ${existing.referenceNo || existing.id}, but failed to sync stock lot reversal.`,
+            });
+            return;
+          }
+        }
+        setPurchaseReturns(prev => prev.filter(item => item.id !== id));
+        recordActivity({
+          action: 'Deleted',
+          module: 'Purchase Returns',
+          description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
+        });
+      })();
     });
   };
 
@@ -6081,13 +6409,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setOrders(prev => [...prev, normalized]);
-    syncRecord('orders', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Orders',
-      description: `Created order: ${normalized.orderNumber || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('orders', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Orders',
+          description: `Failed to create order ${normalized.orderNumber || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setOrders(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Orders',
+        description: `Created order: ${normalized.orderNumber || normalized.id}`,
+      });
+    })();
   };
   const updateOrder = (order: GlobalOrder) => {
     const normalized = normalizeOrderRecordLoaded(order);
@@ -6117,13 +6455,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     if (!canEditTransaction('Orders', String(normalized.orderNumber || normalized.id || '').trim(), normalized.orderDate)) return;
-    setOrders(prev => prev.map(o => o.id === normalized.id ? normalized : o));
-    syncRecord('orders', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Orders',
-      description: `Updated order: ${normalized.orderNumber || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('orders', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Orders',
+          description: `Failed to update order ${normalized.orderNumber || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setOrders(prev => prev.map(o => o.id === normalized.id ? normalized : o));
+      recordActivity({
+        action: 'Updated',
+        module: 'Orders',
+        description: `Updated order: ${normalized.orderNumber || normalized.id}`,
+      });
+    })();
   };
   const deleteOrder = async (id: string): Promise<boolean> => {
     const existing = orders.find(o => o.id === id);
@@ -6212,7 +6560,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addPayment = (
     payment: Payment,
     options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean },
-  ): boolean => {
+  ): Promise<boolean> => {
     const canCreatePayment =
       options?.skipPermissionBoundary === true ||
       hasContextPermission('POS', 'Add/Edit Payment') ||
@@ -6223,7 +6571,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Payments',
         description: 'Permission blocked: Create payment. Missing permission "Add/Edit Payment" or "Add sell payment".',
       });
-      return false;
+      return Promise.resolve(false);
     }
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
     const normalizedPayment = normalizePaymentRecordLoaded({
@@ -6288,8 +6636,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         paymentToStore = { ...normalizedPayment, strictLinkedAllocation: true };
       }
     }
-    setPayments(prev => [...prev, paymentToStore]);
-    syncRecord('payments', paymentToStore);
+    return (async () => {
+      const saved = await syncRecordStrict('payments', paymentToStore);
+      if (!saved.ok) return false;
+      setPayments(prev => [...prev, paymentToStore]);
     const appliedPayment = paymentToStore;
 
     if (appliedPayment.contactType === 'Customer') {
@@ -6401,19 +6751,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
       });
     }
-    if (!options?.skipActivity) {
-      const direction = appliedPayment.type === 'sent' ? 'Sent' : 'Received';
-      recordActivity({
-        action: 'Created',
-        module: 'Payments',
-        description: `${direction} payment: ${appliedPayment.referenceNo || appliedPayment.id}`,
-      });
-    }
-    return true;
+      if (!options?.skipActivity) {
+        const direction = appliedPayment.type === 'sent' ? 'Sent' : 'Received';
+        recordActivity({
+          action: 'Created',
+          module: 'Payments',
+          description: `${direction} payment: ${appliedPayment.referenceNo || appliedPayment.id}`,
+        });
+      }
+      return true;
+    })();
   };
 
-  const updatePayment = (payment: Payment) => {
-    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Update payment')) return;
+  const updatePayment = async (payment: Payment): Promise<boolean> => {
+    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Update payment')) return false;
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
     const normalizedPayment = normalizePaymentRecordLoaded({
       ...payment,
@@ -6422,10 +6773,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
     const existing = payments.find(p => p.id === normalizedPayment.id);
     if (!existing) {
-      addPayment(normalizedPayment);
-      return;
+      return addPayment(normalizedPayment);
     }
-    if (!canEditTransaction('Payments', String(normalizedPayment.referenceNo || normalizedPayment.id || '').trim(), existing.date || normalizedPayment.date)) return;
+    if (!canEditTransaction('Payments', String(normalizedPayment.referenceNo || normalizedPayment.id || '').trim(), existing.date || normalizedPayment.date)) return false;
 
     const normalizeLinkedInvoices = (values?: string[]) =>
       (values || [])
@@ -6445,30 +6795,42 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       existingLinked !== updatedLinked;
 
     if (!hasFinancialImpact) {
+      const saved = await syncRecordStrict('payments', normalizedPayment);
+      if (!saved.ok) return false;
       setPayments(prev => prev.map(p => p.id === normalizedPayment.id ? normalizedPayment : p));
-      syncRecord('payments', normalizedPayment);
       recordActivity({
         action: 'Updated',
         module: 'Payments',
         description: `Updated payment: ${normalizedPayment.referenceNo || normalizedPayment.id}`,
       });
-      return;
+      return true;
     }
 
     // Rebuild balances/statuses by removing old effects then applying updated payment.
-    deletePayment(existing.id, { skipActivity: true, skipServerDelete: true });
-    addPayment({ ...normalizedPayment, id: existing.id }, { skipActivity: true });
+    await deletePayment(existing.id, {
+      skipActivity: true,
+      skipServerDelete: true,
+      skipPermissionBoundary: true,
+    });
+    await addPayment(
+      { ...normalizedPayment, id: existing.id },
+      { skipActivity: true, skipPermissionBoundary: true },
+    );
     recordActivity({
       action: 'Updated',
       module: 'Payments',
       description: `Updated payment: ${normalizedPayment.referenceNo || normalizedPayment.id}`,
     });
+    return true;
   };
 
-  const deletePayment = (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean }) => {
-    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) return;
+  const deletePayment = async (
+    id: string,
+    options?: { skipActivity?: boolean; skipServerDelete?: boolean; skipPermissionBoundary?: boolean },
+  ): Promise<boolean> => {
+    if (!(options?.skipPermissionBoundary === true) && !enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) return false;
     const payment = payments.find(p => p.id === id);
-    if (!payment) return;
+    if (!payment) return false;
 
     const applyLocalDelete = () => {
       setPayments(prev => prev.filter(p => p.id !== id));
@@ -6637,9 +6999,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (options?.skipServerDelete) {
       applyLocalDelete();
-      return;
+      return true;
     }
     confirmDeleteFromPostgres('payments', id, 'Payments', payment.referenceNo || payment.id, applyLocalDelete);
+    return true;
   };
 
   // ============================================================
@@ -6648,24 +7011,44 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addExpense = (expense: Expense) => {
     const normalized = normalizeExpenseRecordLoaded(expense);
-    setExpenses(prev => [...prev, normalized]);
-    syncRecord('expenses', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Expenses',
-      description: `Added expense: ${normalized.refNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('expenses', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Expenses',
+          description: `Failed to add expense ${normalized.refNo || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setExpenses(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Expenses',
+        description: `Added expense: ${normalized.refNo || normalized.id}`,
+      });
+    })();
   };
   const updateExpense = (expense: Expense) => {
     const normalized = normalizeExpenseRecordLoaded(expense);
     if (!canEditTransaction('Expenses', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
-    setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
-    syncRecord('expenses', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Expenses',
-      description: `Updated expense: ${normalized.refNo || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('expenses', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Expenses',
+          description: `Failed to update expense ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+      recordActivity({
+        action: 'Updated',
+        module: 'Expenses',
+        description: `Updated expense: ${normalized.refNo || normalized.id}`,
+      });
+    })();
   };
   const deleteExpense = (id: string) => {
     const existing = expenses.find(e => e.id === id);
@@ -6686,12 +7069,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addExpenseCategory = (cat: ExpenseCategory) => {
-    setExpenseCategories(prev => [...prev, cat]);
-    syncRecord('expenseCategories', cat);
+    void (async () => {
+      const saved = await syncRecordStrict('expenseCategories', cat);
+      if (!saved.ok) return;
+      setExpenseCategories(prev => [...prev, cat]);
+    })();
   };
   const updateExpenseCategory = (cat: ExpenseCategory) => {
-    setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
-    syncRecord('expenseCategories', cat);
+    void (async () => {
+      const saved = await syncRecordStrict('expenseCategories', cat);
+      if (!saved.ok) return;
+      setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
+    })();
   };
   const deleteExpenseCategory = (id: string) => {
     confirmDeleteFromPostgres('expenseCategories', id, 'Expense Categories', id, () => {
@@ -6706,26 +7095,46 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addUser = (user: AppUser) => {
     if (!enforcePermissionBoundary('User', 'Add user', 'Create user')) return;
     const normalized = normalizeUserRecord(user);
-    setUsers(prev => [...prev, normalized]);
-    setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
-    syncRecord('users', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Users',
-      description: `Added user: ${normalized.name || normalized.username || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('users', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Users',
+          description: `Failed to add user ${normalized.name || normalized.username || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setUsers(prev => [...prev, normalized]);
+      setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+      recordActivity({
+        action: 'Created',
+        module: 'Users',
+        description: `Added user: ${normalized.name || normalized.username || normalized.id}`,
+      });
+    })();
   };
   const updateUser = (user: AppUser) => {
     if (!enforcePermissionBoundary('User', ['Add user', 'Edit user'], 'Update user')) return;
     const normalized = normalizeUserRecord(user);
-    setUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
-    setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
-    syncRecord('users', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Users',
-      description: `Updated user: ${normalized.name || normalized.username || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('users', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Users',
+          description: `Failed to update user ${normalized.name || normalized.username || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+      setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+      recordActivity({
+        action: 'Updated',
+        module: 'Users',
+        description: `Updated user: ${normalized.name || normalized.username || normalized.id}`,
+      });
+    })();
   };
   const deleteUser = (id: string) => {
     if (!enforcePermissionBoundary('User', ['Add user', 'Delete user'], 'Delete user')) return;
@@ -6749,29 +7158,53 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addRole = (role: Role) => {
     const normalized = normalizeRoleRecord(role);
-    setRoles(prev => [...prev, normalized]);
-    recordActivity({
-      action: 'Created',
-      module: 'Roles',
-      description: `Added role: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('roles', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Roles',
+          description: `Failed to add role ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setRoles(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Roles',
+        description: `Added role: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const updateRole = (role: Role) => {
     const normalized = normalizeRoleRecord(role);
-    setRoles(prev => prev.map(r => r.id === role.id ? normalized : r));
-    recordActivity({
-      action: 'Updated',
-      module: 'Roles',
-      description: `Updated role: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('roles', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Roles',
+          description: `Failed to update role ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setRoles(prev => prev.map(r => r.id === role.id ? normalized : r));
+      recordActivity({
+        action: 'Updated',
+        module: 'Roles',
+        description: `Updated role: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const deleteRole = (id: number) => {
     const existing = roles.find(r => r.id === id);
-    setRoles(prev => prev.filter(r => r.id !== id));
-    recordActivity({
-      action: 'Deleted',
-      module: 'Roles',
-      description: `Deleted role: ${existing?.name || id}`,
+    confirmDeleteFromPostgres('roles', String(id), 'Roles', existing?.name || String(id), () => {
+      setRoles(prev => prev.filter(r => r.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Roles',
+        description: `Deleted role: ${existing?.name || id}`,
+      });
     });
   };
 
@@ -6781,29 +7214,53 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addCommissionAgent = (agent: CommissionAgent) => {
     const normalized = normalizeCommissionAgentRecord(agent);
-    setCommissionAgents(prev => [...prev, normalized]);
-    recordActivity({
-      action: 'Created',
-      module: 'Commission Agents',
-      description: `Added agent: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('commissionAgents', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Commission Agents',
+          description: `Failed to add agent ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCommissionAgents(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Commission Agents',
+        description: `Added agent: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const updateCommissionAgent = (agent: CommissionAgent) => {
     const normalized = normalizeCommissionAgentRecord(agent);
-    setCommissionAgents(prev => prev.map(a => a.id === agent.id ? normalized : a));
-    recordActivity({
-      action: 'Updated',
-      module: 'Commission Agents',
-      description: `Updated agent: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('commissionAgents', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Commission Agents',
+          description: `Failed to update agent ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setCommissionAgents(prev => prev.map(a => a.id === agent.id ? normalized : a));
+      recordActivity({
+        action: 'Updated',
+        module: 'Commission Agents',
+        description: `Updated agent: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const deleteCommissionAgent = (id: number) => {
     const existing = commissionAgents.find(a => a.id === id);
-    setCommissionAgents(prev => prev.filter(a => a.id !== id));
-    recordActivity({
-      action: 'Deleted',
-      module: 'Commission Agents',
-      description: `Deleted agent: ${existing?.name || id}`,
+    confirmDeleteFromPostgres('commissionAgents', String(id), 'Commission Agents', existing?.name || String(id), () => {
+      setCommissionAgents(prev => prev.filter(a => a.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Commission Agents',
+        description: `Deleted agent: ${existing?.name || id}`,
+      });
     });
   };
 
@@ -6944,7 +7401,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const matchesOldName = (value?: string) => normalizeText(value) === normalizeText(previousName);
       await refreshLocationDependencyCaches();
 
-      setProducts(prev => prev.map(product => {
+      const nextProducts = products.map((product) => {
         const businessLocation = matchesOldName(product.businessLocation) ? nextName : product.businessLocation;
         const openingStockLocation = matchesOldName(product.openingStockLocation)
           ? nextName
@@ -6957,28 +7414,67 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           businessLocation,
           openingStockLocation,
         };
-      }));
-      setSales(prev => prev.map(sale => matchesOldName(sale.location) ? { ...sale, location: nextName } : sale));
-      setSellReturns(prev => prev.map(record => matchesOldName(record.location) ? { ...record, location: nextName } : record));
-      setPurchases(prev => prev.map(purchase => matchesOldName(purchase.location) ? { ...purchase, location: nextName } : purchase));
-      setPurchaseRequisitions(prev => prev.map(requisition => matchesOldName(requisition.location) ? { ...requisition, location: nextName } : requisition));
-      setPurchaseOrders(prev => prev.map(order => matchesOldName(order.location) ? { ...order, location: nextName } : order));
-      setPurchaseReturns(prev => prev.map(record => matchesOldName(record.location) ? { ...record, location: nextName } : record));
-      setOrders(prev => prev.map(order => matchesOldName(order.businessLocation) ? { ...order, businessLocation: nextName } : order));
-      setExpenses(prev => prev.map(expense => matchesOldName(expense.location) ? { ...expense, location: nextName } : expense));
-      setDiscounts(prev => prev.map(discount => {
-        if (!matchesOldName(discount.location)) return discount;
-        return { ...discount, location: nextName };
-      }));
-      setPayments(prev => prev.map(payment => matchesOldName(payment.location) ? { ...payment, location: nextName } : payment));
-      setUsers(prev => prev.map(user => matchesOldName(user.businessLocation) ? { ...user, businessLocation: nextName } : user));
-      setCurrentUser(prev => {
-        if (!prev || !matchesOldName(prev.businessLocation)) return prev;
-        return {
-          ...prev,
-          businessLocation: nextName,
-        };
       });
+      const nextSales = sales.map(sale => matchesOldName(sale.location) ? { ...sale, location: nextName } : sale);
+      const nextSellReturns = sellReturns.map(record => matchesOldName(record.location) ? { ...record, location: nextName } : record);
+      const nextPurchases = purchases.map(purchase => matchesOldName(purchase.location) ? { ...purchase, location: nextName } : purchase);
+      const nextPurchaseRequisitions = purchaseRequisitions.map(requisition => matchesOldName(requisition.location) ? { ...requisition, location: nextName } : requisition);
+      const nextPurchaseOrders = purchaseOrders.map(order => matchesOldName(order.location) ? { ...order, location: nextName } : order);
+      const nextPurchaseReturns = purchaseReturns.map(record => matchesOldName(record.location) ? { ...record, location: nextName } : record);
+      const nextOrders = orders.map(order => matchesOldName(order.businessLocation) ? { ...order, businessLocation: nextName } : order);
+      const nextExpenses = expenses.map(expense => matchesOldName(expense.location) ? { ...expense, location: nextName } : expense);
+      const nextDiscounts = discounts.map(discount => matchesOldName(discount.location) ? { ...discount, location: nextName } : discount);
+      const nextPayments = payments.map(payment => matchesOldName(payment.location) ? { ...payment, location: nextName } : payment);
+      const nextUsers = users.map(user => matchesOldName(user.businessLocation) ? { ...user, businessLocation: nextName } : user);
+      const nextCurrentUser = currentUser && matchesOldName(currentUser.businessLocation)
+        ? { ...currentUser, businessLocation: nextName }
+        : currentUser;
+
+      const syncRenamedRows = async (
+        resource: string,
+        label: string,
+        rows: Record<string, unknown>[],
+      ): Promise<LocationMutationResult> => {
+        for (const row of rows) {
+          const saved = await syncRecordStrict(resource, row);
+          if (saved.ok) continue;
+          const message = saved.status === 401
+            ? 'Your session expired. Please sign in again.'
+            : (saved.error || `Failed to sync ${label}.`);
+          recordActivity({
+            action: 'Blocked',
+            module: 'Locations',
+            description: `Location rename cascade failed on ${label} (${saved.status || 0}): ${message}`,
+          });
+          return { success: false, message };
+        }
+        return { success: true };
+      };
+
+      const renameSyncPlan: Array<{
+        resource: string;
+        label: string;
+        rows: Record<string, unknown>[];
+      }> = [
+        { resource: 'products', label: 'Products', rows: nextProducts.filter((row, index) => row !== products[index]) as Record<string, unknown>[] },
+        { resource: 'sales', label: 'Sales', rows: nextSales.filter((row, index) => row !== sales[index]) as Record<string, unknown>[] },
+        { resource: 'sellReturns', label: 'Sell Returns', rows: nextSellReturns.filter((row, index) => row !== sellReturns[index]) as Record<string, unknown>[] },
+        { resource: 'purchases', label: 'Purchases', rows: nextPurchases.filter((row, index) => row !== purchases[index]) as Record<string, unknown>[] },
+        { resource: 'purchaseRequisitions', label: 'Purchase Requisitions', rows: nextPurchaseRequisitions.filter((row, index) => row !== purchaseRequisitions[index]) as Record<string, unknown>[] },
+        { resource: 'purchaseOrders', label: 'Purchase Orders', rows: nextPurchaseOrders.filter((row, index) => row !== purchaseOrders[index]) as Record<string, unknown>[] },
+        { resource: 'purchaseReturns', label: 'Purchase Returns', rows: nextPurchaseReturns.filter((row, index) => row !== purchaseReturns[index]) as Record<string, unknown>[] },
+        { resource: 'orders', label: 'Orders', rows: nextOrders.filter((row, index) => row !== orders[index]) as Record<string, unknown>[] },
+        { resource: 'expenses', label: 'Expenses', rows: nextExpenses.filter((row, index) => row !== expenses[index]) as Record<string, unknown>[] },
+        { resource: 'discounts', label: 'Discounts', rows: nextDiscounts.filter((row, index) => row !== discounts[index]) as Record<string, unknown>[] },
+        { resource: 'payments', label: 'Payments', rows: nextPayments.filter((row, index) => row !== payments[index]) as Record<string, unknown>[] },
+        { resource: 'users', label: 'Users', rows: nextUsers.filter((row, index) => row !== users[index]) as Record<string, unknown>[] },
+      ];
+
+      for (const step of renameSyncPlan) {
+        if (step.rows.length === 0) continue;
+        const outcome = await syncRenamedRows(step.resource, step.label, step.rows);
+        if (!outcome.success) return outcome;
+      }
 
       try {
         const transferRows = readStockTransfers();
@@ -6994,9 +7490,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             locationTo: toMatch ? nextName : row.locationTo,
           };
         });
-        if (transferChanged) writeStockTransfers(nextTransfers);
+        if (transferChanged) {
+          const transferSaved = await writeStockTransfers(nextTransfers);
+          if (!transferSaved) {
+            return { success: false, message: 'Failed to sync linked stock transfers in Postgres.' };
+          }
+        }
       } catch {
-        // ignore storage migration errors
+        return { success: false, message: 'Failed to sync linked stock transfers in Postgres.' };
       }
 
       try {
@@ -7007,9 +7508,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           adjustmentChanged = true;
           return { ...row, location: nextName };
         });
-        if (adjustmentChanged) writeStockAdjustments(nextAdjustments);
+        if (adjustmentChanged) {
+          const adjustmentSaved = await writeStockAdjustments(nextAdjustments);
+          if (!adjustmentSaved) {
+            return { success: false, message: 'Failed to sync linked stock adjustments in Postgres.' };
+          }
+        }
       } catch {
-        // ignore storage migration errors
+        return { success: false, message: 'Failed to sync linked stock adjustments in Postgres.' };
       }
 
       try {
@@ -7023,19 +7529,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             location: nextName,
           };
         });
-        if (lotChanged) writeStockLotBalances(nextLotRows);
+        if (lotChanged) {
+          const lotSaved = await writeStockLotBalances(nextLotRows, lotRows);
+          if (!lotSaved) {
+            return { success: false, message: 'Failed to sync linked stock lots in Postgres.' };
+          }
+        }
       } catch {
-        // ignore storage migration errors
+        return { success: false, message: 'Failed to sync linked stock lots in Postgres.' };
       }
 
       try {
         const activeSession = getActiveRegisterSession();
         if (activeSession && (activeSession.locationId === normalized.id || matchesOldName(activeSession.locationName))) {
-          setActiveRegisterSession({
+          const activeSaved = await setActiveRegisterSession({
             ...activeSession,
             locationId: normalized.id,
             locationName: nextName,
           });
+          if (!activeSaved) {
+            return { success: false, message: 'Failed to sync active register session in Postgres.' };
+          }
         }
         const sessions = getRegisterSessions();
         let sessionChanged = false;
@@ -7048,9 +7562,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             locationName: nextName,
           };
         });
-        if (sessionChanged) setRegisterSessions(nextSessions);
+        if (sessionChanged) {
+          const sessionSaved = await setRegisterSessions(nextSessions);
+          if (!sessionSaved) {
+            return { success: false, message: 'Failed to sync register sessions in Postgres.' };
+          }
+        }
       } catch {
-        // ignore register migration errors
+        return { success: false, message: 'Failed to sync register sessions in Postgres.' };
       }
 
       try {
@@ -7060,15 +7579,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         const changed = nextRows.some((row, index) => row !== fieldPaymentsCacheRef.current[index]);
         if (changed) {
-          fieldPaymentsCacheRef.current = nextRows;
-          nextRows.forEach((row: any) => {
+          for (const row of nextRows) {
             const id = String(row?.id || '').trim();
-            if (!id) return;
-            syncDedicated('/api/sync/field-payments', id, row);
-          });
+            if (!id) continue;
+            const saved = await syncDedicatedStrict('/api/sync/field-payments', id, row);
+            if (!saved.ok) {
+              return { success: false, message: saved.error || 'Failed to sync field payments in Postgres.' };
+            }
+          }
+          fieldPaymentsCacheRef.current = nextRows;
         }
       } catch {
-        // ignore field payments migration errors
+        return { success: false, message: 'Failed to sync field payments in Postgres.' };
       }
 
       try {
@@ -7079,17 +7601,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         });
         const changed = nextRows.some((row, index) => row !== paymentAccountRows[index]);
         if (changed) {
-          setStoredPaymentAccounts(nextRows);
-          nextRows.forEach((row: any) => {
+          for (const row of nextRows) {
             const id = String(row?.id || '').trim();
-            if (!id) return;
-            syncDedicated('/api/sync/payment-accounts', id, row);
-          });
+            if (!id) continue;
+            const saved = await syncDedicatedStrict('/api/sync/payment-accounts', id, row);
+            if (!saved.ok) {
+              return { success: false, message: saved.error || 'Failed to sync payment accounts in Postgres.' };
+            }
+          }
+          setStoredPaymentAccounts(nextRows);
           dispatchPaymentAccountsUpdated();
         }
       } catch {
-        // ignore payment accounts migration errors
+        return { success: false, message: 'Failed to sync payment accounts in Postgres.' };
       }
+
+      setProducts(nextProducts);
+      setSales(nextSales);
+      setSellReturns(nextSellReturns);
+      setPurchases(nextPurchases);
+      setPurchaseRequisitions(nextPurchaseRequisitions);
+      setPurchaseOrders(nextPurchaseOrders);
+      setPurchaseReturns(nextPurchaseReturns);
+      setOrders(nextOrders);
+      setExpenses(nextExpenses);
+      setDiscounts(nextDiscounts);
+      setPayments(nextPayments);
+      setUsers(nextUsers);
+      setCurrentUser(nextCurrentUser);
     }
 
     recordActivity({
@@ -7238,12 +7777,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    setPrinters(prev => [...prev, payload]);
-    recordActivity({
-      action: 'Created',
-      module: 'Receipt Printers',
-      description: `Added printer: ${payload.name || payload.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('receiptPrinters', payload);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Receipt Printers',
+          description: `Failed to add printer ${payload.name || payload.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPrinters(prev => [...prev, payload]);
+      recordActivity({
+        action: 'Created',
+        module: 'Receipt Printers',
+        description: `Added printer: ${payload.name || payload.id}`,
+      });
+    })();
   };
 
   const updatePrinter = (printer: ReceiptPrinter) => {
@@ -7280,12 +7830,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    setPrinters(prev => prev.map(row => (row.id === normalized.id ? normalized : row)));
-    recordActivity({
-      action: 'Updated',
-      module: 'Receipt Printers',
-      description: `Updated printer: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('receiptPrinters', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Receipt Printers',
+          description: `Failed to update printer ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setPrinters(prev => prev.map(row => (row.id === normalized.id ? normalized : row)));
+      recordActivity({
+        action: 'Updated',
+        module: 'Receipt Printers',
+        description: `Updated printer: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
 
   const deletePrinter = (id: string) => {
@@ -7299,23 +7860,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    setPrinters(prev => prev.filter(row => row.id !== id));
-    setLocations(prev =>
-      prev.map(location =>
-        String(location.receiptPrinterId || '').trim() === id
-          ? {
-              ...location,
-              receiptPrinterType: 'browser',
-              receiptPrinterId: '',
-            }
-          : location
-      )
-    );
-
-    recordActivity({
-      action: 'Deleted',
-      module: 'Receipt Printers',
-      description: `Deleted printer: ${existing.name || existing.id}`,
+    confirmDeleteFromPostgres('receiptPrinters', id, 'Receipt Printers', existing.name || existing.id, () => {
+      void (async () => {
+        const affectedLocations = locations
+          .filter(location => String(location.receiptPrinterId || '').trim() === id)
+          .map(location => ({
+            ...location,
+            receiptPrinterType: 'browser' as const,
+            receiptPrinterId: '',
+          }));
+        const persistedLocations = new Map<string, Location>();
+        for (const location of affectedLocations) {
+          const saved = await syncRecordStrict('locations', location);
+          if (!saved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Receipt Printers',
+              description: `Failed to sync linked location ${location.name || location.id} after printer delete (${saved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedLocations.set(location.id, location);
+        }
+        setPrinters(prev => prev.filter(row => row.id !== id));
+        if (persistedLocations.size > 0) {
+          setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+        }
+        recordActivity({
+          action: 'Deleted',
+          module: 'Receipt Printers',
+          description: `Deleted printer: ${existing.name || existing.id}`,
+        });
+      })();
     });
   };
 
@@ -7395,18 +7971,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setInvoiceSchemes(prev => {
-      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-      const nextRecords = normalized.isDefault
-        ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
-        : [...withoutDuplicate, normalized];
-      return normalizeInvoiceSchemes(nextRecords);
-    });
-    recordActivity({
-      action: 'Created',
-      module: 'Invoice Settings',
-      description: `Added invoice scheme: ${normalized.name}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('invoiceSchemes', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Invoice Settings',
+          description: `Failed to add invoice scheme ${normalized.name} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setInvoiceSchemes(prev => {
+        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+        const nextRecords = normalized.isDefault
+          ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
+          : [...withoutDuplicate, normalized];
+        return normalizeInvoiceSchemes(nextRecords);
+      });
+      recordActivity({
+        action: 'Created',
+        module: 'Invoice Settings',
+        description: `Added invoice scheme: ${normalized.name}`,
+      });
+    })();
   };
 
   const updateInvoiceScheme = (scheme: InvoiceScheme) => {
@@ -7440,40 +8027,80 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setInvoiceSchemes(prev => {
-      const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
-      const withExclusiveDefault = normalized.isDefault
-        ? mapped.map(record => (
-          record.id === normalized.id
-            ? { ...record, isDefault: true }
-            : { ...record, isDefault: false }
-        ))
-        : mapped;
-      return normalizeInvoiceSchemes(withExclusiveDefault);
-    });
-    const oldName = String(existing.name || '').trim();
-    const newName = String(normalized.name || '').trim();
-    if (oldName && newName && normalizeText(oldName) !== normalizeText(newName)) {
-      setLocations(prev => prev.map(location => {
-        if (normalizeText(location.invoiceScheme) !== normalizeText(oldName)) return location;
-        return {
-          ...location,
-          invoiceScheme: newName,
-        };
-      }));
-      setSales(prev => prev.map(sale => {
-        if (normalizeText(sale.invoiceScheme) !== normalizeText(oldName)) return sale;
-        return {
-          ...sale,
-          invoiceScheme: newName,
-        };
-      }));
-    }
-    recordActivity({
-      action: 'Updated',
-      module: 'Invoice Settings',
-      description: `Updated invoice scheme: ${normalized.name}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('invoiceSchemes', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Invoice Settings',
+          description: `Failed to update invoice scheme ${normalized.name} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+
+      const oldName = String(existing.name || '').trim();
+      const newName = String(normalized.name || '').trim();
+      const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
+      const persistedLocations = new Map<string, Location>();
+      const persistedSales = new Map<string, Sale>();
+
+      if (renamed) {
+        const affectedLocations = locations
+          .filter(location => normalizeText(location.invoiceScheme) === normalizeText(oldName))
+          .map(location => ({ ...location, invoiceScheme: newName }));
+        for (const location of affectedLocations) {
+          const locationSaved = await syncRecordStrict('locations', location);
+          if (!locationSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Invoice Settings',
+              description: `Failed to sync linked location ${location.name || location.id} after scheme rename (${locationSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedLocations.set(location.id, location);
+        }
+
+        const affectedSales = sales
+          .filter(sale => normalizeText(sale.invoiceScheme) === normalizeText(oldName))
+          .map(sale => ({ ...sale, invoiceScheme: newName }));
+        for (const sale of affectedSales) {
+          const saleSaved = await syncRecordStrict('sales', sale);
+          if (!saleSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Invoice Settings',
+              description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after scheme rename (${saleSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedSales.set(sale.id, sale);
+        }
+      }
+
+      setInvoiceSchemes(prev => {
+        const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
+        const withExclusiveDefault = normalized.isDefault
+          ? mapped.map(record => (
+            record.id === normalized.id
+              ? { ...record, isDefault: true }
+              : { ...record, isDefault: false }
+          ))
+          : mapped;
+        return normalizeInvoiceSchemes(withExclusiveDefault);
+      });
+      if (persistedLocations.size > 0) {
+        setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+      }
+      if (persistedSales.size > 0) {
+        setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
+      }
+      recordActivity({
+        action: 'Updated',
+        module: 'Invoice Settings',
+        description: `Updated invoice scheme: ${normalized.name}`,
+      });
+    })();
   };
 
   const deleteInvoiceScheme = (id: string): LocationMutationResult => {
@@ -7499,11 +8126,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return { success: false, message };
     }
-    setInvoiceSchemes(prev => normalizeInvoiceSchemes(prev.filter(record => record.id !== id)));
-    recordActivity({
-      action: 'Deleted',
-      module: 'Invoice Settings',
-      description: `Deleted invoice scheme: ${existing.name}`,
+    confirmDeleteFromPostgres('invoiceSchemes', id, 'Invoice Settings', existing.name, () => {
+      setInvoiceSchemes(prev => normalizeInvoiceSchemes(prev.filter(record => record.id !== id)));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Invoice Settings',
+        description: `Deleted invoice scheme: ${existing.name}`,
+      });
     });
     return { success: true };
   };
@@ -7529,18 +8158,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setInvoiceLayouts(prev => {
-      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-      const nextRecords = normalized.isDefault
-        ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
-        : [...withoutDuplicate, normalized];
-      return normalizeInvoiceLayouts(nextRecords);
-    });
-    recordActivity({
-      action: 'Created',
-      module: 'Invoice Settings',
-      description: `Added invoice layout: ${normalized.name}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('invoiceLayouts', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Invoice Settings',
+          description: `Failed to add invoice layout ${normalized.name} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setInvoiceLayouts(prev => {
+        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+        const nextRecords = normalized.isDefault
+          ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
+          : [...withoutDuplicate, normalized];
+        return normalizeInvoiceLayouts(nextRecords);
+      });
+      recordActivity({
+        action: 'Created',
+        module: 'Invoice Settings',
+        description: `Added invoice layout: ${normalized.name}`,
+      });
+    })();
   };
 
   const updateInvoiceLayout = (layout: InvoiceLayout) => {
@@ -7574,43 +8214,90 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setInvoiceLayouts(prev => {
-      const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
-      const withExclusiveDefault = normalized.isDefault
-        ? mapped.map(record => (
-          record.id === normalized.id
-            ? { ...record, isDefault: true }
-            : { ...record, isDefault: false }
-        ))
-        : mapped;
-      return normalizeInvoiceLayouts(withExclusiveDefault);
-    });
-    const oldName = String(existing.name || '').trim();
-    const newName = String(normalized.name || '').trim();
-    if (oldName && newName && normalizeText(oldName) !== normalizeText(newName)) {
-      setLocations(prev => prev.map(location => {
-        const matchedPos = normalizeText(location.invoiceLayoutPos) === normalizeText(oldName);
-        const matchedSale = normalizeText(location.invoiceLayoutSale) === normalizeText(oldName);
-        if (!matchedPos && !matchedSale) return location;
-        return {
-          ...location,
-          invoiceLayoutPos: matchedPos ? newName : location.invoiceLayoutPos,
-          invoiceLayoutSale: matchedSale ? newName : location.invoiceLayoutSale,
-        };
-      }));
-      setSales(prev => prev.map(sale => {
-        if (normalizeText(sale.invoiceLayout) !== normalizeText(oldName)) return sale;
-        return {
-          ...sale,
-          invoiceLayout: newName,
-        };
-      }));
-    }
-    recordActivity({
-      action: 'Updated',
-      module: 'Invoice Settings',
-      description: `Updated invoice layout: ${normalized.name}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('invoiceLayouts', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Invoice Settings',
+          description: `Failed to update invoice layout ${normalized.name} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      const oldName = String(existing.name || '').trim();
+      const newName = String(normalized.name || '').trim();
+      const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
+      const persistedLocations = new Map<string, Location>();
+      const persistedSales = new Map<string, Sale>();
+
+      if (renamed) {
+        const affectedLocations = locations
+          .filter(location => (
+            normalizeText(location.invoiceLayoutPos) === normalizeText(oldName) ||
+            normalizeText(location.invoiceLayoutSale) === normalizeText(oldName)
+          ))
+          .map(location => {
+            const matchedPos = normalizeText(location.invoiceLayoutPos) === normalizeText(oldName);
+            const matchedSale = normalizeText(location.invoiceLayoutSale) === normalizeText(oldName);
+            return {
+              ...location,
+              invoiceLayoutPos: matchedPos ? newName : location.invoiceLayoutPos,
+              invoiceLayoutSale: matchedSale ? newName : location.invoiceLayoutSale,
+            };
+          });
+        for (const location of affectedLocations) {
+          const locationSaved = await syncRecordStrict('locations', location);
+          if (!locationSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Invoice Settings',
+              description: `Failed to sync linked location ${location.name || location.id} after layout rename (${locationSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedLocations.set(location.id, location);
+        }
+
+        const affectedSales = sales
+          .filter(sale => normalizeText(sale.invoiceLayout) === normalizeText(oldName))
+          .map(sale => ({ ...sale, invoiceLayout: newName }));
+        for (const sale of affectedSales) {
+          const saleSaved = await syncRecordStrict('sales', sale);
+          if (!saleSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Invoice Settings',
+              description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after layout rename (${saleSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedSales.set(sale.id, sale);
+        }
+      }
+
+      setInvoiceLayouts(prev => {
+        const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
+        const withExclusiveDefault = normalized.isDefault
+          ? mapped.map(record => (
+            record.id === normalized.id
+              ? { ...record, isDefault: true }
+              : { ...record, isDefault: false }
+          ))
+          : mapped;
+        return normalizeInvoiceLayouts(withExclusiveDefault);
+      });
+      if (persistedLocations.size > 0) {
+        setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+      }
+      if (persistedSales.size > 0) {
+        setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
+      }
+      recordActivity({
+        action: 'Updated',
+        module: 'Invoice Settings',
+        description: `Updated invoice layout: ${normalized.name}`,
+      });
+    })();
   };
 
   const deleteInvoiceLayout = (id: string): LocationMutationResult => {
@@ -7637,11 +8324,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return { success: false, message };
     }
-    setInvoiceLayouts(prev => normalizeInvoiceLayouts(prev.filter(record => record.id !== id)));
-    recordActivity({
-      action: 'Deleted',
-      module: 'Invoice Settings',
-      description: `Deleted invoice layout: ${existing.name}`,
+    confirmDeleteFromPostgres('invoiceLayouts', id, 'Invoice Settings', existing.name, () => {
+      setInvoiceLayouts(prev => normalizeInvoiceLayouts(prev.filter(record => record.id !== id)));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Invoice Settings',
+        description: `Deleted invoice layout: ${existing.name}`,
+      });
     });
     return { success: true };
   };
@@ -7671,21 +8360,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setBarcodeSettings(prev => {
-      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-      if (normalized.isDefault) {
-        return normalizeBarcodeSettings([
-          ...withoutDuplicate.map(record => ({ ...record, isDefault: false })),
-          { ...normalized, isDefault: true },
-        ]);
+    void (async () => {
+      const saved = await syncRecordStrict('barcodeSettings', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Barcode Settings',
+          description: `Failed to add barcode setting ${normalized.name} to Postgres (${saved.status || 0}).`,
+        });
+        return;
       }
-      return normalizeBarcodeSettings([...withoutDuplicate, normalized]);
-    });
-    recordActivity({
-      action: 'Created',
-      module: 'Barcode Settings',
-      description: `Added barcode setting: ${normalized.name}`,
-    });
+      setBarcodeSettings(prev => {
+        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+        if (normalized.isDefault) {
+          return normalizeBarcodeSettings([
+            ...withoutDuplicate.map(record => ({ ...record, isDefault: false })),
+            { ...normalized, isDefault: true },
+          ]);
+        }
+        return normalizeBarcodeSettings([...withoutDuplicate, normalized]);
+      });
+      recordActivity({
+        action: 'Created',
+        module: 'Barcode Settings',
+        description: `Added barcode setting: ${normalized.name}`,
+      });
+    })();
   };
 
   const updateBarcodeSetting = (setting: BarcodeStickerSetting) => {
@@ -7719,21 +8419,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setBarcodeSettings(prev => {
-      const nextRecords = prev.map(record => (
-        record.id === normalized.id
-          ? normalized
-          : normalized.isDefault
-            ? { ...record, isDefault: false }
-            : record
-      ));
-      return normalizeBarcodeSettings(nextRecords);
-    });
-    recordActivity({
-      action: 'Updated',
-      module: 'Barcode Settings',
-      description: `Updated barcode setting: ${normalized.name}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('barcodeSettings', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Barcode Settings',
+          description: `Failed to update barcode setting ${normalized.name} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setBarcodeSettings(prev => {
+        const nextRecords = prev.map(record => (
+          record.id === normalized.id
+            ? normalized
+            : normalized.isDefault
+              ? { ...record, isDefault: false }
+              : record
+        ));
+        return normalizeBarcodeSettings(nextRecords);
+      });
+      recordActivity({
+        action: 'Updated',
+        module: 'Barcode Settings',
+        description: `Updated barcode setting: ${normalized.name}`,
+      });
+    })();
   };
 
   const deleteBarcodeSetting = (id: string): LocationMutationResult => {
@@ -7750,11 +8461,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return { success: false, message };
     }
-    setBarcodeSettings(prev => normalizeBarcodeSettings(prev.filter(record => record.id !== id)));
-    recordActivity({
-      action: 'Deleted',
-      module: 'Barcode Settings',
-      description: `Deleted barcode setting: ${existing.name}`,
+    confirmDeleteFromPostgres('barcodeSettings', id, 'Barcode Settings', existing.name, () => {
+      setBarcodeSettings(prev => normalizeBarcodeSettings(prev.filter(record => record.id !== id)));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Barcode Settings',
+        description: `Deleted barcode setting: ${existing.name}`,
+      });
     });
     return { success: true };
   };
@@ -7776,13 +8489,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setTaxRates(prev => normalizeTaxRates([...prev, normalized]));
-    syncRecord('taxRates', normalized);
-    recordActivity({
-      action: 'Added',
-      module: 'Tax Rates',
-      description: `Added tax rate: ${normalized.name} (${normalized.rate}%)`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('taxRates', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Tax Rates',
+          description: `Failed to add tax rate ${normalized.name} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setTaxRates(prev => normalizeTaxRates([...prev, normalized]));
+      recordActivity({
+        action: 'Added',
+        module: 'Tax Rates',
+        description: `Added tax rate: ${normalized.name} (${normalized.rate}%)`,
+      });
+    })();
   };
 
   const updateTaxRate = (tax: TaxRate) => {
@@ -7801,13 +8524,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setTaxRates(prev => normalizeTaxRates(prev.map(record => record.id === normalized.id ? normalized : record)));
-    syncRecord('taxRates', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Tax Rates',
-      description: `Updated tax rate: ${normalized.name} (${normalized.rate}%)`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('taxRates', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Tax Rates',
+          description: `Failed to update tax rate ${normalized.name} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setTaxRates(prev => normalizeTaxRates(prev.map(record => record.id === normalized.id ? normalized : record)));
+      recordActivity({
+        action: 'Updated',
+        module: 'Tax Rates',
+        description: `Updated tax rate: ${normalized.name} (${normalized.rate}%)`,
+      });
+    })();
   };
 
   const deleteTaxRate = (id: string) => {
@@ -7837,28 +8570,48 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addCustomerGroup = (group: CustomerGroup) => {
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    setCustomerGroups(prev => [...prev, normalizedGroup]);
-    syncRecord('customerGroups', normalizedGroup);
+    void (async () => {
+      const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+      if (!saved.ok) return;
+      setCustomerGroups(prev => [...prev, normalizedGroup]);
+    })();
   };
   const updateCustomerGroup = (group: CustomerGroup) => {
     const existingGroup = customerGroups.find(g => g.id === group.id);
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
-    syncRecord('customerGroups', normalizedGroup);
-    setCustomers(prev => prev.map(customer => {
-      const linkedById = customer.customerGroupId === group.id;
-      const linkedByLegacyName = !customer.customerGroupId &&
-        !!existingGroup &&
-        normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
-      if (!linkedById && !linkedByLegacyName) return customer;
-      const updatedCustomer = {
-        ...customer,
-        customerGroupId: normalizedGroup.id,
-        customerGroup: normalizedGroup.name,
-      };
-      syncRecord('customers', updatedCustomer);
-      return updatedCustomer;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+      if (!saved.ok) return;
+      const linkedCustomers = customers.filter((customer) => {
+        const linkedById = customer.customerGroupId === group.id;
+        const linkedByLegacyName = !customer.customerGroupId &&
+          !!existingGroup &&
+          normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedById = new Map<string, Customer>();
+      for (const customer of linkedCustomers) {
+        const updatedCustomer: Customer = {
+          ...customer,
+          customerGroupId: normalizedGroup.id,
+          customerGroup: normalizedGroup.name,
+        };
+        const customerSaved = await syncRecordStrict('customers', updatedCustomer);
+        if (!customerSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Customer Groups',
+            description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group update (${customerSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedById.set(updatedCustomer.id, updatedCustomer);
+      }
+      setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
+      if (persistedById.size > 0) {
+        setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
+      }
+    })();
   };
   const deleteCustomerGroup = (id: string, reassignToGroupId?: string) => {
     const existingGroup = customerGroups.find(g => g.id === id);
@@ -7867,29 +8620,42 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       : undefined;
     confirmDeleteFromPostgres('customerGroups', id, 'Customer Groups', existingGroup?.name || id, () => {
       setCustomerGroups(prev => prev.filter(g => g.id !== id));
-      setCustomers(prev => prev.map(customer => {
-        const linkedById = customer.customerGroupId === id;
-        const linkedByLegacyName = !customer.customerGroupId &&
-          !!existingGroup &&
-          normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
-        if (!linkedById && !linkedByLegacyName) return customer;
-        if (reassignGroup && reassignGroup.id !== id) {
-          const updatedCustomer = {
-            ...customer,
-            customerGroupId: reassignGroup.id,
-            customerGroup: reassignGroup.name,
-          };
-          syncRecord('customers', updatedCustomer);
-          return updatedCustomer;
+      void (async () => {
+        const linkedCustomers = customers.filter((customer) => {
+          const linkedById = customer.customerGroupId === id;
+          const linkedByLegacyName = !customer.customerGroupId &&
+            !!existingGroup &&
+            normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
+          return linkedById || linkedByLegacyName;
+        });
+        const persistedById = new Map<string, Customer>();
+        for (const customer of linkedCustomers) {
+          const updatedCustomer: Customer = (reassignGroup && reassignGroup.id !== id)
+            ? {
+                ...customer,
+                customerGroupId: reassignGroup.id,
+                customerGroup: reassignGroup.name,
+              }
+            : {
+                ...customer,
+                customerGroupId: '',
+                customerGroup: '',
+              };
+          const customerSaved = await syncRecordStrict('customers', updatedCustomer);
+          if (!customerSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Customer Groups',
+              description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group delete (${customerSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedById.set(updatedCustomer.id, updatedCustomer);
         }
-        const updatedCustomer = {
-          ...customer,
-          customerGroupId: '',
-          customerGroup: '',
-        };
-        syncRecord('customers', updatedCustomer);
-        return updatedCustomer;
-      }));
+        if (persistedById.size > 0) {
+          setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
+        }
+      })();
     });
   };
 
@@ -7904,19 +8670,36 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       code: String(cat.code || '').trim(),
       description: String(cat.description || '').trim(),
     };
-    setProductCategories(prev => [...prev, normalizedCategory]);
-    syncRecord('productCategories', normalizedCategory);
-    setProducts(prev => prev.map(product => {
-      if (product.categoryId) return product;
-      if (normalizeText(product.category) !== normalizeText(normalizedCategory.name)) return product;
-      const updatedProduct = {
-        ...product,
-        categoryId: normalizedCategory.id,
-        category: normalizedCategory.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productCategories', normalizedCategory);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => (
+        !product.categoryId &&
+        normalizeText(product.category) === normalizeText(normalizedCategory.name)
+      ));
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = {
+          ...product,
+          categoryId: normalizedCategory.id,
+          category: normalizedCategory.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Categories',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category add (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setProductCategories(prev => [...prev, normalizedCategory]);
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const updateProductCategory = (cat: ProductCategory) => {
     const existingCategory = productCategories.find(category => category.id === cat.id);
@@ -7926,22 +8709,39 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       code: String(cat.code || '').trim(),
       description: String(cat.description || '').trim(),
     };
-    setProductCategories(prev => prev.map(category => category.id === cat.id ? normalizedCategory : category));
-    syncRecord('productCategories', normalizedCategory);
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.categoryId === normalizedCategory.id;
-      const linkedByLegacyName = !product.categoryId &&
-        !!existingCategory &&
-        normalizeText(product.category) === normalizeText(existingCategory.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        categoryId: normalizedCategory.id,
-        category: normalizedCategory.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productCategories', normalizedCategory);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => {
+        const linkedById = product.categoryId === normalizedCategory.id;
+        const linkedByLegacyName = !product.categoryId &&
+          !!existingCategory &&
+          normalizeText(product.category) === normalizeText(existingCategory.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = {
+          ...product,
+          categoryId: normalizedCategory.id,
+          category: normalizedCategory.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Categories',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category update (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setProductCategories(prev => prev.map(category => category.id === cat.id ? normalizedCategory : category));
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const deleteProductCategory = (id: string, reassignToCategoryId?: string) => {
     const existingCategory = productCategories.find(category => category.id === id);
@@ -7966,29 +8766,61 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const replacementCategory = explicitReplacement || fallbackUncategorized || createdUncategorized;
 
     confirmDeleteFromPostgres('productCategories', id, 'Product Categories', existingCategory.name || id, () => {
-      setProductCategories(prev => {
-        let next = prev;
-        if (createdUncategorized && !prev.some(category => normalizeText(category.name) === 'uncategorized')) {
-          next = [...next, createdUncategorized];
-          syncRecord('productCategories', createdUncategorized);
+      void (async () => {
+        let ensuredReplacement = replacementCategory;
+        if (createdUncategorized && !productCategories.some(category => normalizeText(category.name) === 'uncategorized')) {
+          const createdSaved = await syncRecordStrict('productCategories', createdUncategorized);
+          if (!createdSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Product Categories',
+              description: `Failed to create fallback category "Uncategorized" after delete (${createdSaved.status || 0}).`,
+            });
+            ensuredReplacement = fallbackUncategorized || explicitReplacement;
+          }
         }
-        return next.filter(category => category.id !== id);
-      });
 
-      if (!replacementCategory) return;
-      setProducts(prev => prev.map(product => {
-        const linkedById = product.categoryId === id;
-        const linkedByLegacyName = !product.categoryId &&
-          normalizeText(product.category) === normalizeText(existingCategory.name);
-        if (!linkedById && !linkedByLegacyName) return product;
-        const updatedProduct = {
-          ...product,
-          categoryId: replacementCategory.id,
-          category: replacementCategory.name,
-        };
-        syncRecord('products', updatedProduct);
-        return updatedProduct;
-      }));
+        setProductCategories(prev => {
+          let next = prev;
+          if (
+            createdUncategorized &&
+            ensuredReplacement?.id === createdUncategorized.id &&
+            !prev.some(category => normalizeText(category.name) === 'uncategorized')
+          ) {
+            next = [...next, createdUncategorized];
+          }
+          return next.filter(category => category.id !== id);
+        });
+
+        if (!ensuredReplacement) return;
+        const linkedProducts = products.filter((product) => {
+          const linkedById = product.categoryId === id;
+          const linkedByLegacyName = !product.categoryId &&
+            normalizeText(product.category) === normalizeText(existingCategory.name);
+          return linkedById || linkedByLegacyName;
+        });
+        const persistedProducts = new Map<string, Product>();
+        for (const product of linkedProducts) {
+          const updatedProduct: Product = {
+            ...product,
+            categoryId: ensuredReplacement.id,
+            category: ensuredReplacement.name,
+          };
+          const productSaved = await syncRecordStrict('products', updatedProduct);
+          if (!productSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Product Categories',
+              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category delete (${productSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedProducts.set(updatedProduct.id, updatedProduct);
+        }
+        if (persistedProducts.size > 0) {
+          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+        }
+      })();
     });
   };
 
@@ -8002,19 +8834,36 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       name: String(brand.name || '').trim() || '--',
       note: String(brand.note || '').trim(),
     };
-    setProductBrands(prev => [...prev, normalizedBrand]);
-    syncRecord('productBrands', normalizedBrand);
-    setProducts(prev => prev.map(product => {
-      if (product.brandId) return product;
-      if (normalizeText(product.brand) !== normalizeText(normalizedBrand.name)) return product;
-      const updatedProduct = {
-        ...product,
-        brandId: normalizedBrand.id,
-        brand: normalizedBrand.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productBrands', normalizedBrand);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => (
+        !product.brandId &&
+        normalizeText(product.brand) === normalizeText(normalizedBrand.name)
+      ));
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = {
+          ...product,
+          brandId: normalizedBrand.id,
+          brand: normalizedBrand.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Brands',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand add (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setProductBrands(prev => [...prev, normalizedBrand]);
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const updateProductBrand = (brand: ProductBrand) => {
     const existingBrand = productBrands.find(currentBrand => currentBrand.id === brand.id);
@@ -8023,22 +8872,39 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       name: String(brand.name || '').trim() || '--',
       note: String(brand.note || '').trim(),
     };
-    setProductBrands(prev => prev.map(currentBrand => currentBrand.id === brand.id ? normalizedBrand : currentBrand));
-    syncRecord('productBrands', normalizedBrand);
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.brandId === normalizedBrand.id;
-      const linkedByLegacyName = !product.brandId &&
-        !!existingBrand &&
-        normalizeText(product.brand) === normalizeText(existingBrand.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        brandId: normalizedBrand.id,
-        brand: normalizedBrand.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productBrands', normalizedBrand);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => {
+        const linkedById = product.brandId === normalizedBrand.id;
+        const linkedByLegacyName = !product.brandId &&
+          !!existingBrand &&
+          normalizeText(product.brand) === normalizeText(existingBrand.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = {
+          ...product,
+          brandId: normalizedBrand.id,
+          brand: normalizedBrand.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Brands',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand update (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setProductBrands(prev => prev.map(currentBrand => currentBrand.id === brand.id ? normalizedBrand : currentBrand));
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const deleteProductBrand = (id: string, reassignToBrandId?: string) => {
     const existingBrand = productBrands.find(brand => brand.id === id);
@@ -8062,29 +8928,61 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const replacementBrand = explicitReplacement || fallbackUnknown || createdUnknownBrand;
 
     confirmDeleteFromPostgres('productBrands', id, 'Product Brands', existingBrand.name || id, () => {
-      setProductBrands(prev => {
-        let next = prev;
-        if (createdUnknownBrand && !prev.some(brand => normalizeText(brand.name) === '--')) {
-          next = [...next, createdUnknownBrand];
-          syncRecord('productBrands', createdUnknownBrand);
+      void (async () => {
+        let ensuredReplacement = replacementBrand;
+        if (createdUnknownBrand && !productBrands.some((brand) => normalizeText(brand.name) === '--')) {
+          const createdSaved = await syncRecordStrict('productBrands', createdUnknownBrand);
+          if (!createdSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Product Brands',
+              description: `Failed to create fallback brand "--" after delete (${createdSaved.status || 0}).`,
+            });
+            ensuredReplacement = fallbackUnknown || explicitReplacement;
+          }
         }
-        return next.filter(brand => brand.id !== id);
-      });
 
-      if (!replacementBrand) return;
-      setProducts(prev => prev.map(product => {
-        const linkedById = product.brandId === id;
-        const linkedByLegacyName = !product.brandId &&
-          normalizeText(product.brand) === normalizeText(existingBrand.name);
-        if (!linkedById && !linkedByLegacyName) return product;
-        const updatedProduct = {
-          ...product,
-          brandId: replacementBrand.id,
-          brand: replacementBrand.name,
-        };
-        syncRecord('products', updatedProduct);
-        return updatedProduct;
-      }));
+        setProductBrands(prev => {
+          let next = prev;
+          if (
+            createdUnknownBrand &&
+            ensuredReplacement?.id === createdUnknownBrand.id &&
+            !prev.some((brand) => normalizeText(brand.name) === '--')
+          ) {
+            next = [...next, createdUnknownBrand];
+          }
+          return next.filter(brand => brand.id !== id);
+        });
+
+        if (!ensuredReplacement) return;
+        const linkedProducts = products.filter((product) => {
+          const linkedById = product.brandId === id;
+          const linkedByLegacyName = !product.brandId &&
+            normalizeText(product.brand) === normalizeText(existingBrand.name);
+          return linkedById || linkedByLegacyName;
+        });
+        const persistedProducts = new Map<string, Product>();
+        for (const product of linkedProducts) {
+          const updatedProduct: Product = {
+            ...product,
+            brandId: ensuredReplacement.id,
+            brand: ensuredReplacement.name,
+          };
+          const productSaved = await syncRecordStrict('products', updatedProduct);
+          if (!productSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Product Brands',
+              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand delete (${productSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedProducts.set(updatedProduct.id, updatedProduct);
+        }
+        if (persistedProducts.size > 0) {
+          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+        }
+      })();
     });
   };
 
@@ -8093,12 +8991,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addProductUnit = (unit: ProductUnit) => {
-    setProductUnits(prev => [...prev, unit]);
-    syncRecord('productUnits', unit);
+    void (async () => {
+      const saved = await syncRecordStrict('productUnits', unit);
+      if (!saved.ok) return;
+      setProductUnits(prev => [...prev, unit]);
+    })();
   };
   const updateProductUnit = (unit: ProductUnit) => {
-    setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
-    syncRecord('productUnits', unit);
+    void (async () => {
+      const saved = await syncRecordStrict('productUnits', unit);
+      if (!saved.ok) return;
+      setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
+    })();
   };
   const deleteProductUnit = (id: string) => {
     confirmDeleteFromPostgres('productUnits', id, 'Product Units', id, () => {
@@ -8119,15 +9023,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       duration: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1,
       durationUnit: warranty.durationUnit || 'Months',
     };
-    setWarranties(prev => [...prev, normalizedWarranty]);
-    syncRecord('productWarranties', normalizedWarranty);
-    setProducts(prev => prev.map(product => {
-      const linked = resolveProductWarrantyLink(product.warranty, [normalizedWarranty]);
-      if (!linked.id) return product;
-      const updatedProduct = { ...product, warranty: normalizedWarranty.id };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => {
+        const linked = resolveProductWarrantyLink(product.warranty, [normalizedWarranty]);
+        return Boolean(linked.id);
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = { ...product, warranty: normalizedWarranty.id };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Warranties',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty add (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setWarranties(prev => [...prev, normalizedWarranty]);
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const updateWarranty = (warranty: ProductWarranty) => {
     const existingWarranty = warranties.find(currentWarranty => currentWarranty.id === warranty.id);
@@ -8139,20 +9060,37 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       duration: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1,
       durationUnit: warranty.durationUnit || 'Months',
     };
-    setWarranties(prev => prev.map(currentWarranty => currentWarranty.id === warranty.id ? normalizedWarranty : currentWarranty));
-    syncRecord('productWarranties', normalizedWarranty);
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.warranty === normalizedWarranty.id;
-      const linkedByLegacyName = !!existingWarranty &&
-        normalizeText(product.warranty) === normalizeText(existingWarranty.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        warranty: normalizedWarranty.id,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
+      if (!saved.ok) return;
+      const productsToLink = products.filter((product) => {
+        const linkedById = product.warranty === normalizedWarranty.id;
+        const linkedByLegacyName = !!existingWarranty &&
+          normalizeText(product.warranty) === normalizeText(existingWarranty.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of productsToLink) {
+        const updatedProduct: Product = {
+          ...product,
+          warranty: normalizedWarranty.id,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Warranties',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty update (${productSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      setWarranties(prev => prev.map(currentWarranty => currentWarranty.id === warranty.id ? normalizedWarranty : currentWarranty));
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
+    })();
   };
   const deleteWarranty = (id: string, reassignToWarrantyId?: string) => {
     const existingWarranty = warranties.find(warranty => warranty.id === id);
@@ -8164,17 +9102,33 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     confirmDeleteFromPostgres('productWarranties', id, 'Product Warranties', existingWarranty.name || id, () => {
       setWarranties(prev => prev.filter(warranty => warranty.id !== id));
-      setProducts(prev => prev.map(product => {
-        const linkedById = product.warranty === id;
-        const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
-        if (!linkedById && !linkedByLegacyName) return product;
-        const updatedProduct = {
-          ...product,
-          warranty: replacementWarranty?.id || undefined,
-        };
-        syncRecord('products', updatedProduct);
-        return updatedProduct;
-      }));
+      void (async () => {
+        const linkedProducts = products.filter((product) => {
+          const linkedById = product.warranty === id;
+          const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
+          return linkedById || linkedByLegacyName;
+        });
+        const persistedProducts = new Map<string, Product>();
+        for (const product of linkedProducts) {
+          const updatedProduct: Product = {
+            ...product,
+            warranty: replacementWarranty?.id || undefined,
+          };
+          const productSaved = await syncRecordStrict('products', updatedProduct);
+          if (!productSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Warranties',
+              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty delete (${productSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedProducts.set(updatedProduct.id, updatedProduct);
+        }
+        if (persistedProducts.size > 0) {
+          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+        }
+      })();
     });
   };
 
@@ -8183,12 +9137,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const addProductVariation = (v: ProductVariation) => {
-    setProductVariations(prev => [...prev, v]);
-    syncRecord('productVariations', v);
+    void (async () => {
+      const saved = await syncRecordStrict('productVariations', v);
+      if (!saved.ok) return;
+      setProductVariations(prev => [...prev, v]);
+    })();
   };
   const updateProductVariation = (v: ProductVariation) => {
-    setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
-    syncRecord('productVariations', v);
+    void (async () => {
+      const saved = await syncRecordStrict('productVariations', v);
+      if (!saved.ok) return;
+      setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
+    })();
   };
   const deleteProductVariation = (id: string) => {
     confirmDeleteFromPostgres('productVariations', id, 'Product Variations', id, () => {
@@ -8197,57 +9157,107 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addSellingPriceGroup = (group: SellingPriceGroup) => {
-    setSellingPriceGroups(prev => [...prev, group]);
-    syncRecord('sellingPriceGroups', group);
-    setCustomerGroups(prev => prev.map(customerGroup => {
-      if (customerGroup.sellingPriceGroupId) return customerGroup;
-      if (normalizeText(customerGroup.sellingPriceGroup) !== normalizeText(group.name)) return customerGroup;
-      const updatedGroup = {
-        ...customerGroup,
-        sellingPriceGroupId: group.id,
-        sellingPriceGroup: group.name,
-      };
-      syncRecord('customerGroups', updatedGroup);
-      return updatedGroup;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('sellingPriceGroups', group);
+      if (!saved.ok) return;
+      const groupsToLink = customerGroups.filter((customerGroup) => (
+        !customerGroup.sellingPriceGroupId &&
+        normalizeText(customerGroup.sellingPriceGroup) === normalizeText(group.name)
+      ));
+      const persistedGroups = new Map<string, CustomerGroup>();
+      for (const customerGroup of groupsToLink) {
+        const updatedGroup: CustomerGroup = {
+          ...customerGroup,
+          sellingPriceGroupId: group.id,
+          sellingPriceGroup: group.name,
+        };
+        const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
+        if (!groupSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Selling Price Groups',
+            description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group add (${groupSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedGroups.set(updatedGroup.id, updatedGroup);
+      }
+      setSellingPriceGroups(prev => [...prev, group]);
+      if (persistedGroups.size > 0) {
+        setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
+      }
+    })();
   };
   const updateSellingPriceGroup = (group: SellingPriceGroup) => {
     const existing = sellingPriceGroups.find(g => g.id === group.id);
-    setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
-    syncRecord('sellingPriceGroups', group);
-    setCustomerGroups(prev => prev.map(customerGroup => {
-      const linkedById = customerGroup.sellingPriceGroupId === group.id;
-      const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
-        !!existing &&
-        normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
-      if (!linkedById && !linkedByLegacyName) return customerGroup;
-      const updatedGroup = {
-        ...customerGroup,
-        sellingPriceGroupId: group.id,
-        sellingPriceGroup: group.name,
-      };
-      syncRecord('customerGroups', updatedGroup);
-      return updatedGroup;
-    }));
+    void (async () => {
+      const saved = await syncRecordStrict('sellingPriceGroups', group);
+      if (!saved.ok) return;
+      const groupsToLink = customerGroups.filter((customerGroup) => {
+        const linkedById = customerGroup.sellingPriceGroupId === group.id;
+        const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
+          !!existing &&
+          normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedGroups = new Map<string, CustomerGroup>();
+      for (const customerGroup of groupsToLink) {
+        const updatedGroup: CustomerGroup = {
+          ...customerGroup,
+          sellingPriceGroupId: group.id,
+          sellingPriceGroup: group.name,
+        };
+        const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
+        if (!groupSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Selling Price Groups',
+            description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group update (${groupSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedGroups.set(updatedGroup.id, updatedGroup);
+      }
+      setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
+      if (persistedGroups.size > 0) {
+        setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
+      }
+    })();
   };
   const deleteSellingPriceGroup = (id: string) => {
     const existing = sellingPriceGroups.find(g => g.id === id);
     confirmDeleteFromPostgres('sellingPriceGroups', id, 'Selling Price Groups', existing?.name || id, () => {
       setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
-      setCustomerGroups(prev => prev.map(customerGroup => {
-        const linkedById = customerGroup.sellingPriceGroupId === id;
-        const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
-          !!existing &&
-          normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
-        if (!linkedById && !linkedByLegacyName) return customerGroup;
-        const updatedGroup = {
-          ...customerGroup,
-          sellingPriceGroupId: '',
-          sellingPriceGroup: '',
-        };
-        syncRecord('customerGroups', updatedGroup);
-        return updatedGroup;
-      }));
+      void (async () => {
+        const groupsToLink = customerGroups.filter((customerGroup) => {
+          const linkedById = customerGroup.sellingPriceGroupId === id;
+          const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
+            !!existing &&
+            normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
+          return linkedById || linkedByLegacyName;
+        });
+        const persistedGroups = new Map<string, CustomerGroup>();
+        for (const customerGroup of groupsToLink) {
+          const updatedGroup: CustomerGroup = {
+            ...customerGroup,
+            sellingPriceGroupId: '',
+            sellingPriceGroup: '',
+          };
+          const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
+          if (!groupSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Selling Price Groups',
+              description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group delete (${groupSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedGroups.set(updatedGroup.id, updatedGroup);
+        }
+        if (persistedGroups.size > 0) {
+          setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
+        }
+      })();
     });
   };
 
@@ -8257,23 +9267,43 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addDiscount = (discount: Discount) => {
     const normalized = normalizeDiscountRecord(discount);
-    setDiscounts(prev => [...prev, normalized]);
-    syncRecord('discounts', normalized);
-    recordActivity({
-      action: 'Created',
-      module: 'Discounts',
-      description: `Added discount: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('discounts', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Discounts',
+          description: `Failed to add discount ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setDiscounts(prev => [...prev, normalized]);
+      recordActivity({
+        action: 'Created',
+        module: 'Discounts',
+        description: `Added discount: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const updateDiscount = (discount: Discount) => {
     const normalized = normalizeDiscountRecord(discount);
-    setDiscounts(prev => prev.map(d => d.id === discount.id ? normalized : d));
-    syncRecord('discounts', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Discounts',
-      description: `Updated discount: ${normalized.name || normalized.id}`,
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('discounts', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Discounts',
+          description: `Failed to update discount ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setDiscounts(prev => prev.map(d => d.id === discount.id ? normalized : d));
+      recordActivity({
+        action: 'Updated',
+        module: 'Discounts',
+        description: `Updated discount: ${normalized.name || normalized.id}`,
+      });
+    })();
   };
   const deleteDiscount = (id: string) => {
     const existing = discounts.find(d => d.id === id);
@@ -8294,13 +9324,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateSettings = (newSettings: AppSettings) => {
     if (!enforcePermissionBoundary('Settings', 'Access business settings', 'Update settings')) return;
     const normalized = normalizeAppSettings(newSettings);
-    setSettings(normalized);
-    syncRecord('settings', normalized);
-    recordActivity({
-      action: 'Updated',
-      module: 'Settings',
-      description: 'Updated application settings',
-    });
+    void (async () => {
+      const saved = await syncRecordStrict('settings', normalized);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Settings',
+          description: `Failed to update settings in Postgres (${saved.status || 0}).`,
+        });
+        return;
+      }
+      setSettings(normalized);
+      recordActivity({
+        action: 'Updated',
+        module: 'Settings',
+        description: 'Updated application settings',
+      });
+    })();
   };
 
   // ============================================================

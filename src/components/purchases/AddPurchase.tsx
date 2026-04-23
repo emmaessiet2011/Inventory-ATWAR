@@ -86,7 +86,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
     purchases,
     purchaseOrders,
     addPurchase,
-    setPayments,
+    addPayment,
     updatePurchaseOrder,
     currentUser,
     settings,
@@ -250,7 +250,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
   const paymentDue = Math.max(0, netTotal - paymentAmountNum);
   const paymentStatus: 'Paid' | 'Due' | 'Partial' = paymentDue <= 0.001 ? 'Paid' : paymentAmountNum > 0 ? 'Partial' : 'Due';
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormError('');
     const selectedSupplier = activeSuppliers.find(item => item.id === supplierId);
     if (!selectedSupplier) return setFormError('Supplier is required.');
@@ -313,7 +313,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
     if (paymentAmountNum > 0) {
       const paymentPrefix = normalizePrefix(settings.purchasePaymentPrefix || settings.paymentPrefix, 'PP');
       const paymentRefNo = `${paymentPrefix}-${Date.now().toString().slice(-6)}`;
-      setPayments((prev) => [...prev, {
+      const paymentSaved = await addPayment({
         id: `PAY-SUP-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         date: (paidOn || purchaseDate).replace('T', ' '),
         contactId: selectedSupplier.id,
@@ -329,7 +329,14 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
         linkedInvoices: [finalRefNo],
         addedBy: currentUser?.name || 'Admin',
         attachmentName: attachDocumentName || undefined,
-      }]);
+      }, { skipPermissionBoundary: true, skipActivity: true });
+      if (!paymentSaved) {
+        addNotification({
+          title: 'Payment Sync Warning',
+          message: 'Purchase saved, but linked supplier payment could not be saved to Postgres.',
+          type: 'warning',
+        });
+      }
     }
 
     if (linkedOrder && purchaseStatus === 'Received' && linkedOrder.status !== 'Received') {

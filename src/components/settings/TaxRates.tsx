@@ -13,6 +13,7 @@ import {
 import { TaxRate as GlobalTaxRate, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { buildPaginationItems } from '@/utils/pagination';
+import { syncRecordStrict } from '@/utils/apiClient';
 
 type TaxRateFormState = {
   id: string | null;
@@ -194,60 +195,100 @@ const TaxRates: React.FC = () => {
     };
   };
 
-  const cascadeTaxRename = (previousName: string, nextName: string, taxId: string) => {
+  const cascadeTaxRename = async (previousName: string, nextName: string, taxId: string) => {
     if (normalizeText(previousName) === normalizeText(nextName)) return;
 
-    setProducts(prev => prev.map(product =>
-      normalizeText(product.tax) === normalizeText(previousName)
-        ? { ...product, tax: nextName }
-        : product,
-    ));
-    setSales(prev => prev.map(sale =>
-      normalizeText(sale.tax) === normalizeText(previousName)
-        ? { ...sale, tax: nextName }
-        : sale,
-    ));
-    setOrders(prev => prev.map(order =>
-      normalizeText(order.taxType) === normalizeText(previousName)
-        ? { ...order, taxType: nextName }
-        : order,
-    ));
-    setSellReturns(prev => prev.map(ret =>
-      normalizeText(ret.tax) === normalizeText(previousName)
-        ? { ...ret, tax: nextName }
-        : ret,
-    ));
-    setPurchases(prev => prev.map(purchase => {
+    const normalizedPrev = normalizeText(previousName);
+    const normalizedTaxId = String(taxId || '').trim();
+    const persistedProducts = new Map<string, typeof products[number]>();
+    for (const product of products) {
+      if (normalizeText(product.tax) !== normalizedPrev) continue;
+      const updated = { ...product, tax: nextName };
+      const saved = await syncRecordStrict('products', updated);
+      if (!saved.ok) continue;
+      persistedProducts.set(updated.id, updated);
+    }
+
+    const persistedSales = new Map<string, typeof sales[number]>();
+    for (const sale of sales) {
+      if (normalizeText(sale.tax) !== normalizedPrev) continue;
+      const updated = { ...sale, tax: nextName };
+      const saved = await syncRecordStrict('sales', updated);
+      if (!saved.ok) continue;
+      persistedSales.set(updated.id, updated);
+    }
+
+    const persistedOrders = new Map<string, typeof orders[number]>();
+    for (const order of orders) {
+      if (normalizeText(order.taxType) !== normalizedPrev) continue;
+      const updated = { ...order, taxType: nextName };
+      const saved = await syncRecordStrict('orders', updated);
+      if (!saved.ok) continue;
+      persistedOrders.set(updated.id, updated);
+    }
+
+    const persistedSellReturns = new Map<string, typeof sellReturns[number]>();
+    for (const ret of sellReturns) {
+      if (normalizeText(ret.tax) !== normalizedPrev) continue;
+      const updated = { ...ret, tax: nextName };
+      const saved = await syncRecordStrict('sellReturns', updated);
+      if (!saved.ok) continue;
+      persistedSellReturns.set(updated.id, updated);
+    }
+
+    const persistedPurchases = new Map<string, typeof purchases[number]>();
+    for (const purchase of purchases) {
       const purchaseTaxId = String(purchase.purchaseTaxId || '').trim();
       const shouldRename = purchaseTaxId
-        ? purchaseTaxId === String(taxId || '').trim()
-        : normalizeText(purchase.purchaseTaxName) === normalizeText(previousName);
-      if (!shouldRename) return purchase;
-      return { ...purchase, purchaseTaxName: nextName };
-    }));
-    setPurchaseReturns(prev => prev.map(ret => {
+        ? purchaseTaxId === normalizedTaxId
+        : normalizeText(purchase.purchaseTaxName) === normalizedPrev;
+      if (!shouldRename) continue;
+      const updated = { ...purchase, purchaseTaxName: nextName };
+      const saved = await syncRecordStrict('purchases', updated);
+      if (!saved.ok) continue;
+      persistedPurchases.set(updated.id, updated);
+    }
+
+    const persistedPurchaseReturns = new Map<string, typeof purchaseReturns[number]>();
+    for (const ret of purchaseReturns) {
       const returnTaxId = String(ret.purchaseTaxId || '').trim();
       const shouldRename = returnTaxId
-        ? returnTaxId === String(taxId || '').trim()
-        : normalizeText(ret.purchaseTaxName) === normalizeText(previousName);
-      if (!shouldRename) return ret;
-      return { ...ret, purchaseTaxName: nextName };
-    }));
-    setExpenses(prev => prev.map(expense => {
+        ? returnTaxId === normalizedTaxId
+        : normalizeText(ret.purchaseTaxName) === normalizedPrev;
+      if (!shouldRename) continue;
+      const updated = { ...ret, purchaseTaxName: nextName };
+      const saved = await syncRecordStrict('purchaseReturns', updated);
+      if (!saved.ok) continue;
+      persistedPurchaseReturns.set(updated.id, updated);
+    }
+
+    const persistedExpenses = new Map<string, typeof expenses[number]>();
+    for (const expense of expenses) {
       const expenseTaxId = String(expense.taxRateId || '').trim();
       const shouldRename = expenseTaxId
-        ? expenseTaxId === String(taxId || '').trim()
-        : normalizeText(expense.taxName) === normalizeText(previousName);
-      if (!shouldRename) return expense;
-      return { ...expense, taxName: nextName };
-    }));
+        ? expenseTaxId === normalizedTaxId
+        : normalizeText(expense.taxName) === normalizedPrev;
+      if (!shouldRename) continue;
+      const updated = { ...expense, taxName: nextName };
+      const saved = await syncRecordStrict('expenses', updated);
+      if (!saved.ok) continue;
+      persistedExpenses.set(updated.id, updated);
+    }
+
+    if (persistedProducts.size > 0) setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    if (persistedSales.size > 0) setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
+    if (persistedOrders.size > 0) setOrders(prev => prev.map(order => persistedOrders.get(order.id) || order));
+    if (persistedSellReturns.size > 0) setSellReturns(prev => prev.map(ret => persistedSellReturns.get(ret.id) || ret));
+    if (persistedPurchases.size > 0) setPurchases(prev => prev.map(purchase => persistedPurchases.get(purchase.id) || purchase));
+    if (persistedPurchaseReturns.size > 0) setPurchaseReturns(prev => prev.map(ret => persistedPurchaseReturns.get(ret.id) || ret));
+    if (persistedExpenses.size > 0) setExpenses(prev => prev.map(expense => persistedExpenses.get(expense.id) || expense));
 
     if (normalizeText(settings.defaultSaleTax) === normalizeText(previousName)) {
       updateSettings({ ...settings, defaultSaleTax: nextName });
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const payload = validateForm();
     if (!payload) return;
 
@@ -263,7 +304,7 @@ const TaxRates: React.FC = () => {
       const previous = taxRates.find(rate => rate.id === formState.id);
       updateTaxRate(payload);
       if (previous) {
-        cascadeTaxRename(previous.name, payload.name, payload.id);
+        await cascadeTaxRename(previous.name, payload.name, payload.id);
       }
       addNotification({
         title: 'Tax Rate Updated',

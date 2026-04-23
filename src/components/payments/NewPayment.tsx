@@ -303,7 +303,7 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
     const referenceNo = `${prefix}-${Date.now().toString().slice(-6)}`;
     const linkedInvoices = confirmingBreakdown.map(b => b.invoiceNo);
 
-    globalAddPayment({
+    const saved = await globalAddPayment({
       id: `PAY-${Date.now()}`,
       date,
       contactId: selectedCustomer.id,
@@ -330,13 +330,21 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
         drawerName: chequeDrawerName || undefined,
       } : {}),
     });
+    if (!saved) {
+      addNotification({
+        title: 'Payment Failed',
+        message: 'Unable to save payment in Postgres.',
+        type: 'error',
+      });
+      return;
+    }
 
     await bootstrapRegisterFromDB().catch(() => {});
     const activeRegister = getActiveRegisterSession();
     const paymentLocation = normalizeText(selectedLocation);
     const registerLocation = normalizeText(activeRegister?.locationName);
     if (activeRegister && (!paymentLocation || paymentLocation === registerLocation)) {
-      addRegisterTransaction({
+      const registerSaved = await addRegisterTransaction({
         id: `RTX-PAY-${Date.now()}`,
         sessionId: activeRegister.id,
         date: new Date().toISOString(),
@@ -347,6 +355,13 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
         note: `Payment received from ${selectedCustomer.businessName}`,
         addedBy: currentUser?.name || 'Admin',
       });
+      if (!registerSaved) {
+        addNotification({
+          title: 'Register Sync Failed',
+          message: 'Payment saved, but register transaction could not be saved to Postgres.',
+          type: 'warning',
+        });
+      }
     }
 
     addNotification({ title: 'Payment Recorded', message: `Payment ${referenceNo} was recorded successfully.`, type: 'success' });

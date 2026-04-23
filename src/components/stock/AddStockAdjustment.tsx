@@ -639,7 +639,13 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       const mergedAdjustments = editingRecord
         ? allAdjustments.map((row) => (row.id === editingRecord.id ? nextRecord : row))
         : [nextRecord, ...allAdjustments];
-      writeStockAdjustments(mergedAdjustments.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)), nextRecord.id);
+      const saved = await writeStockAdjustments(
+        mergedAdjustments.sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+        nextRecord.id,
+      );
+      if (!saved) {
+        throw new Error('Unable to save stock adjustment in Postgres.');
+      }
 
       addNotification({
         title: editingRecord ? 'Pending Adjustment Updated' : 'Pending Adjustment Saved',

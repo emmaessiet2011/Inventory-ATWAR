@@ -482,7 +482,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       setEditValue(product[field].toString());
   };
 
-  const handleCellSave = () => {
+  const handleCellSave = async () => {
       if (!editingCell) return;
       const val = parseFloat(editValue);
       const product = products.find(p => p.id === editingCell.id);
@@ -500,7 +500,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         updateProduct({ ...product, sellingPrice: nextValue });
       }
       if (editingCell.field === 'stock' && nextValue !== product.stock) {
-        appendStockLedgerEntries([{
+        const ledgerSaved = await appendStockLedgerEntries([{
           id: `STK-${Date.now()}-${product.id}`,
           productId: product.id,
           type: 'Stock Adjustment',
@@ -512,6 +512,15 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           location: product.businessLocation,
           note: 'Inline update from product list',
         }]);
+        if (!ledgerSaved) {
+          addNotification({
+            title: 'Save Failed',
+            message: 'Unable to save stock ledger update in Postgres.',
+            type: 'error',
+          });
+          setEditingCell(null);
+          return;
+        }
         updateProduct({ ...product, stock: nextValue });
       }
       setEditingCell(null);
@@ -519,7 +528,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
 
   const handleCellKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
-          handleCellSave();
+          void handleCellSave();
       } else if (e.key === 'Escape') {
           setEditingCell(null);
       }

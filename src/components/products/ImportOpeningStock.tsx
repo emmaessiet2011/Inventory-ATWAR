@@ -381,9 +381,17 @@ const ImportOpeningStock: React.FC = () => {
         note: `Imported via Opening Stock CSV [IMPKEY:${dedupKey}]`,
       });
     });
-    appendStockLedgerEntries(newLedgerEntries);
+    const ledgerSaved = await appendStockLedgerEntries(newLedgerEntries);
+    if (!ledgerSaved) {
+      addNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message: 'Unable to save imported opening-stock ledger entries in Postgres.',
+      });
+      return;
+    }
 
-    applyStockLotAdjustments(
+    const lotsSaved = await applyStockLotAdjustments(
       dedupedRows.map((row) => {
         const product = productMap.get(row.matchedProductId as string);
         return {
@@ -400,6 +408,14 @@ const ImportOpeningStock: React.FC = () => {
         };
       }),
     );
+    if (!lotsSaved) {
+      addNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message: 'Unable to save imported stock lot balances in Postgres.',
+      });
+      return;
+    }
 
     setImportResults({ updated, skipped: parsedRows.length - dedupedRows.length });
     setStep('done');

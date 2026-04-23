@@ -26,7 +26,7 @@ import {
   simulateStockAdjustment,
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
-import { deleteDedicated } from '@/utils/apiClient';
+import { deleteDedicatedStrict } from '@/utils/apiClient';
 
 interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
@@ -492,7 +492,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
     onNavigate(`add-stock-adjustment/${adjustment.id}`);
   };
 
-  const approveAdjustment = (adjustment: StockAdjustmentRecord) => {
+  const approveAdjustment = async (adjustment: StockAdjustmentRecord) => {
     if (!resolvedCanApprove) return;
     setActiveActionId(null);
     setConfirmModal({
@@ -538,6 +538,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       const nowIso = new Date().toISOString();
       let linkedTransferId = '';
       let linkedExpenseId = '';
+      let nextProductsAfter: typeof products | null = null;
 
       if (
         adjustment.adjustmentType === 'Damage'
@@ -559,8 +560,11 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           actorName,
           notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
-        setProducts(appliedTransfer.productsAfter);
-        appendStockLedgerEntries(appliedTransfer.ledgerEntries);
+        nextProductsAfter = appliedTransfer.productsAfter;
+        const transferLedgerSaved = await appendStockLedgerEntries(appliedTransfer.ledgerEntries);
+        if (!transferLedgerSaved) {
+          throw new Error('Unable to save stock ledger entries while approving transfer.');
+        }
         const lotAdjustments = buildTransferLotAdjustments(
           appliedTransfer.productsAfter,
           transfer.locationFrom,
@@ -570,13 +574,19 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           toIsoDate(transfer.date),
         );
         if (lotAdjustments.length > 0) {
-          applyStockLotAdjustments(lotAdjustments);
+          const lotsSaved = await applyStockLotAdjustments(lotAdjustments);
+          if (!lotsSaved) {
+            throw new Error('Unable to save stock lot balances while approving transfer.');
+          }
         }
         const nextTransfers = [
           transfer,
           ...existingTransfers.filter((row) => row.id !== transfer.id),
         ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-        writeStockTransfers(nextTransfers, transfer.id);
+        const transferSaved = await writeStockTransfers(nextTransfers, transfer.id);
+        if (!transferSaved) {
+          throw new Error('Unable to save linked stock transfer in Postgres.');
+        }
         linkedTransferId = transfer.id;
       } else {
         const applied = simulateStockAdjustment({
@@ -586,10 +596,16 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           actorName,
           notePrefix: 'Approval',
         });
-        setProducts(applied.productsAfter);
-        appendStockLedgerEntries(applied.ledgerEntries);
+        nextProductsAfter = applied.productsAfter;
+        const adjustmentLedgerSaved = await appendStockLedgerEntries(applied.ledgerEntries);
+        if (!adjustmentLedgerSaved) {
+          throw new Error('Unable to save stock ledger entries while approving adjustment.');
+        }
         if (applied.lotAdjustments.length > 0) {
-          applyStockLotAdjustments(applied.lotAdjustments);
+          const lotsSaved = await applyStockLotAdjustments(applied.lotAdjustments);
+          if (!lotsSaved) {
+            throw new Error('Unable to save stock lot balances while approving adjustment.');
+          }
         }
 
         if (
@@ -648,8 +664,14 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         row.id === approvedRecord.id ? approvedRecord : row
       ));
       const sorted = sortAdjustments(nextAdjustments);
+      const adjustmentSaved = await writeStockAdjustments(sorted, approvedRecord.id);
+      if (!adjustmentSaved) {
+        throw new Error('Unable to save approved stock adjustment in Postgres.');
+      }
+      if (nextProductsAfter) {
+        setProducts(nextProductsAfter);
+      }
       setAdjustments(sorted);
-      writeStockAdjustments(sorted, approvedRecord.id);
       addNotification({
         title: 'Adjustment Approved',
         message:
@@ -690,6 +712,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
     try {
       const status = normalizeStockAdjustmentStatus(adjustment.status);
+      let nextProductsAfter: typeof products | null = null;
       if (status === 'Approved') {
         const actorName = currentUser?.name || 'System';
         const isSellableDamage =
@@ -718,8 +741,11 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             actorName,
             notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
-          setProducts(rollbackTransfer.productsAfter);
-          appendStockLedgerEntries(rollbackTransfer.ledgerEntries);
+          nextProductsAfter = rollbackTransfer.productsAfter;
+          const rollbackTransferLedgerSaved = await appendStockLedgerEntries(rollbackTransfer.ledgerEntries);
+          if (!rollbackTransferLedgerSaved) {
+            throw new Error('Unable to save rollback stock ledger entries.');
+          }
           const lotAdjustments = buildTransferLotAdjustments(
             rollbackTransfer.productsAfter,
             transfer.locationFrom,
@@ -729,13 +755,19 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             toIsoDate(adjustment.date),
           );
           if (lotAdjustments.length > 0) {
-            applyStockLotAdjustments(lotAdjustments);
+            const lotsSaved = await applyStockLotAdjustments(lotAdjustments);
+            if (!lotsSaved) {
+              throw new Error('Unable to save stock lot balances while rolling back transfer.');
+            }
           }
 
           const transferIdToDelete = linkedTransfer?.id || adjustment.linkedTransferId || '';
           if (transferIdToDelete) {
             const nextTransfers = allTransfers.filter((row) => row.id !== transferIdToDelete);
-            writeStockTransfers(nextTransfers, undefined, transferIdToDelete);
+            const transferDeleteSynced = await writeStockTransfers(nextTransfers, undefined, transferIdToDelete);
+            if (!transferDeleteSynced) {
+              throw new Error('Unable to delete linked transfer from Postgres.');
+            }
           }
         } else {
           const rollback = simulateStockAdjustment({
@@ -745,10 +777,16 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             actorName,
             notePrefix: 'Delete rollback',
           });
-          setProducts(rollback.productsAfter);
-          appendStockLedgerEntries(rollback.ledgerEntries);
+          nextProductsAfter = rollback.productsAfter;
+          const rollbackLedgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
+          if (!rollbackLedgerSaved) {
+            throw new Error('Unable to save rollback stock ledger entries.');
+          }
           if (rollback.lotAdjustments.length > 0) {
-            applyStockLotAdjustments(rollback.lotAdjustments);
+            const lotsSaved = await applyStockLotAdjustments(rollback.lotAdjustments);
+            if (!lotsSaved) {
+              throw new Error('Unable to save stock lot balances while rolling back adjustment.');
+            }
           }
         }
 
@@ -758,9 +796,18 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       }
 
       const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
+      const savedAdjustments = await writeStockAdjustments(nextAdjustments);
+      if (!savedAdjustments) {
+        throw new Error('Unable to sync stock adjustments to Postgres.');
+      }
+      const deleted = await deleteDedicatedStrict('/api/sync/stock-adjustments', adjustment.id);
+      if (!deleted.ok) {
+        throw new Error('Unable to delete stock adjustment from Postgres.');
+      }
+      if (nextProductsAfter) {
+        setProducts(nextProductsAfter);
+      }
       setAdjustments(nextAdjustments);
-      writeStockAdjustments(nextAdjustments);
-      deleteDedicated('/api/sync/stock-adjustments', adjustment.id);
       if (viewAdjustmentId === adjustment.id) setViewAdjustmentId(null);
       setActiveActionId(null);
       addNotification({

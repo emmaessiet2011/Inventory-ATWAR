@@ -290,7 +290,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
     onNavigate(`edit-expense/${expenseId}`);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!canDelete) {
       addNotification({ title: 'Access Denied', message: 'You do not have permission to delete expenses.', type: 'error' });
       return;
@@ -299,7 +299,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
     const linkedPayment = payments.find(
       (p) => p.contactType === 'Expense' && (p.expenseId === id || p.contactId === id),
     );
-    if (linkedPayment) deletePayment(linkedPayment.id);
+    if (linkedPayment) await deletePayment(linkedPayment.id);
     deleteExpense(id);
     setConfirmDeleteId(null);
     addNotification({ title: 'Expense Deleted', message: 'The expense has been removed.', type: 'success' });

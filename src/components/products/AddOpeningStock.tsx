@@ -83,7 +83,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
 
   if (!visible || !product) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const validRows = entries.filter(r => (r.quantity || 0) > 0);
     if (validRows.length === 0) {
       addNotification({ title: 'Validation Error', message: 'Enter at least one row with quantity greater than zero.', type: 'error' });
@@ -144,9 +144,17 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         note: row.note?.trim() || '',
       });
     });
-    appendStockLedgerEntries(newLedgerEntries);
+    const ledgerSaved = await appendStockLedgerEntries(newLedgerEntries);
+    if (!ledgerSaved) {
+      addNotification({
+        title: 'Save Failed',
+        message: 'Unable to save stock ledger entries in Postgres.',
+        type: 'error',
+      });
+      return;
+    }
 
-    applyStockLotAdjustments(
+    const lotSaved = await applyStockLotAdjustments(
       validRows.map((row) => ({
         productId: product.id,
         productName: product.name,
@@ -160,6 +168,14 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         updatedAt: row.date ? new Date(row.date).toISOString() : new Date().toISOString(),
       })),
     );
+    if (!lotSaved) {
+      addNotification({
+        title: 'Save Failed',
+        message: 'Unable to save stock lot balances in Postgres.',
+        type: 'error',
+      });
+      return;
+    }
 
     addNotification({
       title: 'Stock Saved',

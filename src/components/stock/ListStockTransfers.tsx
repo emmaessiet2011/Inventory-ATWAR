@@ -246,13 +246,14 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
       isOpen: true,
       title: 'Delete Transfer',
       message: `Delete stock transfer ${transfer.refNo}?`,
-      onConfirm: () => { setConfirmModal(null); executeDeleteTransfer(transfer); },
+      onConfirm: () => { setConfirmModal(null); void executeDeleteTransfer(transfer); },
     });
   };
 
-  const executeDeleteTransfer = (transfer: StockTransferRecord) => {
+  const executeDeleteTransfer = async (transfer: StockTransferRecord) => {
     if (!canManage) return;
     try {
+      let nextProducts = products;
       if (transfer.status === 'Completed') {
         const rollback = simulateStockTransfer({
           transfer,
@@ -262,13 +263,22 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
           actorName: currentUser?.name || 'System',
           notePrefix: 'Delete rollback',
         });
-        setProducts(rollback.productsAfter);
-        appendStockLedgerEntries(rollback.ledgerEntries);
+        nextProducts = rollback.productsAfter;
+        const ledgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
+        if (!ledgerSaved) {
+          throw new Error('Unable to persist rollback ledger entries in Postgres.');
+        }
       }
 
       const nextTransfers = transfers.filter(row => row.id !== transfer.id);
+      const transferSaved = await writeStockTransfers(nextTransfers, undefined, transfer.id);
+      if (!transferSaved) {
+        throw new Error('Unable to delete stock transfer from Postgres.');
+      }
       setTransfers(nextTransfers);
-      writeStockTransfers(nextTransfers, undefined, transfer.id);
+      if (transfer.status === 'Completed') {
+        setProducts(nextProducts);
+      }
       if (viewTransferId === transfer.id) setViewTransferId(null);
       setActiveActionId(null);
       addNotification({

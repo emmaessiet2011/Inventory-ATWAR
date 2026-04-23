@@ -1,4 +1,8 @@
-import { syncDedicated, deleteDedicated, fetchDedicated } from '@/utils/apiClient';
+import {
+  syncDedicatedStrict,
+  deleteDedicatedStrict,
+  fetchDedicated,
+} from '@/utils/apiClient';
 
 export interface RegisterSessionRecord {
   id: string;
@@ -120,41 +124,53 @@ export const fetchRegisterTransactionsFromDB = async (): Promise<RegisterTransac
   return getRegisterTransactions();
 };
 
-export const setActiveRegisterSession = (session: RegisterSessionRecord | null): void => {
+export const setActiveRegisterSession = async (session: RegisterSessionRecord | null): Promise<boolean> => {
   if (!session) {
     activeRegisterSessionCache = null;
     notify();
-    return;
+    return true;
   }
   const normalized = normalizeSession(session);
+  const saved = await syncDedicatedStrict('/api/sync/register-sessions', normalized.id, normalized);
+  if (!saved.ok) return false;
   activeRegisterSessionCache = cloneSession(normalized);
-  syncDedicated('/api/sync/register-sessions', normalized.id, normalized);
   notify();
+  return true;
 };
 
-export const setRegisterSessions = (sessions: RegisterSessionRecord[]): void => {
-  registerSessionsCache = parseSessions(sessions);
+export const setRegisterSessions = async (sessions: RegisterSessionRecord[]): Promise<boolean> => {
+  const normalizedSessions = parseSessions(sessions);
+  for (const session of normalizedSessions) {
+    const saved = await syncDedicatedStrict('/api/sync/register-sessions', session.id, session);
+    if (!saved.ok) return false;
+  }
+  registerSessionsCache = normalizedSessions;
   syncActiveFromSessions();
-  registerSessionsCache.forEach((session) => syncDedicated('/api/sync/register-sessions', session.id, session));
   notify();
+  return true;
 };
 
-export const setRegisterTransactions = (transactions: RegisterTransaction[]): void => {
-  registerTransactionsCache = parseTransactions(transactions);
-  registerTransactionsCache.forEach((tx) => syncDedicated('/api/sync/register-transactions', tx.id, tx));
+export const setRegisterTransactions = async (transactions: RegisterTransaction[]): Promise<boolean> => {
+  const normalizedTransactions = parseTransactions(transactions);
+  for (const tx of normalizedTransactions) {
+    const saved = await syncDedicatedStrict('/api/sync/register-transactions', tx.id, tx);
+    if (!saved.ok) return false;
+  }
+  registerTransactionsCache = normalizedTransactions;
   notify();
+  return true;
 };
 
-export const upsertRegisterSession = (session: RegisterSessionRecord): void => {
+export const upsertRegisterSession = async (session: RegisterSessionRecord): Promise<boolean> => {
   const normalized = normalizeSession(session);
   const sessions = getRegisterSessions();
   const idx = sessions.findIndex((entry) => entry.id === normalized.id);
   if (idx >= 0) sessions[idx] = normalized;
   else sessions.unshift(normalized);
-  setRegisterSessions(sessions);
+  return setRegisterSessions(sessions);
 };
 
-export const addRegisterTransaction = (tx: RegisterTransaction): void => {
+export const addRegisterTransaction = async (tx: RegisterTransaction): Promise<boolean> => {
   const nextTx: RegisterTransaction = {
     ...tx,
     id: String(tx.id || '').trim(),
@@ -162,33 +178,35 @@ export const addRegisterTransaction = (tx: RegisterTransaction): void => {
     date: String(tx.date || '').trim(),
     amount: Number(tx.amount || 0),
   };
-  if (!nextTx.id || !nextTx.sessionId) return;
+  if (!nextTx.id || !nextTx.sessionId) return false;
   const all = getRegisterTransactions();
   const idx = all.findIndex((entry) => entry.id === nextTx.id);
   if (idx >= 0) all[idx] = nextTx;
   else all.unshift(nextTx);
-  setRegisterTransactions(all);
+  return setRegisterTransactions(all);
 };
 
-export const deleteRegisterTransaction = (id: string): void => {
+export const deleteRegisterTransaction = async (id: string): Promise<boolean> => {
   const key = String(id || '').trim();
-  if (!key) return;
+  if (!key) return false;
   const all = getRegisterTransactions();
   const next = all.filter((entry) => entry.id !== key);
-  if (next.length === all.length) return;
-  registerTransactionsCache = next;
-  deleteDedicated('/api/sync/register-transactions', key);
+  if (next.length === all.length) return true;
+  const deleted = await deleteDedicatedStrict('/api/sync/register-transactions', key);
+  if (!deleted.ok) return false;
+  registerTransactionsCache = parseTransactions(next);
   notify();
+  return true;
 };
 
 export const closeRegisterSession = (
   sessionId: string,
   closedBy: string,
   closingBalance: number
-): RegisterSessionRecord | null => {
+): Promise<RegisterSessionRecord | null> => {
   const sessions = getRegisterSessions();
   const idx = sessions.findIndex((session) => session.id === sessionId);
-  if (idx < 0) return null;
+  if (idx < 0) return Promise.resolve(null);
 
   const current = sessions[idx];
   const closed: RegisterSessionRecord = normalizeSession({
@@ -199,24 +217,27 @@ export const closeRegisterSession = (
     closingBalance,
   });
   sessions[idx] = closed;
-  setRegisterSessions(sessions);
-
-  if (activeRegisterSessionCache?.id === sessionId) {
-    activeRegisterSessionCache = null;
-  }
-  syncDedicated('/api/sync/register-sessions', closed.id, closed);
-  notify();
-  return closed;
+  return (async () => {
+    const saved = await setRegisterSessions(sessions);
+    if (!saved) return null;
+    if (activeRegisterSessionCache?.id === sessionId) {
+      activeRegisterSessionCache = null;
+    }
+    notify();
+    return closed;
+  })();
 };
 
-export const startRegisterSession = (session: RegisterSessionRecord): void => {
+export const startRegisterSession = async (session: RegisterSessionRecord): Promise<boolean> => {
   const normalized = normalizeSession({
     ...session,
     status: 'Open',
   });
-  setActiveRegisterSession(normalized);
-  upsertRegisterSession(normalized);
-  addRegisterTransaction({
+  const opened = await setActiveRegisterSession(normalized);
+  if (!opened) return false;
+  const upserted = await upsertRegisterSession(normalized);
+  if (!upserted) return false;
+  const txSaved = await addRegisterTransaction({
     id: `RTX-OPEN-${Date.now()}`,
     sessionId: normalized.id,
     date: normalized.openedAt,
@@ -225,6 +246,7 @@ export const startRegisterSession = (session: RegisterSessionRecord): void => {
     note: `Register opened at ${normalized.locationName}`,
     addedBy: normalized.openedBy,
   });
+  return txSaved;
 };
 
 /**
