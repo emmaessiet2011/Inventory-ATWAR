@@ -1129,7 +1129,7 @@ interface GlobalContextType {
   setSellReturns: React.Dispatch<React.SetStateAction<SellReturn[]>>;
   addSellReturn: (sellReturn: SellReturn) => void;
   updateSellReturn: (sellReturn: SellReturn) => void;
-  deleteSellReturn: (id: string) => void;
+  deleteSellReturn: (id: string) => Promise<boolean>;
 
   // --- Purchases ---
   purchases: Purchase[];
@@ -1164,7 +1164,7 @@ interface GlobalContextType {
   setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
   addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => boolean;
   updatePayment: (payment: Payment) => void;
-  deletePayment: (id: string, options?: { skipActivity?: boolean }) => void;
+  deletePayment: (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean }) => void;
 
   // --- Expenses ---
   expenses: Expense[];
@@ -4832,6 +4832,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: `Added product: ${normalized.name || normalized.sku || normalized.id}`,
     });
   };
+  const confirmDeleteFromPostgres = (
+    resource: string,
+    id: string,
+    module: string,
+    failureLabel: string,
+    onConfirmed: () => void,
+  ) => {
+    const normalizedId = String(id || '').trim();
+    if (!normalizedId) return;
+    void (async () => {
+      const outcome = await deleteRecordStrict(resource, normalizedId);
+      if (!outcome.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module,
+          description: `Failed to delete ${failureLabel} from Postgres (${outcome.status || 0}).`,
+        });
+        return;
+      }
+      onConfirmed();
+    })();
+  };
+
   const updateProduct = (product: Product) => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
     setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
@@ -4844,12 +4867,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deleteProduct = (id: string) => {
     const existing = products.find(p => p.id === id);
-    setProducts(prev => prev.filter(p => p.id !== id));
-    deleteRecord('products', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Products',
-      description: `Deleted product: ${existing?.name || existing?.sku || id}`,
+    confirmDeleteFromPostgres('products', id, 'Products', existing?.name || existing?.sku || id, () => {
+      setProducts(prev => prev.filter(p => p.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Products',
+        description: `Deleted product: ${existing?.name || existing?.sku || id}`,
+      });
     });
   };
 
@@ -4891,12 +4915,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deleteCustomer = (id: string) => {
     const existing = customers.find(c => c.id === id);
-    setCustomers(prev => prev.filter(c => c.id !== id));
-    deleteRecord('customers', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Customers',
-      description: `Deleted customer: ${existing?.businessName || existing?.name || id}`,
+    confirmDeleteFromPostgres('customers', id, 'Customers', existing?.businessName || existing?.name || id, () => {
+      setCustomers(prev => prev.filter(c => c.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Customers',
+        description: `Deleted customer: ${existing?.businessName || existing?.name || id}`,
+      });
     });
   };
 
@@ -4926,12 +4951,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deleteSupplier = (id: string) => {
     const existing = suppliers.find(s => s.id === id);
-    setSuppliers(prev => prev.filter(s => s.id !== id));
-    deleteRecord('suppliers', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Suppliers',
-      description: `Deleted supplier: ${existing?.businessName || existing?.name || id}`,
+    confirmDeleteFromPostgres('suppliers', id, 'Suppliers', existing?.businessName || existing?.name || id, () => {
+      setSuppliers(prev => prev.filter(s => s.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Suppliers',
+        description: `Deleted supplier: ${existing?.businessName || existing?.name || id}`,
+      });
     });
   };
 
@@ -4995,12 +5021,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const existing = contacts.find(contact => contact.id === id);
     if (!existing) return;
     if (existing.type === 'Supplier') {
-      setSuppliers(prev => prev.filter(supplier => supplier.id !== existing.contactId));
-      deleteRecord('suppliers', existing.contactId);
+      const contactId = String(existing.contactId || '').trim();
+      confirmDeleteFromPostgres('suppliers', contactId, 'Suppliers', existing.businessName || existing.name || contactId, () => {
+        setSuppliers(prev => prev.filter(supplier => supplier.id !== existing.contactId));
+      });
       return;
     }
-    setCustomers(prev => prev.filter(customer => customer.id !== existing.contactId));
-    deleteRecord('customers', existing.contactId);
+    const contactId = String(existing.contactId || '').trim();
+    confirmDeleteFromPostgres('customers', contactId, 'Customers', existing.businessName || existing.name || contactId, () => {
+      setCustomers(prev => prev.filter(customer => customer.id !== existing.contactId));
+    });
   };
 
   // ============================================================
@@ -5567,8 +5597,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const deleteSellReturn = (id: string) => {
+  const deleteSellReturn = async (id: string): Promise<boolean> => {
     const existingReturn = sellReturns.find(record => record.id === id);
+    if (!existingReturn) return false;
+    const deleteOutcome = await deleteRecordStrict('sellReturns', id);
+    if (!deleteOutcome.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sell Returns',
+        description: `Failed to delete sell return ${existingReturn.referenceNo || existingReturn.id || id} from Postgres (${deleteOutcome.status || 0}).`,
+      });
+      return false;
+    }
     setSellReturns(prev => {
       const existing = prev.find(record => record.id === id);
       if (existing) {
@@ -5578,12 +5618,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       return prev.filter(record => record.id !== id);
     });
-    deleteRecord('sellReturns', id);
+    const autoRefundPaymentId = String(
+      existingReturn.autoRefundPaymentId || `pay-sell-return-${existingReturn.id}`,
+    ).trim();
+    if (autoRefundPaymentId) {
+      void deleteRecordStrict('payments', autoRefundPaymentId);
+    }
     recordActivity({
       action: 'Deleted',
       module: 'Sell Returns',
       description: `Deleted sell return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
     });
+    return true;
   };
 
   // ============================================================
@@ -5880,21 +5926,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deletePurchase = (id: string) => {
     const existingPurchase = purchases.find(item => item.id === id);
-    setPurchases(prev => {
-      if (purchaseReturns.some(ret => ret.parentPurchaseId === id)) return prev;
-      const existing = prev.find(item => item.id === id);
-      if (!existing) return prev;
-      applyPurchaseEffects(existing, -1);
-      return prev.filter(item => item.id !== id);
-    });
-    if (!purchaseReturns.some(ret => ret.parentPurchaseId === id)) {
-      deleteRecord('purchases', id);
+    if (purchaseReturns.some(ret => ret.parentPurchaseId === id)) return;
+    confirmDeleteFromPostgres('purchases', id, 'Purchases', existingPurchase?.refNo || existingPurchase?.id || id, () => {
+      setPurchases(prev => {
+        const existing = prev.find(item => item.id === id);
+        if (!existing) return prev;
+        applyPurchaseEffects(existing, -1);
+        return prev.filter(item => item.id !== id);
+      });
       recordActivity({
         action: 'Deleted',
         module: 'Purchases',
         description: `Deleted purchase: ${existingPurchase?.refNo || existingPurchase?.id || id}`,
       });
-    }
+    });
   };
 
   // ============================================================
@@ -5924,18 +5969,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseRequisition = (id: string) => {
     const existing = purchaseRequisitions.find(item => item.id === id);
-    setPurchaseRequisitions(prev => {
-      if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return prev;
-      return prev.filter(item => item.id !== id);
-    });
-    if (!purchaseOrders.some(order => order.purchaseRequisitionId === id)) {
-      deleteRecord('purchaseRequisitions', id);
+    if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return;
+    confirmDeleteFromPostgres('purchaseRequisitions', id, 'Purchase Requisitions', existing?.referenceNo || existing?.id || id, () => {
+      setPurchaseRequisitions(prev => prev.filter(item => item.id !== id));
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Requisitions',
         description: `Deleted requisition: ${existing?.referenceNo || existing?.id || id}`,
       });
-    }
+    });
   };
 
   // ============================================================
@@ -5965,18 +6007,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deletePurchaseOrder = (id: string) => {
     const existing = purchaseOrders.find(item => item.id === id);
-    setPurchaseOrders(prev => {
-      if (purchases.some(purchase => purchase.purchaseOrderId === id)) return prev;
-      return prev.filter(item => item.id !== id);
-    });
-    if (!purchases.some(purchase => purchase.purchaseOrderId === id)) {
-      deleteRecord('purchaseOrders', id);
+    if (purchases.some(purchase => purchase.purchaseOrderId === id)) return;
+    confirmDeleteFromPostgres('purchaseOrders', id, 'Purchase Orders', existing?.referenceNo || existing?.id || id, () => {
+      setPurchaseOrders(prev => prev.filter(item => item.id !== id));
       recordActivity({
         action: 'Deleted',
         module: 'Purchase Orders',
         description: `Deleted order: ${existing?.referenceNo || existing?.id || id}`,
       });
-    }
+    });
   };
 
   // ============================================================
@@ -6014,16 +6053,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const deletePurchaseReturn = (id: string) => {
     const existingReturn = purchaseReturns.find(item => item.id === id);
-    setPurchaseReturns(prev => {
-      const existing = prev.find(item => item.id === id);
-      if (existing) applyPurchaseReturnEffects(existing, -1);
-      return prev.filter(item => item.id !== id);
-    });
-    deleteRecord('purchaseReturns', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Purchase Returns',
-      description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
+    confirmDeleteFromPostgres('purchaseReturns', id, 'Purchase Returns', existingReturn?.referenceNo || existingReturn?.id || id, () => {
+      setPurchaseReturns(prev => {
+        const existing = prev.find(item => item.id === id);
+        if (existing) applyPurchaseReturnEffects(existing, -1);
+        return prev.filter(item => item.id !== id);
+      });
+      recordActivity({
+        action: 'Deleted',
+        module: 'Purchase Returns',
+        description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
+      });
     });
   };
 
@@ -6416,7 +6456,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     // Rebuild balances/statuses by removing old effects then applying updated payment.
-    deletePayment(existing.id, { skipActivity: true });
+    deletePayment(existing.id, { skipActivity: true, skipServerDelete: true });
     addPayment({ ...normalizedPayment, id: existing.id }, { skipActivity: true });
     recordActivity({
       action: 'Updated',
@@ -6425,173 +6465,181 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const deletePayment = (id: string, options?: { skipActivity?: boolean }) => {
+  const deletePayment = (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean }) => {
     if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) return;
     const payment = payments.find(p => p.id === id);
-    setPayments(prev => prev.filter(p => p.id !== id));
-    deleteRecord('payments', id);
     if (!payment) return;
 
-    if (payment.contactType === 'Customer') {
-      if (payment.type === 'sent') {
-        const remainingSentPayments = payments
-          .filter(p =>
-            p.id !== id &&
-            p.contactType === 'Customer' &&
-            p.type === 'sent' &&
-            (p.contactId === payment.contactId || p.contactName === payment.contactName)
-          )
-          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const applyLocalDelete = () => {
+      setPayments(prev => prev.filter(p => p.id !== id));
 
-        setSellReturns(prev => {
-          let copy = prev.map(record => {
-            if (record.customerName !== payment.contactName && String(record.customerId) !== payment.contactId) return record;
-            const total = Number(record.total || 0);
-            return {
-              ...record,
-              paymentDue: total,
-              paymentStatus: deriveSellReturnPaymentStatus(total, total),
-            };
+      if (payment.contactType === 'Customer') {
+        if (payment.type === 'sent') {
+          const remainingSentPayments = payments
+            .filter(p =>
+              p.id !== id &&
+              p.contactType === 'Customer' &&
+              p.type === 'sent' &&
+              (p.contactId === payment.contactId || p.contactName === payment.contactName)
+            )
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+          setSellReturns(prev => {
+            let copy = prev.map(record => {
+              if (record.customerName !== payment.contactName && String(record.customerId) !== payment.contactId) return record;
+              const total = Number(record.total || 0);
+              return {
+                ...record,
+                paymentDue: total,
+                paymentStatus: deriveSellReturnPaymentStatus(total, total),
+              };
+            });
+
+            remainingSentPayments.forEach(pay => {
+              let rem = Number(pay.amount || 0);
+              const dueReturns = copy
+                .map((record, index) => ({ record, index }))
+                .filter(({ record }) =>
+                  (record.customerName === pay.contactName || String(record.customerId) === pay.contactId) &&
+                  Number(record.paymentDue || 0) > 0 &&
+                  (record.paymentStatus === 'Due' || record.paymentStatus === 'Partial')
+                )
+                .sort((a, b) => new Date(a.record.date).getTime() - new Date(b.record.date).getTime());
+
+              const linkedSet = new Set(
+                (pay.linkedInvoices || [])
+                  .map(ref => String(ref || '').trim())
+                  .filter(Boolean)
+              );
+              const prioritized = linkedSet.size === 0
+                ? dueReturns
+                : [
+                    ...dueReturns.filter(({ record }) => linkedSet.has(String(record.referenceNo || '').trim())),
+                    ...dueReturns.filter(({ record }) => !linkedSet.has(String(record.referenceNo || '').trim())),
+                  ];
+
+              prioritized.forEach(({ record, index }) => {
+                if (rem <= 0) return;
+                const due = Math.max(0, Number(record.paymentDue || 0));
+                if (due <= 0) return;
+                const settled = Math.min(rem, due);
+                rem -= settled;
+                const nextDue = Number((due - settled).toFixed(3));
+                const total = Number(record.total || 0);
+                copy[index] = {
+                  ...record,
+                  paymentDue: nextDue,
+                  paymentStatus: deriveSellReturnPaymentStatus(nextDue, total),
+                };
+              });
+            });
+
+            return copy;
           });
+          return;
+        }
 
-          remainingSentPayments.forEach(pay => {
-            let rem = Number(pay.amount || 0);
-            const dueReturns = copy
-              .map((record, index) => ({ record, index }))
-              .filter(({ record }) =>
-                (record.customerName === pay.contactName || String(record.customerId) === pay.contactId) &&
-                Number(record.paymentDue || 0) > 0 &&
-                (record.paymentStatus === 'Due' || record.paymentStatus === 'Partial')
+        // Restore customer balance
+        setCustomers(prev => prev.map(c => {
+          if (c.id !== payment.contactId && c.businessName !== payment.contactName) return c;
+          return { ...c, totalSellDue: c.totalSellDue + payment.amount };
+        }));
+        // Recalculate all sales for this customer from remaining payments
+        const remainingPays = payments
+          .filter(p => p.id !== id && p.contactType === 'Customer' &&
+            p.type !== 'sent' &&
+            (p.contactId === payment.contactId || p.contactName === payment.contactName))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setSales(prev => {
+          // Reset all finalized sales for this customer to Due
+          let copy = prev.map(s => {
+            if (!isFinalizedSale(s)) return s;
+            if (s.customerName !== payment.contactName && String(s.customerId) !== payment.contactId) return s;
+            const grand = s.grandTotal || s.totalAmount || 0;
+            return { ...s, totalPaid: 0, sellDue: grand, paymentStatus: 'Due' as const };
+          });
+          // Re-run FIFO for each remaining payment
+          remainingPays.forEach(pay => {
+            let rem = pay.amount;
+            const dues = copy
+              .map((s, i) => ({ s, i }))
+              .filter(({ s }) =>
+                isFinalizedSale(s) &&
+                (s.customerName === pay.contactName || String(s.customerId) === pay.contactId) &&
+                (s.paymentStatus === 'Due' || s.paymentStatus === 'Partial')
               )
-              .sort((a, b) => new Date(a.record.date).getTime() - new Date(b.record.date).getTime());
-
+              .sort((a, b) => new Date(a.s.date).getTime() - new Date(b.s.date).getTime());
             const linkedSet = new Set(
               (pay.linkedInvoices || [])
-                .map(ref => String(ref || '').trim())
+                .map(inv => String(inv || '').trim())
                 .filter(Boolean)
             );
             const prioritized = linkedSet.size === 0
-              ? dueReturns
+              ? dues
               : [
-                  ...dueReturns.filter(({ record }) => linkedSet.has(String(record.referenceNo || '').trim())),
-                  ...dueReturns.filter(({ record }) => !linkedSet.has(String(record.referenceNo || '').trim())),
+                  ...dues.filter(({ s }) => linkedSet.has(String(s.invoiceNo || '').trim())),
+                  ...dues.filter(({ s }) => !linkedSet.has(String(s.invoiceNo || '').trim())),
                 ];
-
-            prioritized.forEach(({ record, index }) => {
+            prioritized.forEach(({ s, i }) => {
               if (rem <= 0) return;
-              const due = Math.max(0, Number(record.paymentDue || 0));
+              const due = typeof s.sellDue === 'number' ? Math.max(0, s.sellDue) : Math.max(0, (s.grandTotal || 0) - (s.totalPaid || 0));
               if (due <= 0) return;
-              const settled = Math.min(rem, due);
-              rem -= settled;
-              const nextDue = Number((due - settled).toFixed(3));
-              const total = Number(record.total || 0);
-              copy[index] = {
-                ...record,
-                paymentDue: nextDue,
-                paymentStatus: deriveSellReturnPaymentStatus(nextDue, total),
-              };
+              const paying = Math.min(rem, due);
+              rem -= paying;
+              const newDue = due - paying;
+              copy[i] = { ...s, totalPaid: (s.totalPaid || 0) + paying, sellDue: newDue, paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial' };
             });
           });
-
           return copy;
         });
-        return;
       }
 
-      // Restore customer balance
-      setCustomers(prev => prev.map(c => {
-        if (c.id !== payment.contactId && c.businessName !== payment.contactName) return c;
-        return { ...c, totalSellDue: c.totalSellDue + payment.amount };
-      }));
-      // Recalculate all sales for this customer from remaining payments
-      const remainingPays = payments
-        .filter(p => p.id !== id && p.contactType === 'Customer' &&
-          p.type !== 'sent' &&
-          (p.contactId === payment.contactId || p.contactName === payment.contactName))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setSales(prev => {
-        // Reset all finalized sales for this customer to Due
-        let copy = prev.map(s => {
-          if (!isFinalizedSale(s)) return s;
-          if (s.customerName !== payment.contactName && String(s.customerId) !== payment.contactId) return s;
-          const grand = s.grandTotal || s.totalAmount || 0;
-          return { ...s, totalPaid: 0, sellDue: grand, paymentStatus: 'Due' as const };
-        });
-        // Re-run FIFO for each remaining payment
-        remainingPays.forEach(pay => {
-          let rem = pay.amount;
-          const dues = copy
-            .map((s, i) => ({ s, i }))
-            .filter(({ s }) =>
-              isFinalizedSale(s) &&
-              (s.customerName === pay.contactName || String(s.customerId) === pay.contactId) &&
-              (s.paymentStatus === 'Due' || s.paymentStatus === 'Partial')
-            )
-            .sort((a, b) => new Date(a.s.date).getTime() - new Date(b.s.date).getTime());
-          const linkedSet = new Set(
-            (pay.linkedInvoices || [])
-              .map(inv => String(inv || '').trim())
-              .filter(Boolean)
-          );
-          const prioritized = linkedSet.size === 0
-            ? dues
-            : [
-                ...dues.filter(({ s }) => linkedSet.has(String(s.invoiceNo || '').trim())),
-                ...dues.filter(({ s }) => !linkedSet.has(String(s.invoiceNo || '').trim())),
-              ];
-          prioritized.forEach(({ s, i }) => {
-            if (rem <= 0) return;
-            const due = typeof s.sellDue === 'number' ? Math.max(0, s.sellDue) : Math.max(0, (s.grandTotal || 0) - (s.totalPaid || 0));
-            if (due <= 0) return;
-            const paying = Math.min(rem, due);
-            rem -= paying;
-            const newDue = due - paying;
-            copy[i] = { ...s, totalPaid: (s.totalPaid || 0) + paying, sellDue: newDue, paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial' };
+      if (payment.contactType === 'Supplier') {
+        // Restore supplier balance
+        setSuppliers(prev => prev.map(s => {
+          if (s.id !== payment.contactId && s.businessName !== payment.contactName) return s;
+          return { ...s, totalPurchaseDue: s.totalPurchaseDue + payment.amount };
+        }));
+        // Recalculate purchases for this supplier from remaining payments
+        const remainingSupPays = payments
+          .filter(p => p.id !== id && p.contactType === 'Supplier' &&
+            (p.contactId === payment.contactId || p.contactName === payment.contactName))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        setPurchases(prev => {
+          let copy = prev.map(p => {
+            if (p.supplier !== payment.contactName && p.supplierId !== payment.contactId) return p;
+            const grand = p.grandTotal || 0;
+            return { ...p, paymentDue: grand, paymentStatus: 'Due' as const };
           });
+          remainingSupPays.forEach(pay => {
+            let rem = pay.amount;
+            copy = copy.map(p => {
+              if (p.supplier !== pay.contactName && p.supplierId !== pay.contactId) return p;
+              if (rem <= 0 || p.paymentStatus === 'Paid') return p;
+              const due = typeof p.paymentDue === 'number' ? Math.max(0, p.paymentDue) : Math.max(0, p.grandTotal || 0);
+              const paying = Math.min(rem, due);
+              rem -= paying;
+              const newDue = due - paying;
+              return { ...p, paymentDue: newDue, paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial' };
+            });
+          });
+          return copy;
         });
-        return copy;
-      });
-    }
+      }
+      if (!options?.skipActivity) {
+        recordActivity({
+          action: 'Deleted',
+          module: 'Payments',
+          description: `Deleted payment: ${payment.referenceNo || payment.id}`,
+        });
+      }
+    };
 
-    if (payment.contactType === 'Supplier') {
-      // Restore supplier balance
-      setSuppliers(prev => prev.map(s => {
-        if (s.id !== payment.contactId && s.businessName !== payment.contactName) return s;
-        return { ...s, totalPurchaseDue: s.totalPurchaseDue + payment.amount };
-      }));
-      // Recalculate purchases for this supplier from remaining payments
-      const remainingSupPays = payments
-        .filter(p => p.id !== id && p.contactType === 'Supplier' &&
-          (p.contactId === payment.contactId || p.contactName === payment.contactName))
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      setPurchases(prev => {
-        let copy = prev.map(p => {
-          if (p.supplier !== payment.contactName && p.supplierId !== payment.contactId) return p;
-          const grand = p.grandTotal || 0;
-          return { ...p, paymentDue: grand, paymentStatus: 'Due' as const };
-        });
-        remainingSupPays.forEach(pay => {
-          let rem = pay.amount;
-          copy = copy.map(p => {
-            if (p.supplier !== pay.contactName && p.supplierId !== pay.contactId) return p;
-            if (rem <= 0 || p.paymentStatus === 'Paid') return p;
-            const due = typeof p.paymentDue === 'number' ? Math.max(0, p.paymentDue) : Math.max(0, p.grandTotal || 0);
-            const paying = Math.min(rem, due);
-            rem -= paying;
-            const newDue = due - paying;
-            return { ...p, paymentDue: newDue, paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial' };
-          });
-        });
-        return copy;
-      });
+    if (options?.skipServerDelete) {
+      applyLocalDelete();
+      return;
     }
-    if (!options?.skipActivity) {
-      recordActivity({
-        action: 'Deleted',
-        module: 'Payments',
-        description: `Deleted payment: ${payment.referenceNo || payment.id}`,
-      });
-    }
+    confirmDeleteFromPostgres('payments', id, 'Payments', payment.referenceNo || payment.id, applyLocalDelete);
   };
 
   // ============================================================
@@ -6621,18 +6669,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deleteExpense = (id: string) => {
     const existing = expenses.find(e => e.id === id);
-    setExpenses(prev => prev.filter(e => e.id !== id));
-    setPayments(prev => prev.filter(payment =>
-      !(
-        payment.contactType === 'Expense' &&
-        (payment.expenseId === id || payment.contactId === id)
-      )
-    ));
-    deleteRecord('expenses', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Expenses',
-      description: `Deleted expense: ${existing?.refNo || existing?.id || id}`,
+    confirmDeleteFromPostgres('expenses', id, 'Expenses', existing?.refNo || existing?.id || id, () => {
+      setExpenses(prev => prev.filter(e => e.id !== id));
+      setPayments(prev => prev.filter(payment =>
+        !(
+          payment.contactType === 'Expense' &&
+          (payment.expenseId === id || payment.contactId === id)
+        )
+      ));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Expenses',
+        description: `Deleted expense: ${existing?.refNo || existing?.id || id}`,
+      });
     });
   };
 
@@ -6645,8 +6694,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     syncRecord('expenseCategories', cat);
   };
   const deleteExpenseCategory = (id: string) => {
-    setExpenseCategories(prev => prev.filter(c => c.id !== id));
-    deleteRecord('expenseCategories', id);
+    confirmDeleteFromPostgres('expenseCategories', id, 'Expense Categories', id, () => {
+      setExpenseCategories(prev => prev.filter(c => c.id !== id));
+    });
   };
 
   // ============================================================
@@ -6680,15 +6730,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const deleteUser = (id: string) => {
     if (!enforcePermissionBoundary('User', ['Add user', 'Delete user'], 'Delete user')) return;
     const existing = users.find(u => u.id === id);
-    setUsers(prev => prev.filter(u => u.id !== id));
-    setCommissionAgents(prev =>
-      prev.filter(agent => String(agent.linkedUserId || '').trim() !== String(id || '').trim())
-    );
-    deleteRecord('users', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Users',
-      description: `Deleted user: ${existing?.name || existing?.username || id}`,
+    confirmDeleteFromPostgres('users', id, 'Users', existing?.name || existing?.username || id, () => {
+      setUsers(prev => prev.filter(u => u.id !== id));
+      setCommissionAgents(prev =>
+        prev.filter(agent => String(agent.linkedUserId || '').trim() !== String(id || '').trim())
+      );
+      recordActivity({
+        action: 'Deleted',
+        module: 'Users',
+        description: `Deleted user: ${existing?.name || existing?.username || id}`,
+      });
     });
   };
 
@@ -7770,12 +7821,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return;
     }
-    setTaxRates(prev => normalizeTaxRates(prev.filter(record => record.id !== id)));
-    deleteRecord('taxRates', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Tax Rates',
-      description: `Deleted tax rate: ${existing.name}`,
+    confirmDeleteFromPostgres('taxRates', id, 'Tax Rates', existing.name, () => {
+      setTaxRates(prev => normalizeTaxRates(prev.filter(record => record.id !== id)));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Tax Rates',
+        description: `Deleted tax rate: ${existing.name}`,
+      });
     });
   };
 
@@ -7813,31 +7865,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const reassignGroup = reassignToGroupId
       ? customerGroups.find(g => g.id === reassignToGroupId)
       : undefined;
-    setCustomerGroups(prev => prev.filter(g => g.id !== id));
-    setCustomers(prev => prev.map(customer => {
-      const linkedById = customer.customerGroupId === id;
-      const linkedByLegacyName = !customer.customerGroupId &&
-        !!existingGroup &&
-        normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
-      if (!linkedById && !linkedByLegacyName) return customer;
-      if (reassignGroup && reassignGroup.id !== id) {
+    confirmDeleteFromPostgres('customerGroups', id, 'Customer Groups', existingGroup?.name || id, () => {
+      setCustomerGroups(prev => prev.filter(g => g.id !== id));
+      setCustomers(prev => prev.map(customer => {
+        const linkedById = customer.customerGroupId === id;
+        const linkedByLegacyName = !customer.customerGroupId &&
+          !!existingGroup &&
+          normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
+        if (!linkedById && !linkedByLegacyName) return customer;
+        if (reassignGroup && reassignGroup.id !== id) {
+          const updatedCustomer = {
+            ...customer,
+            customerGroupId: reassignGroup.id,
+            customerGroup: reassignGroup.name,
+          };
+          syncRecord('customers', updatedCustomer);
+          return updatedCustomer;
+        }
         const updatedCustomer = {
           ...customer,
-          customerGroupId: reassignGroup.id,
-          customerGroup: reassignGroup.name,
+          customerGroupId: '',
+          customerGroup: '',
         };
         syncRecord('customers', updatedCustomer);
         return updatedCustomer;
-      }
-      const updatedCustomer = {
-        ...customer,
-        customerGroupId: '',
-        customerGroup: '',
-      };
-      syncRecord('customers', updatedCustomer);
-      return updatedCustomer;
-    }));
-    deleteRecord('customerGroups', id);
+      }));
+    });
   };
 
   // ============================================================
@@ -7912,30 +7965,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
     const replacementCategory = explicitReplacement || fallbackUncategorized || createdUncategorized;
 
-    setProductCategories(prev => {
-      let next = prev;
-      if (createdUncategorized && !prev.some(category => normalizeText(category.name) === 'uncategorized')) {
-        next = [...next, createdUncategorized];
-        syncRecord('productCategories', createdUncategorized);
-      }
-      return next.filter(category => category.id !== id);
-    });
-    deleteRecord('productCategories', id);
+    confirmDeleteFromPostgres('productCategories', id, 'Product Categories', existingCategory.name || id, () => {
+      setProductCategories(prev => {
+        let next = prev;
+        if (createdUncategorized && !prev.some(category => normalizeText(category.name) === 'uncategorized')) {
+          next = [...next, createdUncategorized];
+          syncRecord('productCategories', createdUncategorized);
+        }
+        return next.filter(category => category.id !== id);
+      });
 
-    if (!replacementCategory) return;
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.categoryId === id;
-      const linkedByLegacyName = !product.categoryId &&
-        normalizeText(product.category) === normalizeText(existingCategory.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        categoryId: replacementCategory.id,
-        category: replacementCategory.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+      if (!replacementCategory) return;
+      setProducts(prev => prev.map(product => {
+        const linkedById = product.categoryId === id;
+        const linkedByLegacyName = !product.categoryId &&
+          normalizeText(product.category) === normalizeText(existingCategory.name);
+        if (!linkedById && !linkedByLegacyName) return product;
+        const updatedProduct = {
+          ...product,
+          categoryId: replacementCategory.id,
+          category: replacementCategory.name,
+        };
+        syncRecord('products', updatedProduct);
+        return updatedProduct;
+      }));
+    });
   };
 
   // ============================================================
@@ -8007,30 +8061,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
     const replacementBrand = explicitReplacement || fallbackUnknown || createdUnknownBrand;
 
-    setProductBrands(prev => {
-      let next = prev;
-      if (createdUnknownBrand && !prev.some(brand => normalizeText(brand.name) === '--')) {
-        next = [...next, createdUnknownBrand];
-        syncRecord('productBrands', createdUnknownBrand);
-      }
-      return next.filter(brand => brand.id !== id);
-    });
-    deleteRecord('productBrands', id);
+    confirmDeleteFromPostgres('productBrands', id, 'Product Brands', existingBrand.name || id, () => {
+      setProductBrands(prev => {
+        let next = prev;
+        if (createdUnknownBrand && !prev.some(brand => normalizeText(brand.name) === '--')) {
+          next = [...next, createdUnknownBrand];
+          syncRecord('productBrands', createdUnknownBrand);
+        }
+        return next.filter(brand => brand.id !== id);
+      });
 
-    if (!replacementBrand) return;
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.brandId === id;
-      const linkedByLegacyName = !product.brandId &&
-        normalizeText(product.brand) === normalizeText(existingBrand.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        brandId: replacementBrand.id,
-        brand: replacementBrand.name,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+      if (!replacementBrand) return;
+      setProducts(prev => prev.map(product => {
+        const linkedById = product.brandId === id;
+        const linkedByLegacyName = !product.brandId &&
+          normalizeText(product.brand) === normalizeText(existingBrand.name);
+        if (!linkedById && !linkedByLegacyName) return product;
+        const updatedProduct = {
+          ...product,
+          brandId: replacementBrand.id,
+          brand: replacementBrand.name,
+        };
+        syncRecord('products', updatedProduct);
+        return updatedProduct;
+      }));
+    });
   };
 
   // ============================================================
@@ -8046,8 +8101,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     syncRecord('productUnits', unit);
   };
   const deleteProductUnit = (id: string) => {
-    setProductUnits(prev => prev.filter(u => u.id !== id));
-    deleteRecord('productUnits', id);
+    confirmDeleteFromPostgres('productUnits', id, 'Product Units', id, () => {
+      setProductUnits(prev => prev.filter(u => u.id !== id));
+    });
   };
 
   // ============================================================
@@ -8106,19 +8162,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ? warranties.find(warranty => warranty.id === reassignToWarrantyId && warranty.id !== id)
       : undefined;
 
-    setWarranties(prev => prev.filter(warranty => warranty.id !== id));
-    deleteRecord('productWarranties', id);
-    setProducts(prev => prev.map(product => {
-      const linkedById = product.warranty === id;
-      const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
-      if (!linkedById && !linkedByLegacyName) return product;
-      const updatedProduct = {
-        ...product,
-        warranty: replacementWarranty?.id || undefined,
-      };
-      syncRecord('products', updatedProduct);
-      return updatedProduct;
-    }));
+    confirmDeleteFromPostgres('productWarranties', id, 'Product Warranties', existingWarranty.name || id, () => {
+      setWarranties(prev => prev.filter(warranty => warranty.id !== id));
+      setProducts(prev => prev.map(product => {
+        const linkedById = product.warranty === id;
+        const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
+        if (!linkedById && !linkedByLegacyName) return product;
+        const updatedProduct = {
+          ...product,
+          warranty: replacementWarranty?.id || undefined,
+        };
+        syncRecord('products', updatedProduct);
+        return updatedProduct;
+      }));
+    });
   };
 
   // ============================================================
@@ -8134,8 +8191,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     syncRecord('productVariations', v);
   };
   const deleteProductVariation = (id: string) => {
-    setProductVariations(prev => prev.filter(x => x.id !== id));
-    deleteRecord('productVariations', id);
+    confirmDeleteFromPostgres('productVariations', id, 'Product Variations', id, () => {
+      setProductVariations(prev => prev.filter(x => x.id !== id));
+    });
   };
 
   const addSellingPriceGroup = (group: SellingPriceGroup) => {
@@ -8174,22 +8232,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deleteSellingPriceGroup = (id: string) => {
     const existing = sellingPriceGroups.find(g => g.id === id);
-    setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
-    deleteRecord('sellingPriceGroups', id);
-    setCustomerGroups(prev => prev.map(customerGroup => {
-      const linkedById = customerGroup.sellingPriceGroupId === id;
-      const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
-        !!existing &&
-        normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
-      if (!linkedById && !linkedByLegacyName) return customerGroup;
-      const updatedGroup = {
-        ...customerGroup,
-        sellingPriceGroupId: '',
-        sellingPriceGroup: '',
-      };
-      syncRecord('customerGroups', updatedGroup);
-      return updatedGroup;
-    }));
+    confirmDeleteFromPostgres('sellingPriceGroups', id, 'Selling Price Groups', existing?.name || id, () => {
+      setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
+      setCustomerGroups(prev => prev.map(customerGroup => {
+        const linkedById = customerGroup.sellingPriceGroupId === id;
+        const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
+          !!existing &&
+          normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
+        if (!linkedById && !linkedByLegacyName) return customerGroup;
+        const updatedGroup = {
+          ...customerGroup,
+          sellingPriceGroupId: '',
+          sellingPriceGroup: '',
+        };
+        syncRecord('customerGroups', updatedGroup);
+        return updatedGroup;
+      }));
+    });
   };
 
   // ============================================================
@@ -8218,12 +8277,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const deleteDiscount = (id: string) => {
     const existing = discounts.find(d => d.id === id);
-    setDiscounts(prev => prev.filter(d => d.id !== id));
-    deleteRecord('discounts', id);
-    recordActivity({
-      action: 'Deleted',
-      module: 'Discounts',
-      description: `Deleted discount: ${existing?.name || existing?.id || id}`,
+    confirmDeleteFromPostgres('discounts', id, 'Discounts', existing?.name || existing?.id || id, () => {
+      setDiscounts(prev => prev.filter(d => d.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Discounts',
+        description: `Deleted discount: ${existing?.name || existing?.id || id}`,
+      });
     });
   };
 

@@ -617,11 +617,18 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
         tone="danger"
         onCancel={() => setPendingDeleteReturn(null)}
         onConfirm={() => {
-          if (pendingDeleteReturn) {
-            globalDeleteSellReturn(pendingDeleteReturn.id);
-            addNotification({ title: 'Sell Return Deleted', message: `Credit note ${pendingDeleteReturn.ref} was removed.`, type: 'success' });
-          }
-          setPendingDeleteReturn(null);
+          void (async () => {
+            const target = pendingDeleteReturn;
+            if (target) {
+              const deleted = await globalDeleteSellReturn(target.id);
+              if (deleted) {
+                addNotification({ title: 'Sell Return Deleted', message: `Credit note ${target.ref} was removed.`, type: 'success' });
+              } else {
+                addNotification({ title: 'Delete Failed', message: `Credit note ${target.ref} could not be deleted from Postgres.`, type: 'error' });
+              }
+            }
+            setPendingDeleteReturn(null);
+          })();
         }}
       />
     </div>
