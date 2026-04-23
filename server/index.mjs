@@ -564,6 +564,9 @@ const roleNameFromMeta = (meta) => {
 
 const requireCanDelete = async (req, res, next) => {
   try {
+    const tokenEmail = String(req.user?.email || '').trim();
+    if (isCriticalAdminEmail(tokenEmail)) return next();
+
     const tokenRoleName = normalizeRoleName(req.user?.role || req.user?.roleName || req.user?.userRole);
     if (isDeleteRoleAllowed(tokenRoleName)) return next();
 
@@ -581,11 +584,13 @@ const requireCanDelete = async (req, res, next) => {
       const account = await prisma.appUser.findUnique({
         where: { id: userId },
         select: {
+          email: true,
           roleId: true,
           role: { select: { name: true, isSystem: true } },
           meta: true,
         },
       });
+      if (isCriticalAdminEmail(account?.email)) return next();
       if (isDeleteRoleAllowed(account?.role?.name, account?.role?.isSystem === true)) return next();
       if (isDeleteRoleAllowed(roleNameFromMeta(account?.meta))) return next();
 

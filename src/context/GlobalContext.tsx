@@ -1127,7 +1127,7 @@ interface GlobalContextType {
   setSellReturns: React.Dispatch<React.SetStateAction<SellReturn[]>>;
   addSellReturn: (sellReturn: SellReturn) => void;
   updateSellReturn: (sellReturn: SellReturn) => void;
-  deleteSellReturn: (id: string) => Promise<boolean>;
+  deleteSellReturn: (id: string) => Promise<{ ok: boolean; status: number; error?: string }>;
 
   // --- Purchases ---
   purchases: Purchase[];
@@ -5773,9 +5773,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     })();
   };
 
-  const deleteSellReturn = async (id: string): Promise<boolean> => {
+  const deleteSellReturn = async (
+    id: string,
+  ): Promise<{ ok: boolean; status: number; error?: string }> => {
     const existingReturn = sellReturns.find(record => record.id === id);
-    if (!existingReturn) return false;
+    if (!existingReturn) {
+      return { ok: false, status: 404, error: 'Sell return not found.' };
+    }
     const deleteOutcome = await deleteRecordStrict('sellReturns', id);
     if (!deleteOutcome.ok) {
       recordActivity({
@@ -5783,7 +5787,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Sell Returns',
         description: `Failed to delete sell return ${existingReturn.referenceNo || existingReturn.id || id} from Postgres (${deleteOutcome.status || 0}).`,
       });
-      return false;
+      return deleteOutcome;
     }
     setSellReturns(prev => {
       const existing = prev.find(record => record.id === id);
@@ -5805,7 +5809,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       module: 'Sell Returns',
       description: `Deleted sell return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
     });
-    return true;
+    return { ok: true, status: deleteOutcome.status || 200 };
   };
 
   // ============================================================

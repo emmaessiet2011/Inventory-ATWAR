@@ -76,6 +76,16 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
   const currentRoleRecord = roles.find(role => role.name === currentUser?.role);
   const rolePermissions = currentRoleRecord?.permissions || [];
   const roleHasExplicitPermissions = rolePermissions.length > 0;
+  const normalizedRoleName = String(currentUser?.role || '').trim().toLowerCase();
+  const isCriticalAdminEmail = String(currentUser?.email || '').trim().toLowerCase() === 'admin@atwar.com';
+  const canDeleteSellReturnByRole = (
+    isCriticalAdminEmail
+    ||
+    currentRoleRecord?.isSystem === true
+    || ['admin', 'ceo', 'manager'].some((allowed) =>
+      normalizedRoleName === allowed || normalizedRoleName.includes(allowed),
+    )
+  );
   const hasRolePermission = (moduleName: string, permission: string) => {
     if (!currentUser) return false;
     if (String(currentUser.role || '').toLowerCase() === 'admin' || currentRoleRecord?.isSystem) return true;
@@ -86,6 +96,17 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
   const canAccessAllSellReturns = hasRolePermission('Sell', 'Access all sell return');
   const canAccessOwnSellReturns = hasRolePermission('Sell', 'Access own sell return');
   const canAccessSellReturns = canAccessAllSellReturns || canAccessOwnSellReturns;
+
+  const extractApiError = (raw?: string): string => {
+    const text = String(raw || '').trim();
+    if (!text) return '';
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      return String(parsed?.error || text).trim();
+    } catch {
+      return text;
+    }
+  };
 
   const saleMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -369,6 +390,15 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
       setActiveActionId(null);
       return;
     }
+    if (!canDeleteSellReturnByRole) {
+      addNotification({
+        title: 'Permission denied',
+        message: 'Delete is allowed only for Admin/CEO/Manager roles.',
+        type: 'error',
+      });
+      setActiveActionId(null);
+      return;
+    }
     setPendingDeleteReturn({ id, ref: record?.referenceNo || id });
     setActiveActionId(null);
   };
@@ -581,7 +611,9 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
           <div className="py-1">
             <button onClick={() => handleView(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Eye size={14} className="text-blue-500" /> View</button>
             <button onClick={() => handleEdit(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Edit size={14} className="text-amber-500" /> Edit</button>
-            <button onClick={() => handleDelete(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Trash2 size={14} className="text-rose-500" /> Delete</button>
+            {canDeleteSellReturnByRole && (
+              <button onClick={() => handleDelete(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Trash2 size={14} className="text-rose-500" /> Delete</button>
+            )}
             <button onClick={() => handlePrint(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><Printer size={14} className="text-slate-500" /> Print</button>
             <div className="h-px bg-slate-100 my-1 mx-2"></div>
             <button onClick={() => handleAddPayment(activeActionId)} className="w-full text-left px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-3 transition-colors"><CreditCard size={14} className="text-emerald-500" /> Add Payment</button>
@@ -620,11 +652,19 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
           void (async () => {
             const target = pendingDeleteReturn;
             if (target) {
-              const deleted = await globalDeleteSellReturn(target.id);
-              if (deleted) {
+              const result = await globalDeleteSellReturn(target.id);
+              if (result.ok) {
                 addNotification({ title: 'Sell Return Deleted', message: `Credit note ${target.ref} was removed.`, type: 'success' });
               } else {
-                addNotification({ title: 'Delete Failed', message: `Credit note ${target.ref} could not be deleted from Postgres.`, type: 'error' });
+                const apiError = extractApiError(result.error);
+                const message = result.status === 401
+                  ? 'Your session expired. Please log in again.'
+                  : result.status === 403
+                    ? 'You do not have permission to delete this credit note (Admin/CEO/Manager only).'
+                    : result.status === 404
+                      ? `Credit note ${target.ref} no longer exists in Postgres.`
+                      : apiError || `Credit note ${target.ref} could not be deleted from Postgres.`;
+                addNotification({ title: 'Delete Failed', message, type: 'error' });
               }
             }
             setPendingDeleteReturn(null);

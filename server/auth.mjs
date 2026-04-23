@@ -5,6 +5,31 @@ const JWT_SECRET = process.env.JWT_SECRET || 'atwar-bss-super-secret-key-change-
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const JWT_REMEMBER_EXPIRES_IN = process.env.JWT_REMEMBER_EXPIRES_IN || '30d';
 
+const toObject = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {}
+  }
+  return {};
+};
+
+const extractRoleLabel = (user) => {
+  const meta = toObject(user?.meta);
+  const role = String(
+    user?.role
+    || user?.roleName
+    || user?.userRole
+    || meta.role
+    || meta.roleName
+    || meta.userRole
+    || '',
+  ).trim();
+  return role;
+};
+
 // Helper to gracefully extract token from auth header
 export const extractToken = (req) => {
   const header = req.headers.authorization || '';
@@ -111,12 +136,16 @@ export const verifyPassword = async (password, user) => {
 export const generateToken = (user, options = {}) => {
   const rememberMe = options?.rememberMe === true;
   const expiresIn = rememberMe ? JWT_REMEMBER_EXPIRES_IN : JWT_EXPIRES_IN;
+  const role = extractRoleLabel(user);
   return jwt.sign(
     {
       id: user.id,
       username: user.username,
       email: user.email,
       roleId: user.roleId,
+      role,
+      roleName: role,
+      userRole: role,
     },
     JWT_SECRET,
     { expiresIn }
