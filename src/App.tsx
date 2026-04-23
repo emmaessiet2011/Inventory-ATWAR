@@ -582,8 +582,11 @@ const AppContent: React.FC = () => {
 
     // Handle parameterized ProductStockHistory route: product-stock-history/{productId}
     if (currentPage.startsWith('product-stock-history/')) {
-      const parts = currentPage.split('/');
-      const id = decodeURIComponent(parts[1] || '');
+      const rawSegment = currentPage.slice('product-stock-history/'.length);
+      const [encodedId = '', queryString = ''] = rawSegment.split('?');
+      const id = decodeURIComponent(encodedId);
+      const params = new URLSearchParams(queryString);
+      const fromPage = params.get('from');
       const selectedProduct = products.find((product) => String(product.id) === String(id)) || null;
       if (!selectedProduct) {
         return renderAccessDenied('Product');
@@ -592,7 +595,7 @@ const AppContent: React.FC = () => {
         <ProductStockHistory
           pageMode={true}
           isOpen={true}
-          onClose={() => setCurrentPage('products')}
+          onClose={() => setCurrentPage(fromPage === 'report-stock' ? 'report-stock' : 'products')}
           product={selectedProduct}
         />
       );
@@ -961,7 +964,7 @@ const AppContent: React.FC = () => {
       case 'report-stock':
         if (!settings.enableStockReport) return renderModuleDisabled('Stock Report');
         if (!canViewStockReports) return renderAccessDenied('Stock Report');
-        return <ReportStock canViewValueMetrics={canViewProductStockValue} />;
+        return <ReportStock canViewValueMetrics={canViewProductStockValue} onNavigate={setCurrentPage} />;
       case 'report-stock-expiry':
         if (!settings.enableProductExpiry) return renderModuleDisabled('Stock Expiry Report');
         if (!canViewStockReports) return renderAccessDenied('Stock Expiry Report');

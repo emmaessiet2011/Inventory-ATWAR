@@ -38,6 +38,7 @@ interface StockReportItem {
 
 interface ReportStockProps {
   canViewValueMetrics?: boolean;
+  onNavigate?: (page: string) => void;
 }
 
 type ColumnKey =
@@ -76,7 +77,7 @@ const buildPageItems = (currentPage: number, totalPages: number): Array<number |
   return items;
 };
 
-const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true }) => {
+const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, onNavigate }) => {
   const { products, locations, sales, formatCurrency } = useGlobalContext();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -432,6 +433,16 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true })
     [products, historyProductId],
   );
 
+  const handleOpenHistory = (productId: string) => {
+    const normalizedProductId = String(productId || '').trim();
+    if (!normalizedProductId) return;
+    if (typeof onNavigate === 'function') {
+      onNavigate(`product-stock-history/${encodeURIComponent(normalizedProductId)}?from=report-stock`);
+      return;
+    }
+    setHistoryProductId(normalizedProductId);
+  };
+
   const exportCsv = () => {
     const exportColumns = displayedColumns;
     const headers = ['Action', ...exportColumns.map((column) => column.label)];
@@ -660,7 +671,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true })
                   <td className="px-4 py-3 text-center">
                     <button
                       type="button"
-                      onClick={() => setHistoryProductId(item.id)}
+                      onClick={() => handleOpenHistory(item.id)}
                       className="flex items-center gap-1 px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-50 whitespace-nowrap"
                     >
                       <History size={10} /> Product stock history
