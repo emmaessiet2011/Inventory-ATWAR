@@ -329,10 +329,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </label>
               </div>
 
-              <div className="text-sm">
-                <a href="#" className="font-medium text-red-600 hover:text-red-500">
-                  Forgot password?
-                </a>
+              <div className="text-sm text-slate-400 font-medium">
+                Contact admin for password reset
               </div>
             </div>
 

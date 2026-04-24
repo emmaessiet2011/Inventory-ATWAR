@@ -851,7 +851,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
             >
               Previous
             </button>
-            <button className="px-3 py-1.5 bg-indigo-600 text-white rounded shadow-md shadow-indigo-900/10">{safeCurrentPage}</button>
+            <span className="px-3 py-1.5 bg-indigo-600 text-white rounded shadow-md shadow-indigo-900/10" aria-current="page">{safeCurrentPage}</span>
             <button
               className="px-3 py-1.5 bg-white border border-slate-200 rounded hover:bg-slate-50 hover:text-slate-700 transition disabled:opacity-50 shadow-sm"
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}

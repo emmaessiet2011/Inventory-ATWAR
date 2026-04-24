@@ -416,7 +416,7 @@ const SalesCommissionAgents: React.FC = () => {
           <span>Showing {start} to {end} of {filteredAgents.length} entries</span>
           <div className="flex gap-2">
             <button disabled={currentPage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} className="px-4 py-2 bg-white border border-slate-200 rounded-xl disabled:opacity-50">Prev</button>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-xl">{currentPage}</button>
+            <span className="px-4 py-2 bg-blue-600 text-white rounded-xl" aria-current="page">{currentPage}</span>
             <button disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} className="px-4 py-2 bg-white border border-slate-200 rounded-xl disabled:opacity-50">Next</button>
           </div>
         </div>

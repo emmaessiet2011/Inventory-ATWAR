@@ -404,7 +404,7 @@ const ReportExpense: React.FC = () => {
           <div className="flex gap-3 items-center">
             <span>Date Range: <span className="font-bold text-slate-700">{range.label || 'All Time'}</span></span>
             <button type="button" onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={safePage <= 1} className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
-            <button className="px-2 py-1 bg-blue-600 text-white rounded shadow-sm">{safePage}</button>
+            <span className="px-2 py-1 bg-blue-600 text-white rounded shadow-sm" aria-current="page">{safePage}</span>
             <button type="button" onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} disabled={safePage >= totalPages} className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
           </div>
         </div>

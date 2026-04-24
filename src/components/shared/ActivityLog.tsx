@@ -325,7 +325,7 @@ const ActivityLog: React.FC = () => {
           <p className="text-xs text-slate-500 font-medium">Showing {from} to {to} of {totalEntries} activities</p>
           <div className="flex gap-2">
             <button onClick={() => setCurrentPage((value) => Math.max(1, value - 1))} disabled={safePage <= 1} className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-400 disabled:cursor-not-allowed">Previous</button>
-            <button className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 shadow-sm">{safePage}</button>
+            <span className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 shadow-sm" aria-current="page">{safePage}</span>
             <button onClick={() => setCurrentPage((value) => Math.min(totalPages, value + 1))} disabled={safePage >= totalPages} className="px-3 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-400 disabled:cursor-not-allowed">Next</button>
           </div>
         </div>

@@ -471,7 +471,7 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
             >
               Previous
             </button>
-            <button className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm">{safeCurrentPage}</button>
+            <span className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm" aria-current="page">{safeCurrentPage}</span>
             <button
               className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50"
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}

@@ -405,9 +405,9 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
                   >
                     Prev
                   </button>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-900/20">
+                  <span className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-900/20" aria-current="page">
                     {currentPage}
-                  </button>
+                  </span>
                   <button
                     onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                     className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"

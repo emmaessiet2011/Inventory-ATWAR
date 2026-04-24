@@ -567,7 +567,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
             >
               Previous
             </button>
-            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm">{safeCurrentPage}</button>
+            <span className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm" aria-current="page">{safeCurrentPage}</span>
             <button
               className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
               disabled={safeCurrentPage >= totalPages}

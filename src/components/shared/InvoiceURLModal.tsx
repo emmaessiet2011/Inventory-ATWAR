@@ -79,13 +79,12 @@ const InvoiceURLModal: React.FC<InvoiceURLModalProps> = ({ isOpen, onClose, invo
                 >
                     Close
                 </button>
-                <a 
-                    href={hasValidSaleId ? url : '#'} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    aria-disabled={!hasValidSaleId}
-                    onClick={(event) => {
-                      if (!hasValidSaleId) event.preventDefault();
+                <button
+                    type="button"
+                    disabled={!hasValidSaleId}
+                    onClick={() => {
+                      if (!hasValidSaleId) return;
+                      window.open(url, '_blank', 'noopener,noreferrer');
                     }}
                     className={`px-4 py-2 text-xs font-bold rounded-lg transition-colors flex items-center gap-2 shadow-lg ${
                       hasValidSaleId
@@ -94,7 +93,7 @@ const InvoiceURLModal: React.FC<InvoiceURLModalProps> = ({ isOpen, onClose, invo
                     }`}
                 >
                     Open Link <ExternalLink size={14} />
-                </a>
+                </button>
             </div>
         </div>
         

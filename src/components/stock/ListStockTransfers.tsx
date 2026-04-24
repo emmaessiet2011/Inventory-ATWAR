@@ -393,7 +393,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
             <button onClick={exportCsv} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileText size={12} /> Export CSV</button>
             <button onClick={exportExcel} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><FileSpreadsheet size={12} /> Export Excel</button>
             <button onClick={handlePrint} className="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><Printer size={12} /> Print</button>
-            <button className="px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center gap-1 shadow-sm"><Columns size={12} /> Column visibility</button>
+            <span className="px-3 py-1.5 bg-slate-100 border border-slate-200 rounded text-xs font-bold text-slate-500 flex items-center gap-1 shadow-sm cursor-default"><Columns size={12} /> Column visibility</span>
           </div>
 
           <div className="flex items-center gap-2">

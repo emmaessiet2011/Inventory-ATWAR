@@ -596,7 +596,7 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
           <div>Showing {totalRows === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + entriesPerPage, totalRows)} of {totalRows} entries</div>
           <div className="flex gap-1">
             <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
-            <button className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm">{safeCurrentPage}</button>
+            <span className="px-4 py-2 bg-slate-900 text-white rounded-lg shadow-sm" aria-current="page">{safeCurrentPage}</span>
             <button className="px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
           </div>
         </div>

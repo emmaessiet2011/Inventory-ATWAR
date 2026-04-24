@@ -755,7 +755,7 @@ const ReportItems: React.FC = () => {
           <div className="font-bold text-slate-700">Total Qty: {totals.qty.toFixed(3)} | Total (Inc. Tax): {formatCurrency(totals.subtotal)}</div>
           <div className="flex gap-1">
             <button type="button" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={safePage <= 1} className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed">Previous</button>
-            <button className="px-2 py-1 bg-blue-600 text-white rounded shadow-sm">{safePage}</button>
+            <span className="px-2 py-1 bg-blue-600 text-white rounded shadow-sm" aria-current="page">{safePage}</span>
             <button type="button" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages} className="px-2 py-1 bg-white border border-slate-300 rounded disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
           </div>
         </div>

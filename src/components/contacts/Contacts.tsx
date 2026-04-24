@@ -12,6 +12,7 @@ import {
 import { useNotifications } from '@/context/NotificationContext';
 import { useGlobalContext, Contact } from '@/context/GlobalContext';
 import { formatDateBySettings } from '@/utils/dateTime';
+import { printActiveReportTable } from '@/utils/printUtils';
 
 interface ContactsProps {
   onNavigate?: (page: string) => void;
@@ -179,6 +180,13 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
   );
 
   const normalizeText = (value: unknown): string => String(value || '').trim().toLowerCase();
+  const escapeHtml = (value: unknown): string =>
+    String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
 
   const handlePayContact = (contact: Contact) => {
     const contactKey = normalizeText(contact.contactId);
@@ -337,6 +345,63 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
     return matchesSearch && matchesType;
   });
 
+  const handlePrintContacts = () => {
+    printActiveReportTable({
+      title: 'Contacts',
+      subtitle: filterType === 'All' ? 'Suppliers + Customers' : `${filterType}s`,
+    });
+  };
+
+  const handleExportContacts = () => {
+    if (filteredContacts.length === 0) {
+      addNotification({
+        title: 'Nothing To Export',
+        message: 'No contacts match the current filters.',
+        type: 'warning',
+      });
+      return;
+    }
+
+    const headers = ['Type', 'Contact ID', 'Business Name', 'Name', 'Mobile', 'Email', 'Balance', 'Status'];
+    const rows = filteredContacts.map((contact) => [
+      contact.type,
+      contact.contactId,
+      contact.businessName || '',
+      contact.name || '',
+      contact.mobile || '',
+      contact.email || '',
+      Number(contact.balance || 0).toFixed(3),
+      contact.status || '',
+    ]);
+
+    const tableHtml = `
+      <table>
+        <thead>
+          <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr>
+        </thead>
+        <tbody>
+          ${rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+
+    const blob = new Blob([`\ufeff${tableHtml}`], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `contacts-${new Date().toISOString().slice(0, 10)}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    addNotification({
+      title: 'Contacts Exported',
+      message: `${filteredContacts.length} contacts exported to Excel.`,
+      type: 'success',
+    });
+  };
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       {/* Header */}
@@ -418,10 +483,10 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
             </div>
             
             <div className="flex gap-2">
-              <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition shadow-sm">
+              <button onClick={handlePrintContacts} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition shadow-sm">
                 <Printer size={18} />
               </button>
-              <button className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition shadow-sm">
+              <button onClick={handleExportContacts} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition shadow-sm">
                 <FileSpreadsheet size={18} />
               </button>
             </div>

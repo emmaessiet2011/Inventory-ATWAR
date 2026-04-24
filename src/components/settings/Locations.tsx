@@ -907,9 +907,9 @@ const Locations: React.FC = () => {
                 <div className="bg-white border border-slate-200 rounded shadow-sm">
                     {/* Tabs */}
                     <div className="flex border-b border-slate-200">
-                        <button className="px-6 py-3 text-sm font-bold text-slate-700 border-b-2 border-blue-600 bg-white">
+                        <span className="px-6 py-3 text-sm font-bold text-slate-700 border-b-2 border-blue-600 bg-white inline-flex">
                             Receipt Settings
-                        </button>
+                        </span>
                     </div>
 
                     {/* Tab Content */}

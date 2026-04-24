@@ -368,7 +368,7 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
           <div>{filteredDiscounts.length === 0 ? 'Showing 0 to 0 of 0 entries' : `Showing ${pageStart + 1} to ${Math.min(pageEnd, filteredDiscounts.length)} of ${filteredDiscounts.length} entries`}</div>
           <div className="flex gap-1">
             <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage <= 1} onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}>Previous</button>
-            <button className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm">{safeCurrentPage}</button>
+            <span className="px-3 py-1 bg-blue-600 text-white rounded shadow-sm" aria-current="page">{safeCurrentPage}</span>
             <button className="px-3 py-1 bg-white border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-50" disabled={safeCurrentPage >= totalPages} onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}>Next</button>
           </div>
         </div>

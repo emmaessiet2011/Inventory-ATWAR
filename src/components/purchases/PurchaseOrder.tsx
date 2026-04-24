@@ -792,7 +792,22 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
                         <option value="">Please Select</option>
                         {supplierOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
-                      <button type="button" className="px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700" title="Create supplier in Contacts > Suppliers">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (onNavigate) {
+                            onNavigate('suppliers');
+                            return;
+                          }
+                          addNotification({
+                            title: 'Navigate To Suppliers',
+                            message: 'Open Contacts > Suppliers to create a new supplier.',
+                            type: 'info',
+                          });
+                        }}
+                        className="px-2 py-2 rounded bg-blue-600 text-white hover:bg-blue-700"
+                        title="Create supplier in Contacts > Suppliers"
+                      >
                         <Plus size={14} />
                       </button>
                     </div>
