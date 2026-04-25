@@ -13,6 +13,9 @@ export interface ImageCompressionOptions {
   qualityStep?: number;
   targetMaxKB?: number;
   format?: 'image/jpeg' | 'image/webp' | 'image/png';
+  frameWidth?: number;
+  frameHeight?: number;
+  frameBackground?: string;
 }
 
 const readFileAsDataUrl = (file: File): Promise<string> =>
@@ -50,6 +53,26 @@ const estimateDataUrlBytes = (dataUrl: string): number => {
   return Math.ceil((payload.length * 3) / 4);
 };
 
+const drawContainedImage = (
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+  background?: string,
+) => {
+  if (background) {
+    context.fillStyle = background;
+    context.fillRect(0, 0, width, height);
+  } else {
+    context.clearRect(0, 0, width, height);
+  }
+
+  const fitted = getContainedSize(image.width, image.height, width, height);
+  const x = Math.round((width - fitted.width) / 2);
+  const y = Math.round((height - fitted.height) / 2);
+  context.drawImage(image, x, y, fitted.width, fitted.height);
+};
+
 export const compressImageFileToDataUrl = async (
   file: File,
   options: ImageCompressionOptions = {},
@@ -72,12 +95,14 @@ export const compressImageFileToDataUrl = async (
 
   const image = await loadImage(originalDataUrl);
   const size = getContainedSize(image.width, image.height, maxWidth, maxHeight);
+  const frameWidth = Math.max(1, Math.round(options.frameWidth ?? size.width));
+  const frameHeight = Math.max(1, Math.round(options.frameHeight ?? size.height));
   const canvas = document.createElement('canvas');
-  canvas.width = size.width;
-  canvas.height = size.height;
+  canvas.width = frameWidth;
+  canvas.height = frameHeight;
   const context = canvas.getContext('2d');
   if (!context) return originalDataUrl;
-  context.drawImage(image, 0, 0, size.width, size.height);
+  drawContainedImage(context, image, frameWidth, frameHeight, options.frameBackground);
 
   let quality = Math.max(minQuality, Math.min(1, options.quality ?? DEFAULT_QUALITY));
   let compressed = canvas.toDataURL(format, quality);
@@ -92,4 +117,3 @@ export const compressImageFileToDataUrl = async (
   }
   return compressed;
 };
-

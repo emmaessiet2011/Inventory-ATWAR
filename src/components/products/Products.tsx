@@ -150,6 +150,9 @@ const Products: React.FC = () => {
       const compressed = await compressImageFileToDataUrl(file, {
         maxWidth: 640,
         maxHeight: 640,
+        frameWidth: 640,
+        frameHeight: 640,
+        frameBackground: '#ffffff',
         targetMaxKB: 120,
         quality: 0.62,
         minQuality: 0.35,
@@ -704,7 +707,7 @@ const Products: React.FC = () => {
                       <td className="px-6 py-4">
                         <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-200">
                           {product.image ? (
-                            <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                            <img src={product.image} alt={product.name} className="w-full h-full object-contain bg-slate-50" />
                           ) : (
                             <ImageIcon size={20} className="text-slate-400" />
                           )}
@@ -1009,7 +1012,7 @@ const Products: React.FC = () => {
                   className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-2xl p-6 hover:bg-slate-50 transition-colors cursor-pointer group overflow-hidden"
                 >
                   {productImage ? (
-                    <img src={productImage} alt="Preview" className="w-full h-48 object-cover rounded-xl" />
+                    <img src={productImage} alt="Preview" className="w-full h-48 object-contain rounded-xl bg-slate-50" />
                   ) : (
                     <>
                       <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">

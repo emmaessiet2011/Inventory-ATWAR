@@ -299,6 +299,9 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       const compressed = await compressImageFileToDataUrl(file, {
         maxWidth: 640,
         maxHeight: 640,
+        frameWidth: 640,
+        frameHeight: 640,
+        frameBackground: '#ffffff',
         targetMaxKB: 120,
         quality: 0.62,
         minQuality: 0.35,
@@ -1180,7 +1183,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                             </button>
                             <span className="text-[10px] text-slate-400">{productImage ? 'Image selected' : 'No file chosen'}</span>
                           </div>
-                          {productImage && <img src={productImage} alt="Preview" className="w-16 h-16 object-cover rounded-lg border border-slate-200" />}
+                          {productImage && <img src={productImage} alt="Preview" className="w-16 h-16 object-contain rounded-lg border border-slate-200 bg-slate-50" />}
                           <p className="text-[9px] text-slate-400">Max 5MB · 1:1 ratio</p>
                         </div>
                       </td>
@@ -1427,7 +1430,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
               className="w-full aspect-square bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:bg-slate-100 hover:border-blue-400 transition-all group overflow-hidden"
             >
               {productImage ? (
-                <img src={productImage} alt="Product" className="w-full h-full object-cover" />
+                <img src={productImage} alt="Product" className="w-full h-full object-contain bg-slate-50" />
               ) : (
                 <>
                   <div className="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">

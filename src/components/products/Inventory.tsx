@@ -1095,7 +1095,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                           <img
                                             src={product.image}
                                             alt={product.name}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-contain bg-slate-50"
                                             onError={() => setBrokenImages(prev => ({ ...prev, [product.id]: true }))}
                                           />
                                         ) : (

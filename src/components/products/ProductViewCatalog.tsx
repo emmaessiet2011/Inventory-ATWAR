@@ -214,7 +214,7 @@ const ProductViewCatalog: React.FC<ProductViewCatalogProps> = ({ onNavigate }) =
                         title={product.image ? 'Click to zoom image' : 'No image'}
                       >
                         {product.image ? (
-                          <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                          <img src={product.image} alt={product.name} className="w-full h-full object-contain bg-slate-50" />
                         ) : (
                           <ImageIcon size={16} className="text-slate-400" />
                         )}
