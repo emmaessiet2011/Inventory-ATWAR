@@ -4,7 +4,10 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
 import {
+  AUTH_LAST_ACTIVITY_STORAGE_KEY,
+  AUTH_LOGIN_STARTED_AT_STORAGE_KEY,
   AUTH_PERSISTENT_STORAGE_KEY,
+  AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ME_STORAGE_KEY,
   AUTH_SESSION_STORAGE_KEY,
   writeHardenedState,
@@ -137,6 +140,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError('');
     setIsSubmitting(true);
     const identifier = email.trim();
+    const nowStamp = String(Date.now());
     const liveSyncEnabled = isLiveSyncEnabled();
     const apiBase = resolveApiBase();
 
@@ -145,11 +149,22 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         try {
           if (rememberMe) {
             localStorage.setItem(AUTH_REMEMBER_ME_STORAGE_KEY, '1');
+            localStorage.setItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY, nowStamp);
             if (identifier) localStorage.setItem(REMEMBER_IDENTIFIER_KEY, identifier);
           } else {
             localStorage.removeItem(AUTH_REMEMBER_ME_STORAGE_KEY);
+            localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
             localStorage.removeItem(REMEMBER_IDENTIFIER_KEY);
           }
+        } catch {
+          // ignore browser storage failures
+        }
+      };
+      const persistSessionLifecycle = () => {
+        try {
+          sessionStorage.setItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY, nowStamp);
+          sessionStorage.setItem(AUTH_LAST_ACTIVITY_STORAGE_KEY, nowStamp);
+          if (!rememberMe) localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
         } catch {
           // ignore browser storage failures
         }
@@ -176,6 +191,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         }
         if (result.ok) {
           persistRememberIdentifier();
+          persistSessionLifecycle();
           localStorage.setItem('atwar_auth_token', result.token);
           persistAuthenticatedUser(result.user);
           updateUser(result.user);
@@ -215,6 +231,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         return;
       }
       persistRememberIdentifier();
+      persistSessionLifecycle();
       const updated = { ...match, lastLogin: new Date().toISOString() };
       persistAuthenticatedUser(updated);
       updateUser(updated);
@@ -268,7 +285,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="mt-2 text-slate-500">Please enter your details to sign in.</p>
           </div>
 
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on">
+          <form className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on" name="login-form">
             {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
                     {error}
@@ -283,8 +300,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
                   <input
                     type="text"
-                    name="username"
+                    id="login-identifier"
+                    name="email"
                     autoComplete="username"
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    spellCheck={false}
                     required
                     className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
                     placeholder="manager@atwar.com or manager1"
@@ -302,6 +323,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   </div>
                   <input
                     type="password"
+                    id="login-password"
                     name="password"
                     autoComplete="current-password"
                     required

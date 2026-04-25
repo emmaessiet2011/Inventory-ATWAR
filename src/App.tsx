@@ -100,6 +100,18 @@ import ViewUser from '@/components/users/ViewUser';
 import ViewSaleDetails from '@/components/sales/ViewSaleDetails';
 import { applyAutoHelpTitles } from '@/utils/helpHints';
 import { hasValidAuthToken } from '@/utils/apiClient';
+import {
+  AUTH_LAST_ACTIVITY_STORAGE_KEY,
+  AUTH_LOGIN_STARTED_AT_STORAGE_KEY,
+  AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY,
+  AUTH_REMEMBER_ME_STORAGE_KEY,
+} from '@/utils/hardenedStorage';
+
+const SESSION_IDLE_TIMEOUT_STANDARD_MS = 20 * 60 * 1000;
+const SESSION_IDLE_TIMEOUT_SENSITIVE_MS = 10 * 60 * 1000;
+const SESSION_WARNING_LEAD_MS = 2 * 60 * 1000;
+const SESSION_ABSOLUTE_MAX_MS = 8 * 60 * 60 * 1000;
+const SESSION_REMEMBER_MAX_MS = 7 * 24 * 60 * 60 * 1000;
 
 const App: React.FC = () => {
   return (
@@ -127,10 +139,14 @@ const AppContent: React.FC = () => {
   const [calculatorResult, setCalculatorResult] = useState('');
   const [calendarDate, setCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [keepAliveFormPages, setKeepAliveFormPages] = useState<string[]>([]);
-  const { notifications, unreadCount, actionCount, markAsRead, markAllAsRead, removeNotification } = useNotifications();
+  const { notifications, unreadCount, actionCount, markAsRead, markAllAsRead, removeNotification, addNotification } = useNotifications();
   const notificationRef = useRef<HTMLDivElement>(null);
   const calculatorRef = useRef<HTMLDivElement>(null);
   const calendarRef = useRef<HTMLDivElement>(null);
+  const isAutoLogoutInProgressRef = useRef(false);
+  const [showSessionExpiryWarning, setShowSessionExpiryWarning] = useState(false);
+  const [sessionCountdownMs, setSessionCountdownMs] = useState(0);
+  const [sessionWarningMode, setSessionWarningMode] = useState<'idle' | 'absolute'>('idle');
 
   const shouldKeepFormPageAlive = (page: string): boolean => {
     const normalized = String(page || '').trim();
@@ -220,13 +236,134 @@ const AppContent: React.FC = () => {
   // event so all users are returned to the login screen automatically.
   useEffect(() => {
     const handleAuthExpired = () => {
-      try { localStorage.removeItem('atwar_auth_token'); } catch {}
-      setCurrentUser(null);
-      setIsAuthenticated(false);
+      forceLogout('expired');
     };
     window.addEventListener('atwar:auth:expired', handleAuthExpired);
     return () => window.removeEventListener('atwar:auth:expired', handleAuthExpired);
   }, [setCurrentUser]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !currentUser) {
+      setShowSessionExpiryWarning(false);
+      setSessionCountdownMs(0);
+      return;
+    }
+
+    const now = Date.now();
+    const rememberEnabled = (() => {
+      try {
+        return localStorage.getItem(AUTH_REMEMBER_ME_STORAGE_KEY) === '1';
+      } catch {
+        return false;
+      }
+    })();
+
+    const readTimestamp = (storage: Storage, key: string): number => {
+      try {
+        const parsed = Number(storage.getItem(key) || 0);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const readRememberIssuedAt = (): number => readTimestamp(localStorage, AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
+
+    const seedLifecycleIfMissing = () => {
+      try {
+        const existingLoginAt = readTimestamp(sessionStorage, AUTH_LOGIN_STARTED_AT_STORAGE_KEY);
+        const existingLastActivity = readTimestamp(sessionStorage, AUTH_LAST_ACTIVITY_STORAGE_KEY);
+        const rememberIssuedAt = readRememberIssuedAt();
+        const fallbackLoginAt = rememberIssuedAt || now;
+
+        if (!existingLoginAt) {
+          sessionStorage.setItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY, String(fallbackLoginAt));
+        }
+        if (!existingLastActivity) {
+          sessionStorage.setItem(AUTH_LAST_ACTIVITY_STORAGE_KEY, String(now));
+        }
+        if (rememberEnabled && !rememberIssuedAt) {
+          localStorage.setItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY, String(now));
+        }
+      } catch {
+        // ignore browser storage failures
+      }
+    };
+
+    seedLifecycleIfMissing();
+
+    const idleTimeoutMs = isSensitiveSessionPage(currentPageValue)
+      ? SESSION_IDLE_TIMEOUT_SENSITIVE_MS
+      : SESSION_IDLE_TIMEOUT_STANDARD_MS;
+
+    const evaluateSession = () => {
+      const tickNow = Date.now();
+      const loginStartedAt = readTimestamp(sessionStorage, AUTH_LOGIN_STARTED_AT_STORAGE_KEY) || tickNow;
+      const lastActivityAt = readTimestamp(sessionStorage, AUTH_LAST_ACTIVITY_STORAGE_KEY) || tickNow;
+      const rememberIssuedAt = readRememberIssuedAt();
+
+      if (rememberEnabled && rememberIssuedAt > 0) {
+        const rememberAgeMs = tickNow - rememberIssuedAt;
+        if (rememberAgeMs >= SESSION_REMEMBER_MAX_MS) {
+          forceLogout('remember');
+          return;
+        }
+      }
+
+      const absoluteRemainingMs = SESSION_ABSOLUTE_MAX_MS - (tickNow - loginStartedAt);
+      if (absoluteRemainingMs <= 0) {
+        forceLogout('absolute');
+        return;
+      }
+
+      const idleRemainingMs = idleTimeoutMs - (tickNow - lastActivityAt);
+      if (idleRemainingMs <= 0) {
+        forceLogout('idle');
+        return;
+      }
+
+      const remainingMs = Math.min(absoluteRemainingMs, idleRemainingMs);
+      setSessionCountdownMs(Math.max(0, remainingMs));
+
+      if (remainingMs <= SESSION_WARNING_LEAD_MS) {
+        setSessionWarningMode(
+          absoluteRemainingMs <= idleRemainingMs ? 'absolute' : 'idle',
+        );
+        setShowSessionExpiryWarning(true);
+      } else {
+        setShowSessionExpiryWarning(false);
+      }
+    };
+
+    let lastActivityWriteAt = 0;
+    const handleUserActivity = () => {
+      const activityNow = Date.now();
+      if (activityNow - lastActivityWriteAt < 1000) return;
+      lastActivityWriteAt = activityNow;
+      markSessionActivity();
+    };
+
+    const activityEvents: Array<keyof WindowEventMap> = [
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'scroll',
+      'mousemove',
+    ];
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, handleUserActivity, { passive: true });
+    });
+
+    const heartbeat = window.setInterval(evaluateSession, 1000);
+    evaluateSession();
+
+    return () => {
+      window.clearInterval(heartbeat);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, handleUserActivity);
+      });
+    };
+  }, [isAuthenticated, currentUser?.id, currentPageValue]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -505,6 +642,81 @@ const AppContent: React.FC = () => {
   const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
 
   const currentPageValue = currentPage;
+  const isSensitiveSessionPage = (page: string): boolean => {
+    const normalized = String(page || '').trim().toLowerCase();
+    if (!normalized) return false;
+    if (normalized === 'pos') return true;
+    if (normalized === 'new-payment') return true;
+    if (normalized === 'field-payments') return true;
+    if (normalized === 'list-payments') return true;
+    if (normalized === 'payment-ledger') return true;
+    if (normalized.startsWith('view-customer/') && normalized.includes(':add-payment')) return true;
+    if (normalized.startsWith('view-supplier/') && normalized.includes(':add-payment')) return true;
+    return false;
+  };
+
+  const clearAuthLifecycleStorage = (): void => {
+    try {
+      sessionStorage.removeItem(AUTH_LAST_ACTIVITY_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY);
+      localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
+    } catch {
+      // ignore browser storage failures
+    }
+  };
+
+  const forceLogout = (reason: 'idle' | 'absolute' | 'remember' | 'manual' | 'expired'): void => {
+    if (isAutoLogoutInProgressRef.current) return;
+    isAutoLogoutInProgressRef.current = true;
+    try { localStorage.removeItem('atwar_auth_token'); } catch {}
+    clearAuthLifecycleStorage();
+    setShowSessionExpiryWarning(false);
+    setSessionCountdownMs(0);
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    if (reason === 'idle') {
+      addNotification({
+        title: 'Logged Out',
+        message: 'You were signed out after inactivity.',
+        type: 'warning',
+      });
+    } else if (reason === 'absolute') {
+      addNotification({
+        title: 'Session Ended',
+        message: 'For security, please sign in again after 8 hours.',
+        type: 'warning',
+      });
+    } else if (reason === 'remember') {
+      addNotification({
+        title: 'Remembered Session Expired',
+        message: 'Please sign in again. Remembered sessions are limited to 7 days.',
+        type: 'warning',
+      });
+    }
+    window.setTimeout(() => {
+      isAutoLogoutInProgressRef.current = false;
+    }, 250);
+  };
+
+  const markSessionActivity = (): void => {
+    const now = Date.now();
+    try {
+      sessionStorage.setItem(AUTH_LAST_ACTIVITY_STORAGE_KEY, String(now));
+      if (!sessionStorage.getItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY)) {
+        sessionStorage.setItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY, String(now));
+      }
+    } catch {
+      // ignore browser storage failures
+    }
+    setShowSessionExpiryWarning(false);
+  };
+
+  const formatSessionCountdown = (valueMs: number): string => {
+    const totalSeconds = Math.max(0, Math.ceil(Number(valueMs || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
 
   // Simple page router
   const renderPage = (pageOverride?: string) => {
@@ -1085,14 +1297,12 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex bg-slate-50 min-h-screen font-sans text-slate-900">
-      <Sidebar 
-        currentPage={currentPage} 
-        onNavigate={setCurrentPage}
-        onLogout={() => {
-          try { localStorage.removeItem('atwar_auth_token'); } catch {}
-          setCurrentUser(null);
-          setIsAuthenticated(false);
-        }}
+        <Sidebar 
+          currentPage={currentPage} 
+          onNavigate={setCurrentPage}
+          onLogout={() => {
+          forceLogout('manual');
+          }}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         isMobileOpen={isSidebarOpen}
@@ -1402,6 +1612,43 @@ const AppContent: React.FC = () => {
           ))}
           {!shouldKeepCurrentPageAlive && renderPage(currentPageValue)}
         </main>
+
+        {showSessionExpiryWarning && (
+          <div className="fixed inset-0 z-[1400] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
+            <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/70">
+                <h3 className="text-base font-black text-slate-900">Session Expiring Soon</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {sessionWarningMode === 'absolute'
+                    ? 'For security, maximum sign-in time is 8 hours.'
+                    : 'You have been inactive for a while.'}
+                </p>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                <p className="text-sm text-slate-600">
+                  You will be logged out in{' '}
+                  <span className="font-black text-slate-900">{formatSessionCountdown(sessionCountdownMs)}</span>.
+                </p>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => forceLogout('manual')}
+                    className="px-4 py-2 text-xs font-bold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition-colors"
+                  >
+                    Log Out Now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={markSessionActivity}
+                    className="px-4 py-2 text-xs font-bold rounded-lg bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+                  >
+                    Stay Signed In
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <footer className="mt-10 pt-4 border-t border-slate-200 text-center print:hidden">
           <p className="text-xs text-slate-400">
