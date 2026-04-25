@@ -147,6 +147,83 @@ const AppContent: React.FC = () => {
   const [showSessionExpiryWarning, setShowSessionExpiryWarning] = useState(false);
   const [sessionCountdownMs, setSessionCountdownMs] = useState(0);
   const [sessionWarningMode, setSessionWarningMode] = useState<'idle' | 'absolute'>('idle');
+  const currentPageValue = currentPage;
+
+  const isSensitiveSessionPage = (page: string): boolean => {
+    const normalized = String(page || '').trim().toLowerCase();
+    if (!normalized) return false;
+    if (normalized === 'pos') return true;
+    if (normalized === 'new-payment') return true;
+    if (normalized === 'field-payments') return true;
+    if (normalized === 'list-payments') return true;
+    if (normalized === 'payment-ledger') return true;
+    if (normalized.startsWith('view-customer/') && normalized.includes(':add-payment')) return true;
+    if (normalized.startsWith('view-supplier/') && normalized.includes(':add-payment')) return true;
+    return false;
+  };
+
+  const clearAuthLifecycleStorage = (): void => {
+    try {
+      sessionStorage.removeItem(AUTH_LAST_ACTIVITY_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY);
+      localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
+    } catch {
+      // ignore browser storage failures
+    }
+  };
+
+  const forceLogout = (reason: 'idle' | 'absolute' | 'remember' | 'manual' | 'expired'): void => {
+    if (isAutoLogoutInProgressRef.current) return;
+    isAutoLogoutInProgressRef.current = true;
+    try { localStorage.removeItem('atwar_auth_token'); } catch {}
+    clearAuthLifecycleStorage();
+    setShowSessionExpiryWarning(false);
+    setSessionCountdownMs(0);
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    if (reason === 'idle') {
+      addNotification({
+        title: 'Logged Out',
+        message: 'You were signed out after inactivity.',
+        type: 'warning',
+      });
+    } else if (reason === 'absolute') {
+      addNotification({
+        title: 'Session Ended',
+        message: 'For security, please sign in again after 8 hours.',
+        type: 'warning',
+      });
+    } else if (reason === 'remember') {
+      addNotification({
+        title: 'Remembered Session Expired',
+        message: 'Please sign in again. Remembered sessions are limited to 7 days.',
+        type: 'warning',
+      });
+    }
+    window.setTimeout(() => {
+      isAutoLogoutInProgressRef.current = false;
+    }, 250);
+  };
+
+  const markSessionActivity = (): void => {
+    const now = Date.now();
+    try {
+      sessionStorage.setItem(AUTH_LAST_ACTIVITY_STORAGE_KEY, String(now));
+      if (!sessionStorage.getItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY)) {
+        sessionStorage.setItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY, String(now));
+      }
+    } catch {
+      // ignore browser storage failures
+    }
+    setShowSessionExpiryWarning(false);
+  };
+
+  const formatSessionCountdown = (valueMs: number): string => {
+    const totalSeconds = Math.max(0, Math.ceil(Number(valueMs || 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  };
 
   const shouldKeepFormPageAlive = (page: string): boolean => {
     const normalized = String(page || '').trim();
@@ -640,83 +717,6 @@ const AppContent: React.FC = () => {
   const canAccessPrinters = hasRolePermission('Settings', 'Access printers');
   const canViewTaxRates = hasRolePermission('Tax rate', 'View tax rate');
   const canAccessHelpCenter = hasRolePermission('Support', 'Access help center');
-
-  const currentPageValue = currentPage;
-  const isSensitiveSessionPage = (page: string): boolean => {
-    const normalized = String(page || '').trim().toLowerCase();
-    if (!normalized) return false;
-    if (normalized === 'pos') return true;
-    if (normalized === 'new-payment') return true;
-    if (normalized === 'field-payments') return true;
-    if (normalized === 'list-payments') return true;
-    if (normalized === 'payment-ledger') return true;
-    if (normalized.startsWith('view-customer/') && normalized.includes(':add-payment')) return true;
-    if (normalized.startsWith('view-supplier/') && normalized.includes(':add-payment')) return true;
-    return false;
-  };
-
-  const clearAuthLifecycleStorage = (): void => {
-    try {
-      sessionStorage.removeItem(AUTH_LAST_ACTIVITY_STORAGE_KEY);
-      sessionStorage.removeItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY);
-      localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
-    } catch {
-      // ignore browser storage failures
-    }
-  };
-
-  const forceLogout = (reason: 'idle' | 'absolute' | 'remember' | 'manual' | 'expired'): void => {
-    if (isAutoLogoutInProgressRef.current) return;
-    isAutoLogoutInProgressRef.current = true;
-    try { localStorage.removeItem('atwar_auth_token'); } catch {}
-    clearAuthLifecycleStorage();
-    setShowSessionExpiryWarning(false);
-    setSessionCountdownMs(0);
-    setCurrentUser(null);
-    setIsAuthenticated(false);
-    if (reason === 'idle') {
-      addNotification({
-        title: 'Logged Out',
-        message: 'You were signed out after inactivity.',
-        type: 'warning',
-      });
-    } else if (reason === 'absolute') {
-      addNotification({
-        title: 'Session Ended',
-        message: 'For security, please sign in again after 8 hours.',
-        type: 'warning',
-      });
-    } else if (reason === 'remember') {
-      addNotification({
-        title: 'Remembered Session Expired',
-        message: 'Please sign in again. Remembered sessions are limited to 7 days.',
-        type: 'warning',
-      });
-    }
-    window.setTimeout(() => {
-      isAutoLogoutInProgressRef.current = false;
-    }, 250);
-  };
-
-  const markSessionActivity = (): void => {
-    const now = Date.now();
-    try {
-      sessionStorage.setItem(AUTH_LAST_ACTIVITY_STORAGE_KEY, String(now));
-      if (!sessionStorage.getItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY)) {
-        sessionStorage.setItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY, String(now));
-      }
-    } catch {
-      // ignore browser storage failures
-    }
-    setShowSessionExpiryWarning(false);
-  };
-
-  const formatSessionCountdown = (valueMs: number): string => {
-    const totalSeconds = Math.max(0, Math.ceil(Number(valueMs || 0) / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  };
 
   // Simple page router
   const renderPage = (pageOverride?: string) => {
