@@ -77,9 +77,13 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
           ? Number(productRule.discount)
           : Number(group.discount || 0))
         : 0;
+      const rulePrice = Number(productRule?.price);
+      const hasRulePrice = Number.isFinite(rulePrice) && rulePrice >= 0;
+      const hasFixedOverride = hasRulePrice && Math.abs(rulePrice - basePrice) > 0.0005;
+      const priceBase = hasFixedOverride ? rulePrice : adjustedBase;
 
       const groupedPrice = appliesToProduct
-        ? Math.max(0, adjustedBase * (1 - (discount / 100)))
+        ? Math.max(0, priceBase * (1 - (discount / 100)))
         : basePrice;
 
       return {

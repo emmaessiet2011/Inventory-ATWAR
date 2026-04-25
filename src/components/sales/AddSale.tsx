@@ -329,8 +329,15 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     );
     if (!productRule) return Number(applyCustomerGroupCalc(basePrice).toFixed(3));
 
-    const productDiscount = Number.isFinite(productRule.discount) ? productRule.discount : Number(group.discount || 0);
-    const groupedPrice = Math.max(0, adjustedBase * (1 - (productDiscount / 100)));
+    const productDiscountRaw = Number(productRule.discount);
+    const productDiscount = Number.isFinite(productDiscountRaw)
+      ? productDiscountRaw
+      : Number(group.discount || 0);
+    const rulePriceRaw = Number(productRule.price);
+    const hasRulePrice = Number.isFinite(rulePriceRaw) && rulePriceRaw >= 0;
+    const hasFixedOverride = hasRulePrice && Math.abs(rulePriceRaw - basePrice) > 0.0005;
+    const priceBase = hasFixedOverride ? rulePriceRaw : adjustedBase;
+    const groupedPrice = Math.max(0, priceBase * (1 - (productDiscount / 100)));
     return Number(applyCustomerGroupCalc(groupedPrice).toFixed(3));
   };
 

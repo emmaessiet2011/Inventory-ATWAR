@@ -53,6 +53,11 @@ const SellingPriceGroups: React.FC = () => {
     return Math.min(100, Math.max(0, value));
   };
 
+  const clampPrice = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, value);
+  };
+
   const resolveLiveProduct = (rule: SellingPriceGroupProduct): Product | undefined =>
     products.find(p =>
       p.id === rule.id ||
@@ -67,6 +72,12 @@ const SellingPriceGroups: React.FC = () => {
     return Number.isFinite(fallback) ? fallback : 0;
   };
 
+  const resolveRulePrice = (rule: SellingPriceGroupProduct): number => {
+    const explicit = Number(rule.price);
+    if (Number.isFinite(explicit)) return clampPrice(explicit);
+    return clampPrice(resolveLivePrice(rule));
+  };
+
   const mapRuleWithLiveProduct = (rule: SellingPriceGroupProduct): SellingPriceGroupProduct => {
     const liveProduct = resolveLiveProduct(rule);
     const discount = clampDiscount(Number(rule.discount));
@@ -74,8 +85,21 @@ const SellingPriceGroups: React.FC = () => {
       id: liveProduct?.id || rule.id,
       name: liveProduct?.name || rule.name,
       sku: liveProduct?.sku || rule.sku,
-      price: Number(resolveLivePrice(rule).toFixed(3)),
+      price: Number(resolveRulePrice(rule).toFixed(3)),
       discount: Number(discount.toFixed(3)),
+    };
+  };
+
+  const normalizeRuleForSave = (rule: SellingPriceGroupProduct): SellingPriceGroupProduct => {
+    const liveProduct = resolveLiveProduct(rule);
+    const safePrice = Number(clampPrice(resolveRulePrice(rule)).toFixed(3));
+    const safeDiscount = Number(clampDiscount(Number(rule.discount)).toFixed(3));
+    return {
+      id: liveProduct?.id || rule.id,
+      name: liveProduct?.name || rule.name,
+      sku: liveProduct?.sku || rule.sku,
+      price: safePrice,
+      discount: safeDiscount,
     };
   };
 
@@ -159,10 +183,17 @@ const SellingPriceGroups: React.FC = () => {
       return;
     }
 
-    const normalizedSelectedProducts = selectedProducts.map(mapRuleWithLiveProduct);
+    const normalizedSelectedProducts = selectedProducts.map(normalizeRuleForSave);
     const invalidProductDiscount = normalizedSelectedProducts.some(rule => rule.discount < 0 || rule.discount > 100);
     if (invalidProductDiscount) {
       const message = 'Per-product discount must be between 0 and 100.';
+      setFormError(message);
+      addNotification({ title: 'Validation Error', message, type: 'error' });
+      return;
+    }
+    const invalidProductPrice = normalizedSelectedProducts.some(rule => !Number.isFinite(Number(rule.price)) || Number(rule.price) < 0);
+    if (invalidProductPrice) {
+      const message = 'Per-product price must be 0 or greater.';
       setFormError(message);
       addNotification({ title: 'Validation Error', message, type: 'error' });
       return;
@@ -226,6 +257,12 @@ const SellingPriceGroups: React.FC = () => {
   const updateProductDiscount = (id: string, discount: number) => {
     const safeDiscount = Number(clampDiscount(discount).toFixed(3));
     setSelectedProducts(prev => prev.map(p => p.id === id ? { ...p, discount: safeDiscount } : p));
+    setFormError('');
+  };
+
+  const updateProductPrice = (id: string, price: number) => {
+    const safePrice = Number(clampPrice(price).toFixed(3));
+    setSelectedProducts(prev => prev.map(p => p.id === id ? { ...p, price: safePrice } : p));
     setFormError('');
   };
 
@@ -710,12 +747,25 @@ const SellingPriceGroups: React.FC = () => {
                     <tbody className="divide-y divide-slate-100">
                       {selectedProducts.map(p => {
                         const livePrice = resolveLivePrice(p);
-                        const final = livePrice * (1 - p.discount / 100);
+                        const configuredPrice = resolveRulePrice(p);
+                        const final = configuredPrice * (1 - p.discount / 100);
                         return (
                           <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                             <td className="px-4 py-3 text-slate-800 font-medium">{p.name}</td>
                             <td className="px-4 py-3 text-slate-500 font-mono text-xs">{p.sku}</td>
-                            <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(livePrice)}</td>
+                            <td className="px-4 py-3 text-right">
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.001}
+                                className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-800 text-right"
+                                value={configuredPrice}
+                                onChange={(e) => updateProductPrice(p.id, parseFloat(e.target.value) || 0)}
+                              />
+                              <div className="mt-1 text-[10px] text-slate-400 text-right">
+                                Base: {formatCurrency(livePrice)}
+                              </div>
+                            </td>
                             <td className="px-4 py-3 text-center">
                               <input
                                 type="number"

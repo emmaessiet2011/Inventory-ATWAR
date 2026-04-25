@@ -468,8 +468,12 @@ const PrintLabels: React.FC<PrintLabelsProps> = ({ initialProductId }) => {
     const productDiscount = Number.isFinite(Number(productRule.discount))
       ? Number(productRule.discount)
       : Number(selectedGroup.discount || 0);
+    const rulePrice = Number(productRule.price);
+    const hasRulePrice = Number.isFinite(rulePrice) && rulePrice >= 0;
+    const hasFixedOverride = hasRulePrice && Math.abs(rulePrice - basePrice) > 0.0005;
+    const priceBase = hasFixedOverride ? rulePrice : adjustedBase;
 
-    return Math.max(0, adjustedBase * (1 - (productDiscount / 100)));
+    return Math.max(0, priceBase * (1 - (productDiscount / 100)));
   };
 
   const preparedLabels = useMemo<PreparedLabel[]>(() => {
