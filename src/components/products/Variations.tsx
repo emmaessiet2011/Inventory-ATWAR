@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import type { ProductVariation } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { buildPaginationItems } from '@/utils/pagination';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 
@@ -30,6 +31,7 @@ const Variations: React.FC = () => {
     settings,
     generateId,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [pageSize, setPageSize] = useState(25);
@@ -200,7 +202,7 @@ const Variations: React.FC = () => {
     setFormValues(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = normalizeText(formName);
     if (!name) {
       setFormError('Variation name is required.');
@@ -236,9 +238,17 @@ const Variations: React.FC = () => {
     }
 
     if (editingVariation) {
-      updateProductVariation({ ...editingVariation, name, values });
+      const result = await updateProductVariation({ ...editingVariation, name, values });
+      if (!result.ok) {
+        setFormError(result.error || `Unable to update "${name}".`);
+        return;
+      }
     } else {
-      addProductVariation({ id: generateId('VAR'), name, values });
+      const result = await addProductVariation({ id: generateId('VAR'), name, values });
+      if (!result.ok) {
+        setFormError(result.error || `Unable to create "${name}".`);
+        return;
+      }
     }
     setFormError('');
     closeModal();
@@ -541,7 +551,18 @@ const Variations: React.FC = () => {
             <div className="flex justify-end gap-3">
               <button onClick={() => setPendingDeleteId(null)} className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold text-sm hover:bg-slate-50 transition">Cancel</button>
               <button
-                onClick={() => { deleteProductVariation(pendingDeleteId); setPendingDeleteId(null); }}
+                onClick={async () => {
+                  const result = await deleteProductVariation(pendingDeleteId);
+                  if (!result.ok) {
+                    addNotification({
+                      title: 'Delete Failed',
+                      message: result.error || 'Unable to delete variation.',
+                      type: 'error',
+                    });
+                    return;
+                  }
+                  setPendingDeleteId(null);
+                }}
                 disabled={pendingDeleteUsage.length > 0}
                 className="px-4 py-2 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >Delete</button>

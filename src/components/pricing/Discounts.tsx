@@ -17,6 +17,7 @@ import AddDiscountModal, { DiscountFormData } from './AddDiscountModal';
 import MultiSelect from '@/components/shared/MultiSelect';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
 import { Discount, useGlobalContext } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { printActiveReportTable } from '@/utils/printUtils';
 import { formatDiscountAmount, sortDiscountsByPriority } from '@/utils/discountRules';
 
@@ -37,6 +38,7 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
     roles,
     settings,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const currentRoleRecord = roles.find(role => role.name === currentUser?.role);
   const rolePermissions = currentRoleRecord?.permissions || [];
@@ -178,7 +180,7 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
     });
   };
 
-  const handleSaveDiscount = (formData: DiscountFormData) => {
+  const handleSaveDiscount = async (formData: DiscountFormData) => {
     const payload: Discount = {
       id: editingDiscount?.id || generateId('DISC'),
       name: formData.name,
@@ -196,7 +198,17 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
       applyInCustomerGroups: formData.applyInCustomerGroups,
       selectedGroups: formData.selectedGroups,
     };
-    if (editingDiscount) updateDiscount(payload); else addDiscount(payload);
+    const result = editingDiscount
+      ? await updateDiscount(payload)
+      : await addDiscount(payload);
+    if (!result.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: result.error || 'Unable to save discount.',
+        type: 'error',
+      });
+      return;
+    }
     setEditingDiscount(null);
     setIsDiscountModalOpen(false);
   };
@@ -208,8 +220,16 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
       message: `Are you sure you want to ${action} discount "${discount.name}"?`,
       confirmLabel: discount.isActive ? 'Deactivate' : 'Activate',
       tone: discount.isActive ? 'warning' : 'primary',
-      onConfirm: () => {
-        updateDiscount({ ...discount, isActive: !discount.isActive });
+      onConfirm: async () => {
+        const result = await updateDiscount({ ...discount, isActive: !discount.isActive });
+        if (!result.ok) {
+          addNotification({
+            title: 'Update Failed',
+            message: result.error || `Unable to ${action} discount "${discount.name}".`,
+            type: 'error',
+          });
+          return;
+        }
         setActiveActionId(null);
       },
     });
@@ -220,8 +240,16 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
       message: `Are you sure you want to delete "${discount.name}"?`,
       confirmLabel: 'Delete',
       tone: 'danger',
-      onConfirm: () => {
-        deleteDiscount(discount.id);
+      onConfirm: async () => {
+        const result = await deleteDiscount(discount.id);
+        if (!result.ok) {
+          addNotification({
+            title: 'Delete Failed',
+            message: result.error || `Unable to delete discount "${discount.name}".`,
+            type: 'error',
+          });
+          return;
+        }
         setActiveActionId(null);
       },
     });
@@ -234,8 +262,18 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
       message: `Deactivate ${targets.length} selected discount(s)?`,
       confirmLabel: 'Deactivate',
       tone: 'warning',
-      onConfirm: () => {
-        targets.forEach(discount => updateDiscount({ ...discount, isActive: false }));
+      onConfirm: async () => {
+        for (const discount of targets) {
+          const result = await updateDiscount({ ...discount, isActive: false });
+          if (!result.ok) {
+            addNotification({
+              title: 'Bulk Update Failed',
+              message: result.error || `Unable to deactivate "${discount.name}".`,
+              type: 'error',
+            });
+            return;
+          }
+        }
         setSelectedIds(new Set());
       },
     });

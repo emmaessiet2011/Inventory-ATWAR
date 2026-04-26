@@ -5,10 +5,10 @@
  * instead of pushing a giant snapshot blob.
  */
 
+import { clearAuthToken, readAuthToken } from './hardenedStorage';
+
 const getApiBase = (): string =>
   String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
-
-const AUTH_TOKEN_KEY = 'atwar_auth_token';
 
 const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
   const parts = String(token || '').split('.');
@@ -37,12 +37,12 @@ const isTokenExpired = (token: string): boolean => {
  * can redirect to the login screen automatically.
  */
 function handle401(): void {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
+  clearAuthToken();
   window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
 }
 
 const getToken = (): string => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  const token = readAuthToken();
   if (!token) return '';
   // Avoid request storms with expired JWTs: clear the token before
   // any protected call is attempted.
@@ -52,6 +52,11 @@ const getToken = (): string => {
   }
   return token;
 };
+
+const toObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 
 export const hasValidAuthToken = (): boolean => Boolean(getToken());
 
@@ -138,35 +143,15 @@ export async function apiFetchAllWithRetry<T>(
 }
 
 /**
- * Fire-and-forget upsert of a single record.
- * Sends the full frontend object to PUT /api/sync/record/:resource —
- * the server handles the field mapping into the relational table.
- * On 401 the token is cleared and the app is redirected to login.
+ * Backward-compatible awaited upsert wrapper.
+ * Sends the full frontend object to PUT /api/sync/record/:resource by
+ * delegating to `syncRecordStrict`.
  */
-export function syncRecord(resource: string, data: object): void {
-  if (!isLiveSyncEnabled() || !getToken()) return;
-  void fetch(
-    `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}`,
-    {
-      method: 'PUT',
-      headers: authHeaders(),
-      body: JSON.stringify(data),
-    },
-  )
-    .then(async (res) => {
-      if (res.status === 401) {
-        handle401();
-        return;
-      }
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = await res.text();
-        } catch {}
-        console.error(`[syncRecord] ${resource} failed (${res.status})`, detail || data);
-      }
-    })
-    .catch(() => {});
+export async function syncRecord(
+  resource: string,
+  data: object,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return syncRecordStrict(resource, data);
 }
 
 /**
@@ -222,29 +207,15 @@ export async function syncRecordStrict(
 }
 
 /**
- * Fire-and-forget delete of a single record.
- * Sends DELETE /api/sync/record/:resource/:id.
+ * Backward-compatible awaited delete wrapper.
+ * Sends DELETE /api/sync/record/:resource/:id by delegating to
+ * `deleteRecordStrict`.
  */
-export function deleteRecord(resource: string, id: string): void {
-  if (!isLiveSyncEnabled() || !getToken()) return;
-  void fetch(
-    `${getApiBase()}/api/sync/record/${encodeURIComponent(resource)}/${encodeURIComponent(id)}`,
-    { method: 'DELETE', headers: authHeaders() },
-  )
-    .then(async (res) => {
-      if (res.status === 401) {
-        handle401();
-        return;
-      }
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = await res.text();
-        } catch {}
-        console.error(`[deleteRecord] ${resource}:${id} failed (${res.status})`, detail);
-      }
-    })
-    .catch(() => {});
+export async function deleteRecord(
+  resource: string,
+  id: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return deleteRecordStrict(resource, id);
 }
 
 /**
@@ -314,51 +285,21 @@ export async function fetchDedicated<T>(path: string): Promise<T[] | null> {
   }
 }
 
-/** Fire-and-forget upsert to a dedicated endpoint like /api/sync/field-payments/:id */
-export function syncDedicated(path: string, id: string, data: object): void {
-  if (!isLiveSyncEnabled() || !getToken()) return;
-  void fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: authHeaders(),
-    body: JSON.stringify(data),
-  })
-    .then(async (res) => {
-      if (res.status === 401) {
-        handle401();
-        return;
-      }
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = await res.text();
-        } catch {}
-        console.error(`[syncDedicated] ${path}:${id} failed (${res.status})`, detail || data);
-      }
-    })
-    .catch(() => {});
+/** Backward-compatible awaited upsert to a dedicated endpoint like /api/sync/field-payments/:id */
+export async function syncDedicated(
+  path: string,
+  id: string,
+  data: object,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return syncDedicatedStrict(path, id, data);
 }
 
-/** Fire-and-forget delete to a dedicated endpoint like /api/sync/field-payments/:id */
-export function deleteDedicated(path: string, id: string): void {
-  if (!isLiveSyncEnabled() || !getToken()) return;
-  void fetch(`${getApiBase()}${path}/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  })
-    .then(async (res) => {
-      if (res.status === 401) {
-        handle401();
-        return;
-      }
-      if (!res.ok) {
-        let detail = '';
-        try {
-          detail = await res.text();
-        } catch {}
-        console.error(`[deleteDedicated] ${path}:${id} failed (${res.status})`, detail);
-      }
-    })
-    .catch(() => {});
+/** Backward-compatible awaited delete to a dedicated endpoint like /api/sync/field-payments/:id */
+export async function deleteDedicated(
+  path: string,
+  id: string,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return deleteDedicatedStrict(path, id);
 }
 
 /** Awaited upsert to a dedicated endpoint like /api/sync/field-payments/:id */
@@ -450,26 +391,17 @@ export async function deleteDedicatedStrict(
 }
 
 /**
- * Fire-and-forget atomic stock increment/decrement.
- * Uses POST /api/sync/stock-delta so the server applies the change with
- * a SQL-level atomic increment — concurrent requests from different users
- * are both applied correctly instead of the last write winning.
+ * Backward-compatible awaited atomic stock increment/decrement wrapper.
+ * Delegates to `syncStockDeltaStrict`.
  *
  * @param productId  The product's ID in the database.
  * @param delta      Positive = stock added, negative = stock sold/removed.
  */
-export function syncStockDelta(productId: string, delta: number): void {
-  if (!isLiveSyncEnabled() || !getToken() || delta === 0) return;
-  void fetch(
-    `${getApiBase()}/api/sync/stock-delta`,
-    {
-      method: 'POST',
-      headers: authHeaders(),
-      body: JSON.stringify({ productId, delta }),
-    },
-  )
-    .then(res => { if (res.status === 401) handle401(); })
-    .catch(() => {});
+export async function syncStockDelta(
+  productId: string,
+  delta: number,
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  return syncStockDeltaStrict(productId, delta);
 }
 
 /** Awaited atomic stock increment/decrement. */
@@ -510,6 +442,109 @@ export async function syncStockDeltaStrict(
       return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
     }
     return { ok: true, status: res.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+export async function fetchUserPreferences(
+  userId: string,
+): Promise<{ ok: boolean; status: number; preferences?: Record<string, unknown>; error?: string }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200, preferences: {} };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) {
+    return { ok: false, status: 400, error: 'User id is required' };
+  }
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/users/${encodeURIComponent(normalizedUserId)}/preferences`,
+      { headers: authHeaders() },
+    );
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    const payload = await res.json().catch(() => ({}));
+    return {
+      ok: true,
+      status: res.status,
+      preferences: toObject(payload?.preferences),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+export async function updateUserPreferences(
+  userId: string,
+  preferences: Record<string, unknown>,
+  options?: { replace?: boolean },
+): Promise<{ ok: boolean; status: number; preferences?: Record<string, unknown>; error?: string }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200, preferences: toObject(preferences) };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  const normalizedUserId = String(userId || '').trim();
+  if (!normalizedUserId) {
+    return { ok: false, status: 400, error: 'User id is required' };
+  }
+  try {
+    const res = await fetch(
+      `${getApiBase()}/api/users/${encodeURIComponent(normalizedUserId)}/preferences`,
+      {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          preferences: toObject(preferences),
+          mode: options?.replace ? 'replace' : 'merge',
+        }),
+      },
+    );
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = await res.text();
+      } catch {}
+      return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
+    }
+    const payload = await res.json().catch(() => ({}));
+    return {
+      ok: true,
+      status: res.status,
+      preferences: toObject(payload?.preferences),
+    };
   } catch (error) {
     return {
       ok: false,

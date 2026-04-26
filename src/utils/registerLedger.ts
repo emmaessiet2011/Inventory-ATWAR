@@ -109,18 +109,14 @@ export const getRegisterTransactions = (): RegisterTransaction[] => (
 
 export const fetchRegisterSessionsFromDB = async (): Promise<RegisterSessionRecord[]> => {
   const remoteSessions = await fetchDedicated<RegisterSessionRecord>('/api/sync/register-sessions');
-  if (remoteSessions) {
-    registerSessionsCache = parseSessions(remoteSessions);
-    syncActiveFromSessions();
-  }
+  registerSessionsCache = remoteSessions ? parseSessions(remoteSessions) : [];
+  syncActiveFromSessions();
   return getRegisterSessions();
 };
 
 export const fetchRegisterTransactionsFromDB = async (): Promise<RegisterTransaction[]> => {
   const remoteTxs = await fetchDedicated<RegisterTransaction>('/api/sync/register-transactions');
-  if (remoteTxs) {
-    registerTransactionsCache = parseTransactions(remoteTxs);
-  }
+  registerTransactionsCache = remoteTxs ? parseTransactions(remoteTxs) : [];
   return getRegisterTransactions();
 };
 

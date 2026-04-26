@@ -579,7 +579,8 @@ const ImportProducts: React.FC = () => {
     reader.readAsText(selectedFile);
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
+    try {
     const validRows = parsedRows.filter(r => !r.error);
     let imported = 0;
     const knownCategoriesByName = new Map<string, ProductCategory>(
@@ -614,7 +615,7 @@ const ImportProducts: React.FC = () => {
       return candidate;
     };
 
-    const ensureVariation = (rawName: string, rawValues: string[]) => {
+    const ensureVariation = async (rawName: string, rawValues: string[]) => {
       const name = normalizeText(rawName) || 'Imported Variation';
       const key = name.toLowerCase();
       const cleanedValues = rawValues.map(normalizeText).filter(Boolean);
@@ -628,7 +629,10 @@ const ImportProducts: React.FC = () => {
           name,
           values: uniqueValues.length > 0 ? uniqueValues : ['Default'],
         };
-        addProductVariation(created);
+        const createResult = await addProductVariation(created);
+        if (!createResult.ok) {
+          throw new Error(createResult.error || `Unable to create variation "${name}".`);
+        }
         knownVariations.set(key, created);
         return created;
       }
@@ -644,14 +648,17 @@ const ImportProducts: React.FC = () => {
       });
       if (mergedValues.length !== variation.values.length) {
         const updated = { ...variation, values: mergedValues };
-        updateProductVariation(updated);
+        const updateResult = await updateProductVariation(updated);
+        if (!updateResult.ok) {
+          throw new Error(updateResult.error || `Unable to update variation "${name}".`);
+        }
         knownVariations.set(key, updated);
         variation = updated;
       }
       return variation;
     };
 
-    validRows.forEach(row => {
+    for (const row of validRows) {
       const resolvedProductSku = reserveSku(row.sku, 'SKU');
       const rowCategoryKey = row.category.trim().toLowerCase();
       if (row.category && !knownCategoriesByName.has(rowCategoryKey)) {
@@ -661,7 +668,10 @@ const ImportProducts: React.FC = () => {
           code: '',
           description: 'Auto-created from product import',
         };
-        addProductCategory(createdCategory);
+        const categoryResult = await addProductCategory(createdCategory);
+        if (!categoryResult.ok) {
+          throw new Error(categoryResult.error || `Unable to create category "${createdCategory.name}".`);
+        }
         knownCategoriesByName.set(rowCategoryKey, createdCategory);
       }
       const resolvedCategory = row.category
@@ -678,7 +688,10 @@ const ImportProducts: React.FC = () => {
           name: row.brand.trim(),
           note: 'Auto-created from product import',
         };
-        addProductBrand(createdBrand);
+        const brandResult = await addProductBrand(createdBrand);
+        if (!brandResult.ok) {
+          throw new Error(brandResult.error || `Unable to create brand "${createdBrand.name}".`);
+        }
         resolvedBrand = { id: createdBrand.id, name: createdBrand.name };
         knownBrandsByName.set(rowBrandKey, resolvedBrand);
       }
@@ -689,7 +702,7 @@ const ImportProducts: React.FC = () => {
       let variationRows: Product['variationRows'] = undefined;
       if (row.type === 'Variable' && row.variationValues.length > 0) {
         const cleanedVariationValues = row.variationValues.map(normalizeText).filter(Boolean);
-        const variation = ensureVariation(row.variationName, cleanedVariationValues);
+        const variation = await ensureVariation(row.variationName, cleanedVariationValues);
         variationRows = cleanedVariationValues.map((value, idx) => ({
           id: generateId('VR'),
           variationId: variation.id,
@@ -751,12 +764,22 @@ const ImportProducts: React.FC = () => {
         variationRows,
         notForSelling: row.notForSelling || undefined,
       };
-      addProduct(product);
+      const productResult = await addProduct(product);
+      if (!productResult.ok) {
+        throw new Error(productResult.error || `Unable to import product "${product.name}".`);
+      }
       imported += 1;
-    });
+    }
     setImportResults({ imported, skipped: parsedRows.length - validRows.length });
     setStep('done');
     addNotification({ type: 'success', title: 'Import Complete', message: `${imported} product(s) imported successfully.` });
+    } catch (error) {
+      addNotification({
+        type: 'error',
+        title: 'Import Failed',
+        message: error instanceof Error ? error.message : 'Product import failed while saving to Postgres.',
+      });
+    }
   };
 
   const handleReset = () => {

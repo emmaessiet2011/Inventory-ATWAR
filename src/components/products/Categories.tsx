@@ -209,7 +209,7 @@ const Categories: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
     const trimmedCode = formData.code.trim();
     const trimmedDescription = formData.description.trim();
@@ -229,12 +229,16 @@ const Categories: React.FC = () => {
     }
 
     if (editingCategory) {
-      updateProductCategory({
+      const result = await updateProductCategory({
         ...editingCategory,
         name: trimmedName,
         code: trimmedCode,
         description: trimmedDescription,
       });
+      if (!result.ok) {
+        setFormError(result.error || `Unable to update "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Category Updated', message: `"${trimmedName}" updated successfully.`, type: 'success' });
     } else {
       const newCategory: ProductCategory = {
@@ -243,7 +247,11 @@ const Categories: React.FC = () => {
         code: trimmedCode,
         description: trimmedDescription,
       };
-      addProductCategory(newCategory);
+      const result = await addProductCategory(newCategory);
+      if (!result.ok) {
+        setFormError(result.error || `Unable to create "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Category Created', message: `"${trimmedName}" added successfully.`, type: 'success' });
     }
     setFormData({ name: '', code: '', description: '' });
@@ -251,9 +259,17 @@ const Categories: React.FC = () => {
     setIsAddModalOpen(false);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!pendingDeleteId) return;
-    deleteProductCategory(pendingDeleteId, deleteReassignId || undefined);
+    const result = await deleteProductCategory(pendingDeleteId, deleteReassignId || undefined);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || 'Unable to delete category.',
+        type: 'error',
+      });
+      return;
+    }
     if (pendingDeleteUsage.count > 0) {
       addNotification({
         title: 'Category Deleted',

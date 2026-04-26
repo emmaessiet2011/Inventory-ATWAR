@@ -284,7 +284,14 @@ const TaxRates: React.FC = () => {
     if (persistedExpenses.size > 0) setExpenses(prev => prev.map(expense => persistedExpenses.get(expense.id) || expense));
 
     if (normalizeText(settings.defaultSaleTax) === normalizeText(previousName)) {
-      updateSettings({ ...settings, defaultSaleTax: nextName });
+      const settingsUpdated = await updateSettings({ ...settings, defaultSaleTax: nextName });
+      if (!settingsUpdated.ok) {
+        addNotification({
+          title: 'Default Tax Not Updated',
+          message: settingsUpdated.error || 'Tax rate was renamed but default sale tax could not be updated.',
+          type: 'warning',
+        });
+      }
     }
   };
 
@@ -302,7 +309,15 @@ const TaxRates: React.FC = () => {
         return;
       }
       const previous = taxRates.find(rate => rate.id === formState.id);
-      updateTaxRate(payload);
+      const updated = await updateTaxRate(payload);
+      if (!updated.ok) {
+        addNotification({
+          title: 'Update Failed',
+          message: updated.error || `Unable to update ${payload.name} in Postgres.`,
+          type: 'error',
+        });
+        return;
+      }
       if (previous) {
         await cascadeTaxRename(previous.name, payload.name, payload.id);
       }
@@ -320,7 +335,15 @@ const TaxRates: React.FC = () => {
         });
         return;
       }
-      addTaxRate(payload);
+      const created = await addTaxRate(payload);
+      if (!created.ok) {
+        addNotification({
+          title: 'Create Failed',
+          message: created.error || `Unable to add ${payload.name} in Postgres.`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({
         title: 'Tax Rate Added',
         message: `${payload.name} has been added.`,
@@ -390,9 +413,27 @@ const TaxRates: React.FC = () => {
       isOpen: true,
       title: 'Delete Tax Rate',
       message: `Delete tax rate "${rate.name}"?`,
-      onConfirm: () => {
-        if (normalizeText(settings.defaultSaleTax) === normalizedName) updateSettings({ ...settings, defaultSaleTax: 'None' });
-        deleteTaxRate(rate.id);
+      onConfirm: async () => {
+        if (normalizeText(settings.defaultSaleTax) === normalizedName) {
+          const settingsUpdated = await updateSettings({ ...settings, defaultSaleTax: 'None' });
+          if (!settingsUpdated.ok) {
+            addNotification({
+              title: 'Delete Blocked',
+              message: settingsUpdated.error || `Unable to clear default tax before deleting ${rate.name}.`,
+              type: 'error',
+            });
+            return;
+          }
+        }
+        const deleted = await deleteTaxRate(rate.id);
+        if (!deleted.ok) {
+          addNotification({
+            title: 'Delete Failed',
+            message: deleted.error || `Unable to delete ${rate.name} from Postgres.`,
+            type: 'error',
+          });
+          return;
+        }
         addNotification({ title: 'Tax Rate Deleted', message: `${rate.name} has been deleted.`, type: 'success' });
         setConfirmModal(null);
       },

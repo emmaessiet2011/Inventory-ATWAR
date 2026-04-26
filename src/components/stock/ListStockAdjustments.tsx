@@ -617,7 +617,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           );
           if (writeOffAmount > 0) {
             const expenseId = generateId('EXP');
-            addExpense({
+            const expenseAdded = await addExpense({
               id: expenseId,
               refNo: buildExpenseRefNo(settings.expensesPrefix || 'EP'),
               date: toIsoDate(adjustment.date || nowIso),
@@ -645,6 +645,9 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
               recurringUnit: '',
               recurringRepetitions: '',
             });
+            if (!expenseAdded.ok) {
+              throw new Error(expenseAdded.error || 'Unable to create linked damage expense in Postgres.');
+            }
             linkedExpenseId = expenseId;
           }
         }
@@ -791,7 +794,10 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         }
 
         if (adjustment.linkedExpenseId) {
-          deleteExpense(adjustment.linkedExpenseId);
+          const deletedExpense = await deleteExpense(adjustment.linkedExpenseId);
+          if (!deletedExpense.ok) {
+            throw new Error(deletedExpense.error || 'Unable to delete linked expense from Postgres.');
+          }
         }
       }
 

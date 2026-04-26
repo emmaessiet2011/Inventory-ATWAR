@@ -709,12 +709,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
             }
             // Stale conversion pointer (invoice record no longer exists):
             // allow regeneration and clear stale fields so future clicks work normally.
-            updateOrder({
-              ...sourceOrder,
-              convertedSaleId: undefined,
-              convertedInvoiceNo: undefined,
-              convertedAt: undefined,
-            });
+            void (async () => {
+              const cleared = await updateOrder({
+                ...sourceOrder,
+                convertedSaleId: undefined,
+                convertedInvoiceNo: undefined,
+                convertedAt: undefined,
+              });
+              if (!cleared.ok) {
+                addNotification({
+                  title: 'Order Sync Warning',
+                  message: cleared.error || `Unable to clear stale conversion marker for ${sourceOrder.orderNumber}.`,
+                  type: 'warning',
+                });
+              }
+            })();
           }
 
           const selectedCustomer = customerList.find(c => c.id === sourceOrder.customerId) || {
@@ -1647,20 +1656,20 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
       if (isEdit) {
           const updated = await updateSale(newSale);
-          if (!updated) {
+          if (!updated.ok) {
             addNotification({
               title: 'Invoice Not Updated',
-              message: 'Could not update this invoice in Postgres. Please check permissions and try again.',
+              message: updated.error || 'Could not update this invoice in Postgres. Please check permissions and try again.',
               type: 'error',
             });
             return;
           }
       } else {
           const created = await addSale(newSale);
-          if (!created) {
+          if (!created.ok) {
             addNotification({
               title: 'Invoice Not Created',
-              message: 'Could not save this invoice to Postgres. Please check permissions and try again.',
+              message: created.error || 'Could not save this invoice to Postgres. Please check permissions and try again.',
               type: 'error',
             });
             return;
@@ -1681,12 +1690,20 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                 maxPoints
               );
               if (earnedPoints > 0) {
-                addCustomerRewardPoints(newSale.customerId, earnedPoints);
-                addNotification({
-                  title: 'Reward Points Earned',
-                  message: `${earnedPoints} ${settings.rewardPointDisplayName || 'points'} added to customer account.`,
-                  type: 'info',
-                });
+                const rewardApplied = await addCustomerRewardPoints(newSale.customerId, earnedPoints);
+                if (!rewardApplied.ok) {
+                  addNotification({
+                    title: 'Reward Points Not Saved',
+                    message: rewardApplied.error || 'Invoice was saved, but reward points could not be persisted.',
+                    type: 'warning',
+                  });
+                } else {
+                  addNotification({
+                    title: 'Reward Points Earned',
+                    message: `${earnedPoints} ${settings.rewardPointDisplayName || 'points'} added to customer account.`,
+                    type: 'info',
+                  });
+                }
               }
             }
           }
@@ -1695,13 +1712,20 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       if (!isEdit && fromOrder && sourceOrderId) {
         const sourceOrderRecord = orders.find(order => order.id === sourceOrderId);
         if (sourceOrderRecord) {
-          updateOrder({
+          const linked = await updateOrder({
             ...sourceOrderRecord,
             convertedSaleId: newSale.id,
             convertedInvoiceNo: newSale.invoiceNo,
             convertedAt: new Date().toISOString(),
             paymentStatus: (newSale.paymentStatus as any) || sourceOrderRecord.paymentStatus,
           });
+          if (!linked.ok) {
+            addNotification({
+              title: 'Order Link Warning',
+              message: linked.error || `Invoice ${newSale.invoiceNo} was created, but order link update failed.`,
+              type: 'warning',
+            });
+          }
         }
       }
 

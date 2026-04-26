@@ -218,7 +218,6 @@ const Sidebar: React.FC<SidebarProps> = ({
       subItems: [
         { title: 'Business Settings', path: 'settings' },
         { title: 'Business Locations', path: 'locations' },
-        { title: 'Backup & Restore', path: 'backup-restore' },
         { title: 'Invoice Settings', path: 'invoice-settings' },
         { title: 'Barcode Settings', path: 'barcode-settings' },
         { title: 'Receipt Printers', path: 'printers' },
@@ -420,7 +419,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         const canAccessPrinters = hasRolePermission('Settings', 'Access printers');
         const canViewTaxRates = hasRolePermission('Tax rate', 'View tax rate');
         subItems = subItems.filter((s) => {
-          if (s.path === 'settings' || s.path === 'locations' || s.path === 'backup-restore') return canAccessBusinessSettings;
+          if (s.path === 'settings' || s.path === 'locations') return canAccessBusinessSettings;
           if (s.path === 'invoice-settings') return canAccessInvoiceSettings;
           if (s.path === 'barcode-settings') return canAccessBarcodeSettings;
           if (s.path === 'printers') return canAccessPrinters;

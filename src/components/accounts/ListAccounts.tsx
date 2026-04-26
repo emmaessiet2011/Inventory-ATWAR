@@ -24,6 +24,7 @@ import {
   syncDedicatedStrict,
   deleteDedicatedStrict,
 } from '@/utils/apiClient';
+import { readAuthToken } from '@/utils/hardenedStorage';
 
 interface ListAccountsProps {
   onNavigate?: (page: string) => void;
@@ -53,13 +54,12 @@ interface PaymentAccountTypeRow {
 }
 
 const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
-const AUTH_TOKEN_KEY = 'atwar_auth_token';
 
 const normalizeTypeId = (name: string): string =>
   `PAT-${String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'type'}`;
 
 const getAuthHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
+  const token = readAuthToken();
   return {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -67,9 +67,13 @@ const getAuthHeaders = (): Record<string, string> => {
   };
 };
 
-const pushPaymentAccountTypesToDB = async (types: string[]): Promise<void> => {
-  const token = localStorage.getItem(AUTH_TOKEN_KEY) || '';
-  if (!token) return;
+const pushPaymentAccountTypesToDB = async (
+  types: string[],
+): Promise<{ ok: boolean; status: number; error?: string }> => {
+  const token = readAuthToken();
+  if (!token) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
 
   const normalizedTypes = Array.from(new Set(
     (Array.isArray(types) ? types : [])
@@ -83,11 +87,30 @@ const pushPaymentAccountTypesToDB = async (types: string[]): Promise<void> => {
     isActive: true,
   }));
 
-  await fetch(`${API_BASE_URL}/api/data/paymentAccountTypes/bulk-upsert`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ rows }),
-  }).catch(() => {});
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/data/paymentAccountTypes/bulk-upsert`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ rows }),
+    });
+    if (response.status === 401) {
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    if (!response.ok) {
+      let detail = '';
+      try {
+        detail = await response.text();
+      } catch {}
+      return { ok: false, status: response.status, error: detail || `HTTP ${response.status}` };
+    }
+    return { ok: true, status: response.status };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
 };
 
 const resolvePaymentAccountForLedger = (payment: any): string => {
@@ -541,7 +564,15 @@ const ListAccounts: React.FC<ListAccountsProps> = ({
       return;
     }
     const nextTypes = [...accountTypes, cleaned];
-    await pushPaymentAccountTypesToDB(nextTypes);
+    const pushed = await pushPaymentAccountTypesToDB(nextTypes);
+    if (!pushed.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: `Account type "${cleaned}" was not saved to Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     setAccountTypes(nextTypes);
     setNewType('');
     setIsAddTypeModalOpen(false);

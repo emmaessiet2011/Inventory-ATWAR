@@ -76,7 +76,6 @@ import ActivityLog from '@/components/shared/ActivityLog';
 import NotificationsPage from '@/components/shared/NotificationsPage';
 import TaxRates from '@/components/settings/TaxRates';
 import Settings from '@/components/settings/Settings';
-import BackupRestore from '@/components/settings/BackupRestore';
 import Locations from '@/components/settings/Locations';
 import InvoiceSettings from '@/components/settings/InvoiceSettings';
 import BarcodeSettings from '@/components/settings/BarcodeSettings';
@@ -105,6 +104,7 @@ import {
   AUTH_LOGIN_STARTED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ME_STORAGE_KEY,
+  clearAuthToken,
 } from '@/utils/hardenedStorage';
 
 const SESSION_IDLE_TIMEOUT_STANDARD_MS = 20 * 60 * 1000;
@@ -175,7 +175,7 @@ const AppContent: React.FC = () => {
   const forceLogout = (reason: 'idle' | 'absolute' | 'remember' | 'manual' | 'expired'): void => {
     if (isAutoLogoutInProgressRef.current) return;
     isAutoLogoutInProgressRef.current = true;
-    try { localStorage.removeItem('atwar_auth_token'); } catch {}
+    clearAuthToken();
     clearAuthLifecycleStorage();
     setShowSessionExpiryWarning(false);
     setSessionCountdownMs(0);
@@ -275,7 +275,6 @@ const AppContent: React.FC = () => {
     { label: 'Customers', page: 'customers' },
     { label: 'Suppliers', page: 'suppliers' },
     { label: 'Settings', page: 'settings' },
-    { label: 'Backup & Restore', page: 'backup-restore' },
     { label: 'Notifications', page: 'notifications' },
     { label: 'Activity Log', page: 'activity-log' },
     { label: 'Profit / Loss Report', page: 'report-profit-loss' },
@@ -1239,9 +1238,6 @@ const AppContent: React.FC = () => {
       case 'settings':
         if (!canAccessBusinessSettings) return renderAccessDenied('Business Settings');
         return <Settings />;
-      case 'backup-restore':
-        if (!canAccessBusinessSettings) return renderAccessDenied('Backup & Restore');
-        return <BackupRestore />;
       case 'locations':
         if (!canAccessBusinessSettings) return renderAccessDenied('Business Locations');
         return <Locations />;

@@ -388,21 +388,69 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     const registerTxId = `RTX-EXP-${expense.id}`;
 
     if (existing) {
-      updateExpense(expense);
+      const expenseResult = await updateExpense(expense);
+      if (!expenseResult.ok) {
+        addNotification({
+          title: 'Update Failed',
+          message: expenseResult.error || `Expense ${expense.refNo} could not be updated.`,
+          type: 'error',
+        });
+        return;
+      }
       if (expensePaymentAmount > 0) {
         if (linkedPayment) {
-          await updatePayment(expensePayment);
+          const paymentResult = await updatePayment(expensePayment);
+          if (!paymentResult.ok) {
+            addNotification({
+              title: 'Payment Update Failed',
+              message: paymentResult.error || 'Linked expense payment could not be updated.',
+              type: 'error',
+            });
+            return;
+          }
         } else {
-          await addPayment(expensePayment);
+          const paymentResult = await addPayment(expensePayment);
+          if (!paymentResult.ok) {
+            addNotification({
+              title: 'Payment Create Failed',
+              message: paymentResult.error || 'Linked expense payment could not be created.',
+              type: 'error',
+            });
+            return;
+          }
         }
       } else if (linkedPayment) {
-        await deletePayment(linkedPayment.id);
+        const paymentDeleteResult = await deletePayment(linkedPayment.id);
+        if (!paymentDeleteResult.ok) {
+          addNotification({
+            title: 'Payment Delete Failed',
+            message: paymentDeleteResult.error || 'Linked expense payment could not be removed.',
+            type: 'error',
+          });
+          return;
+        }
       }
       addNotification({ title: 'Expense Updated', message: `Expense ${expense.refNo} has been updated.`, type: 'success' });
     } else {
-      addExpense(expense);
+      const expenseResult = await addExpense(expense);
+      if (!expenseResult.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: expenseResult.error || `Expense ${expense.refNo} could not be saved.`,
+          type: 'error',
+        });
+        return;
+      }
       if (expensePaymentAmount > 0) {
-        await addPayment(expensePayment);
+        const paymentResult = await addPayment(expensePayment);
+        if (!paymentResult.ok) {
+          addNotification({
+            title: 'Payment Create Failed',
+            message: paymentResult.error || 'Linked expense payment could not be created.',
+            type: 'error',
+          });
+          return;
+        }
       }
 
       // Generate recurring instances (skip the first which was just saved above)
@@ -419,7 +467,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
           advanceDate(cursor);
           const childId = generateId('EXP');
           const childRefNo = `${expense.refNo}-R${i + 1}`;
-          addExpense({
+          const recurringResult = await addExpense({
             ...expense,
             id: childId,
             refNo: childRefNo,
@@ -433,6 +481,14 @@ const AddExpense: React.FC<AddExpenseProps> = ({
             recurringUnit: '',
             recurringRepetitions: '',
           });
+          if (!recurringResult.ok) {
+            addNotification({
+              title: 'Recurring Save Failed',
+              message: recurringResult.error || `Recurring expense ${childRefNo} could not be saved.`,
+              type: 'error',
+            });
+            return;
+          }
         }
         addNotification({
           title: 'Recurring Expenses Created',

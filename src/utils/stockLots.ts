@@ -116,9 +116,7 @@ export const readStockLotBalances = (): StockLotBalance[] => {
 
 export const fetchStockLotsFromDB = async (): Promise<StockLotBalance[]> => {
   const remoteLots = await fetchDedicated<StockLotBalance>('/api/sync/stock-lots');
-  if (remoteLots) {
-    stockLotsCache = parseRows(remoteLots);
-  }
+  stockLotsCache = remoteLots ? parseRows(remoteLots) : [];
   return readStockLotBalances();
 };
 

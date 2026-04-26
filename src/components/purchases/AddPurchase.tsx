@@ -265,7 +265,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
 
     const finalRefNo = referenceNo.trim() || buildNextRefNo();
     const selectedTaxRate = Number(selectedTax?.rate || 0);
-    addPurchase({
+    const purchaseSaveResult = await addPurchase({
       id: generateId('PUR-'),
       refNo: finalRefNo,
       date: purchaseDate.replace('T', ' '),
@@ -309,6 +309,10 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
       paidOn: (paidOn || purchaseDate).replace('T', ' '),
       paymentNote: paymentNote.trim(),
     });
+    if (!purchaseSaveResult.ok) {
+      setFormError(purchaseSaveResult.error || 'Purchase could not be saved to Postgres.');
+      return;
+    }
 
     if (paymentAmountNum > 0) {
       const paymentPrefix = normalizePrefix(settings.purchasePaymentPrefix || settings.paymentPrefix, 'PP');
@@ -330,17 +334,24 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
         addedBy: currentUser?.name || 'Admin',
         attachmentName: attachDocumentName || undefined,
       }, { skipPermissionBoundary: true, skipActivity: true });
-      if (!paymentSaved) {
+      if (!paymentSaved.ok) {
         addNotification({
           title: 'Payment Sync Warning',
-          message: 'Purchase saved, but linked supplier payment could not be saved to Postgres.',
+          message: paymentSaved.error || 'Purchase saved, but linked supplier payment could not be saved to Postgres.',
           type: 'warning',
         });
       }
     }
 
     if (linkedOrder && purchaseStatus === 'Received' && linkedOrder.status !== 'Received') {
-      updatePurchaseOrder({ ...linkedOrder, status: 'Received' });
+      const orderSyncResult = await updatePurchaseOrder({ ...linkedOrder, status: 'Received' });
+      if (!orderSyncResult.ok) {
+        addNotification({
+          title: 'Order Sync Warning',
+          message: orderSyncResult.error || 'Purchase saved, but linked purchase order status could not be updated.',
+          type: 'warning',
+        });
+      }
     }
 
     addNotification({ title: 'Purchase Saved', message: 'The purchase has been recorded successfully.', type: 'success' });

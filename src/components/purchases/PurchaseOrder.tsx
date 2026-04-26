@@ -410,7 +410,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
     return { totalItems, netTotalAmount, shippingCharges, additionalExpenses, orderTotal };
   }, [form.items, form.shippingCharges, form.additionalExpenses]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormError('');
     const supplierId = form.supplierId.trim();
     const location = form.location.trim();
@@ -479,11 +479,23 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
       addedBy: editingOrder?.addedBy || currentUser?.name || 'Admin',
     };
 
-    if (editingOrder) updatePurchaseOrder(payload);
-    else addPurchaseOrder(payload);
+    const orderResult = editingOrder
+      ? await updatePurchaseOrder(payload)
+      : await addPurchaseOrder(payload);
+    if (!orderResult.ok) {
+      setFormError(orderResult.error || 'Unable to save purchase order to Postgres.');
+      return;
+    }
 
     if (selectedReq && selectedReq.status !== 'Ordered') {
-      updatePurchaseRequisition({ ...selectedReq, status: 'Ordered' });
+      const reqResult = await updatePurchaseRequisition({ ...selectedReq, status: 'Ordered' });
+      if (!reqResult.ok) {
+        addNotification({
+          title: 'Requisition Sync Warning',
+          message: reqResult.error || 'Purchase order saved, but linked requisition status could not be updated.',
+          type: 'warning',
+        });
+      }
     }
 
     closeModal();
@@ -1034,8 +1046,18 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeleteOrderId(null)}
-        onConfirm={() => {
-          if (pendingDeleteOrderId) deletePurchaseOrder(pendingDeleteOrderId);
+        onConfirm={async () => {
+          if (pendingDeleteOrderId) {
+            const result = await deletePurchaseOrder(pendingDeleteOrderId);
+            if (!result.ok) {
+              addNotification({
+                title: 'Delete Failed',
+                message: result.error || 'Unable to delete purchase order.',
+                type: 'error',
+              });
+              return;
+            }
+          }
           setPendingDeleteOrderId(null);
         }}
       />

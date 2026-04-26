@@ -419,7 +419,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       setActiveActionId(null);
   };
 
-  const executeDuplicate = () => {
+  const executeDuplicate = async () => {
       if (!productToAction) return;
       const name = duplicateName.trim();
       const sku = duplicateSku.trim();
@@ -439,7 +439,15 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           stock: 0,
           openingStock: 0
       };
-      addProduct(newProduct);
+      const created = await addProduct(newProduct);
+      if (!created.ok) {
+        addNotification({
+          title: 'Duplicate Failed',
+          message: created.error || 'Could not duplicate product in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Success', message: `Product "${name}" duplicated successfully.`, type: 'success' });
       setIsDuplicateModalOpen(false);
       setProductToAction(null);
@@ -451,7 +459,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       setActiveActionId(null);
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
       if (!productToAction) return;
       const pid = String(productToAction.id);
       const usedInSales = sales.some(sale =>
@@ -471,7 +479,15 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         setProductToAction(null);
         return;
       }
-      globalDeleteProduct(productToAction.id);
+      const deleted = await globalDeleteProduct(productToAction.id);
+      if (!deleted.ok) {
+        addNotification({
+          title: 'Delete Failed',
+          message: deleted.error || `Unable to delete "${productToAction.name}" from Postgres.`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Deleted', message: `"${productToAction.name}" deleted successfully.`, type: 'success' });
       setIsDeleteModalOpen(false);
       setProductToAction(null);
@@ -497,7 +513,16 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       }
       const nextValue = Number(val.toFixed(3));
       if (editingCell.field === 'sellingPrice' && nextValue !== product.sellingPrice) {
-        updateProduct({ ...product, sellingPrice: nextValue });
+        const updated = await updateProduct({ ...product, sellingPrice: nextValue });
+        if (!updated.ok) {
+          addNotification({
+            title: 'Save Failed',
+            message: updated.error || 'Unable to update product price in Postgres.',
+            type: 'error',
+          });
+          setEditingCell(null);
+          return;
+        }
       }
       if (editingCell.field === 'stock' && nextValue !== product.stock) {
         const ledgerSaved = await appendStockLedgerEntries([{
@@ -521,7 +546,16 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           setEditingCell(null);
           return;
         }
-        updateProduct({ ...product, stock: nextValue });
+        const updated = await updateProduct({ ...product, stock: nextValue });
+        if (!updated.ok) {
+          addNotification({
+            title: 'Save Failed',
+            message: updated.error || 'Unable to update product stock in Postgres.',
+            type: 'error',
+          });
+          setEditingCell(null);
+          return;
+        }
       }
       setEditingCell(null);
   };

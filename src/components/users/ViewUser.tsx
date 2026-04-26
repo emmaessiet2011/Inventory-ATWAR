@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import { ContactDocument, useGlobalContext } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 
@@ -51,6 +52,7 @@ const downloadBlob = (filename: string, content: string, type: string) => {
 
 const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
     const { users, updateUser, currentUser, activityLogs, settings } = useGlobalContext();
+    const { addNotification } = useNotifications();
     const [activeTab, setActiveTab] = useState('user_info');
     const [selectedUserId, setSelectedUserId] = useState(userId);
     const [newDocHeading, setNewDocHeading] = useState('');
@@ -142,12 +144,19 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         if (activityPage > activityTotalPages) setActivityPage(activityTotalPages);
     }, [activityPage, activityTotalPages]);
 
-    const persistDocuments = (nextDocuments: ContactDocument[]) => {
+    const persistDocuments = async (nextDocuments: ContactDocument[]) => {
         if (!user) return;
-        updateUser({ ...user, documents: nextDocuments });
+        const result = await updateUser({ ...user, documents: nextDocuments });
+        if (!result.ok) {
+            addNotification({
+                title: 'Save Failed',
+                message: result.error || 'Unable to update user documents.',
+                type: 'error',
+            });
+        }
     };
 
-    const handleAddDocument = () => {
+    const handleAddDocument = async () => {
         const heading = newDocHeading.trim();
         if (!heading || !user) return;
         const now = new Date().toISOString();
@@ -161,7 +170,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
                 updatedAt: now,
             },
         ];
-        persistDocuments(nextDocuments);
+        await persistDocuments(nextDocuments);
         setNewDocHeading('');
     };
 
@@ -170,9 +179,9 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
             isOpen: true,
             title: 'Delete Document',
             message: 'Are you sure you want to delete this document? This cannot be undone.',
-            onConfirm: () => {
+            onConfirm: async () => {
                 const nextDocuments = documentsData.filter((doc) => doc.id !== documentId);
-                persistDocuments(nextDocuments);
+                await persistDocuments(nextDocuments);
                 setConfirmModal(null);
             },
         });

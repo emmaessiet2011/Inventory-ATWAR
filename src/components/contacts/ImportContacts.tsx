@@ -350,7 +350,7 @@ const ImportContacts: React.FC = () => {
     reader.readAsText(selectedFile);
   };
 
-  const finalImport = () => {
+  const finalImport = async () => {
     if (rowReports.length === 0) return;
     setIsProcessing(true);
 
@@ -373,15 +373,16 @@ const ImportContacts: React.FC = () => {
       let skippedInvalidRows = 0;
       let skippedDuplicateEntries = 0;
 
-      previewData.forEach((row, rowIndex) => {
+      for (let rowIndex = 0; rowIndex < previewData.length; rowIndex += 1) {
+        const row = previewData[rowIndex];
         const report = updatedReports[rowIndex];
-        if (!report) return;
+        if (!report) continue;
 
         if (report.status !== 'ready') {
           report.status = 'skipped';
           report.message = 'Skipped due to validation errors.';
           skippedInvalidRows += 1;
-          return;
+          continue;
         }
 
         const contactType = getVal(row, 'contact_type');
@@ -452,7 +453,13 @@ const ImportContacts: React.FC = () => {
               customValues: {},
               contactCategory: businessNameRaw ? 'Business' : 'Individual',
             };
-            addCustomer(customerPayload);
+            const result = await addCustomer(customerPayload);
+            if (!result.ok) {
+              report.status = 'skipped';
+              report.message = result.error || `Customer import failed (${customerId}).`;
+              skippedInvalidRows += 1;
+              continue;
+            }
             existingCustomerIds.add(customerId);
             importedCustomers += 1;
             importedEntriesForRow += 1;
@@ -492,7 +499,13 @@ const ImportContacts: React.FC = () => {
               customValues: {},
               contactCategory: 'Supplier',
             };
-            addSupplier(supplierPayload);
+            const result = await addSupplier(supplierPayload);
+            if (!result.ok) {
+              report.status = 'skipped';
+              report.message = result.error || `Supplier import failed (${supplierId}).`;
+              skippedInvalidRows += 1;
+              continue;
+            }
             existingSupplierIds.add(supplierId);
             importedSuppliers += 1;
             importedEntriesForRow += 1;
@@ -508,7 +521,7 @@ const ImportContacts: React.FC = () => {
           report.message = rowMessages.length > 0 ? rowMessages.join(' | ') : 'Skipped.';
           if (rowMessages.length === 0) skippedInvalidRows += 1;
         }
-      });
+      }
 
       const validRows = rowReports.filter(row => row.status === 'ready').length;
       const errorRows = rowReports.filter(row => row.errors.length > 0).length;

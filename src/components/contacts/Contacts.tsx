@@ -60,12 +60,12 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSaveContact = (e: React.FormEvent) => {
+  const handleSaveContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.id) {
       const existingContact = contacts.find(c => c.id === formData.id);
       if (existingContact) {
-        updateContact({
+        const result = await updateContact({
           ...existingContact,
           type: formData.type,
           name: formData.name,
@@ -77,6 +77,10 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
           mobile: formData.mobile,
           payTerm: formData.payTerm
         });
+        if (!result.ok) {
+          addNotification({ title: 'Update Failed', message: result.error || 'Unable to update contact.', type: 'error' });
+          return;
+        }
         addNotification({ title: 'Contact Updated', message: 'Contact details updated successfully.', type: 'success' });
       }
     } else {
@@ -94,7 +98,11 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
         payTerm: formData.payTerm,
         status: 'Active'
       };
-      addContact(newContact);
+      const result = await addContact(newContact);
+      if (!result.ok) {
+        addNotification({ title: 'Save Failed', message: result.error || 'Unable to create contact.', type: 'error' });
+        return;
+      }
       addNotification({ title: 'Contact Added', message: 'New contact created successfully.', type: 'success' });
     }
     setIsModalOpen(false);
@@ -107,9 +115,13 @@ const Contacts: React.FC<ContactsProps> = ({ onNavigate }) => {
     setActiveActionId(null);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!contactToDelete) return;
-    deleteContact(contactToDelete.id);
+    const result = await deleteContact(contactToDelete.id);
+    if (!result.ok) {
+      addNotification({ title: 'Delete Failed', message: result.error || `Unable to delete "${contactToDelete.name}".`, type: 'error' });
+      return;
+    }
     addNotification({ title: 'Contact Deleted', message: `"${contactToDelete.name}" was removed successfully.`, type: 'info' });
     setContactToDelete(null);
   };

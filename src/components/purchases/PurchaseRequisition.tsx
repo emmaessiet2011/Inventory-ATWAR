@@ -211,7 +211,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     setForm(prev => ({ ...prev, items: prev.items.filter(item => item.rowId !== rowId) }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormError('');
     const location = form.location.trim();
     const requiredByDate = form.requiredByDate.trim();
@@ -265,8 +265,13 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
           note: '',
         };
 
-    if (editingRequisition) updatePurchaseRequisition(payload);
-    else addPurchaseRequisition(payload);
+    const result = editingRequisition
+      ? await updatePurchaseRequisition(payload)
+      : await addPurchaseRequisition(payload);
+    if (!result.ok) {
+      setFormError(result.error || 'Unable to save purchase requisition to Postgres.');
+      return;
+    }
     closeModal();
   };
 
@@ -282,9 +287,17 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     setPendingDeleteRequisitionId(id);
   };
 
-  const handleCreatePurchaseOrder = (requisition: GlobalPurchaseRequisition) => {
+  const handleCreatePurchaseOrder = async (requisition: GlobalPurchaseRequisition) => {
     if (requisition.status === 'Pending') {
-      updatePurchaseRequisition({ ...requisition, status: 'Approved' });
+      const result = await updatePurchaseRequisition({ ...requisition, status: 'Approved' });
+      if (!result.ok) {
+        addNotification({
+          title: 'Approval Failed',
+          message: result.error || 'Unable to approve requisition before creating purchase order.',
+          type: 'error',
+        });
+        return;
+      }
     }
     onNavigate?.(`purchase-order/${requisition.id}`);
   };
@@ -515,8 +528,18 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeleteRequisitionId(null)}
-        onConfirm={() => {
-          if (pendingDeleteRequisitionId) deletePurchaseRequisition(pendingDeleteRequisitionId);
+        onConfirm={async () => {
+          if (pendingDeleteRequisitionId) {
+            const result = await deletePurchaseRequisition(pendingDeleteRequisitionId);
+            if (!result.ok) {
+              addNotification({
+                title: 'Delete Failed',
+                message: result.error || 'Unable to delete purchase requisition.',
+                type: 'error',
+              });
+              return;
+            }
+          }
           setPendingDeleteRequisitionId(null);
         }}
       />

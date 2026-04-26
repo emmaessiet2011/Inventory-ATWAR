@@ -165,7 +165,7 @@ const Products: React.FC = () => {
   };
 
   // ── Save ─────────────────────────────────────────────────────
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       addNotification({ title: 'Validation Error', message: 'Product Name is required.', type: 'error' });
       return;
@@ -211,7 +211,15 @@ const Products: React.FC = () => {
         businessLocation: resolvedLocation,
         image: productImage || editingProduct.image,
       };
-      updateProduct(updated);
+      const updatedResult = await updateProduct(updated);
+      if (!updatedResult.ok) {
+        addNotification({
+          title: 'Update Failed',
+          message: updatedResult.error || `"${updated.name}" could not be updated in Postgres.`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Success', message: `"${updated.name}" updated successfully.`, type: 'success' });
     } else {
       const newProduct: Product = {
@@ -237,7 +245,15 @@ const Products: React.FC = () => {
         weight: formData.weight ? parseFloat(formData.weight) : undefined,
         subCategory: formData.subCategory || undefined,
       };
-      addProduct(newProduct);
+      const createdResult = await addProduct(newProduct);
+      if (!createdResult.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: createdResult.error || `"${newProduct.name}" could not be saved in Postgres.`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Success', message: `"${newProduct.name}" added successfully.`, type: 'success' });
     }
     resetForm();
@@ -276,9 +292,17 @@ const Products: React.FC = () => {
 
   // ── Delete with confirmation ──────────────────────────────────
   const handleDelete = (id: string) => setPendingDeleteId(id);
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (pendingDeleteId) {
-      deleteProduct(pendingDeleteId);
+      const deleted = await deleteProduct(pendingDeleteId);
+      if (!deleted.ok) {
+        addNotification({
+          title: 'Delete Failed',
+          message: deleted.error || 'Product could not be deleted from Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       setSelectedIds(prev => prev.filter(i => i !== pendingDeleteId));
       addNotification({ title: 'Deleted', message: 'Product deleted successfully.', type: 'success' });
       setPendingDeleteId(null);
@@ -291,9 +315,27 @@ const Products: React.FC = () => {
       isOpen: true,
       title: 'Delete Products',
       message: `Delete ${selectedIds.length} selected product(s)? This cannot be undone.`,
-      onConfirm: () => {
-        selectedIds.forEach(id => deleteProduct(id));
-        addNotification({ title: 'Deleted', message: `${selectedIds.length} product(s) deleted successfully.`, type: 'success' });
+      onConfirm: async () => {
+        const deleteResults = [];
+        for (const id of selectedIds) {
+          deleteResults.push(await deleteProduct(id));
+        }
+        const failedCount = deleteResults.filter(result => !result.ok).length;
+        if (failedCount > 0) {
+          addNotification({
+            title: 'Bulk Delete Failed',
+            message: `${failedCount} product(s) could not be deleted from Postgres.`,
+            type: 'error',
+          });
+        }
+        const successCount = deleteResults.length - failedCount;
+        if (successCount > 0) {
+          addNotification({
+            title: 'Deleted',
+            message: `${successCount} product(s) deleted successfully.`,
+            type: 'success',
+          });
+        }
         setSelectedIds([]);
         setConfirmModal(null);
       },

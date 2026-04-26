@@ -75,12 +75,31 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     generateId,
     settings,
     currentUser,
+    userPreferences,
+    updateCurrentUserPreferences,
   } = useGlobalContext();
   const { addNotification } = useNotifications();
 
   // Local alias (typed as GlobalCustomer for compatibility)
   const customers = globalCustomers;
   const normalizeText = (value?: string) => String(value || '').trim().toLowerCase();
+  const toRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const normalizeColumns = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
+    const cleaned = value
+      .map((column) => String(column || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(cleaned));
+  };
+  const readStoredCustomColumns = (preferences: Record<string, unknown>): string[] => {
+    const contactsPreferences = toRecord(preferences.contacts);
+    return normalizeColumns(contactsPreferences.customerCustomColumns);
+  };
+  const areSameColumns = (left: string[], right: string[]): boolean =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
   const customerGroupOptions = customerGroups;
   const activeCustomerGroupOptions = useMemo(
     () => customerGroups.filter(g => (g.status || 'Active') === 'Active'),
@@ -111,11 +130,36 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-right' });
   const [showFilters, setShowFilters] = useState(true);
   
-  // Custom Fields State — persisted to localStorage so definitions survive page refresh
-  const [customColumns, setCustomColumns] = useState<string[]>(() => {
-    try { const s = localStorage.getItem('app_customer_custom_columns'); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
-  useEffect(() => { localStorage.setItem('app_customer_custom_columns', JSON.stringify(customColumns)); }, [customColumns]);
+  // Custom Fields State — persisted to Postgres user preferences
+  const [customColumns, setCustomColumns] = useState<string[]>(() => readStoredCustomColumns(userPreferences));
+  useEffect(() => {
+    const stored = readStoredCustomColumns(userPreferences);
+    setCustomColumns((previous) => (areSameColumns(previous, stored) ? previous : stored));
+  }, [userPreferences]);
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const normalizedColumns = normalizeColumns(customColumns);
+    const storedColumns = readStoredCustomColumns(userPreferences);
+    if (areSameColumns(normalizedColumns, storedColumns)) return;
+    let cancelled = false;
+    void (async () => {
+      const contactsPreferences = toRecord(userPreferences.contacts);
+      const result = await updateCurrentUserPreferences({
+        contacts: {
+          ...contactsPreferences,
+          customerCustomColumns: normalizedColumns,
+        },
+      });
+      if (!result.ok && !cancelled) {
+        addNotification({
+          title: 'Preference Sync Failed',
+          message: result.error || 'Unable to save customer custom columns to Postgres.',
+          type: 'error',
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customColumns, userPreferences, updateCurrentUserPreferences, addNotification, currentUser?.id]);
   const [isAddingCustomField, setIsAddingCustomField] = useState(false);
   const [newCustomFieldName, setNewCustomFieldName] = useState('');
   
@@ -191,7 +235,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       customFieldName: '',
   });
 
-  // GlobalContext handles localStorage persistence — no need to duplicate here
+  // GlobalContext owns persistence and live sync
 
   const assignableUsers = useMemo(() => {
     const names = users.length > 0 ? users.map(u => u.name).filter(Boolean) : [];
@@ -590,7 +634,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
     // GlobalContext addPayment handles: FIFO invoice distribution,
-    // customer balance update, and localStorage persistence automatically
+    // customer balance update and Postgres persistence automatically
     const payRebatePercent = Number(paymentCustomer.rebatePercent || 0);
     const payRebateAmount = (payRebateEnabled && payRebatePercent > 0)
       ? Number((roundedAmount * payRebatePercent / 100).toFixed(currencyPrecision))

@@ -98,6 +98,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     purchaseReturns: purchaseReturnsSource,
     settings,
     currentUser,
+    userPreferences,
+    updateCurrentUserPreferences,
     formatCurrency: formatCurrencySource,
   } = useGlobalContext();
   const sales = Array.isArray(salesSource) ? salesSource : [];
@@ -132,70 +134,62 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               ? 'Admin'
               : 'All';
 
-  const stickyStorageKey = `app_dashboard_sticky_${toKey(currentUser?.id || currentUser?.username || 'global')}`;
-  const viewsStorageKey = `app_dashboard_views_${toKey(currentUser?.id || currentUser?.username || 'global')}`;
-
-  const readSticky = () => {
-    try {
-      const raw = localStorage.getItem(stickyStorageKey);
-      if (!raw) {
-        return {
-          locationFilter: 'all',
-          startDate: defaultStart,
-          endDate: defaultEnd,
-          preset: defaultPresetByRole as DashboardPreset,
-        };
-      }
-      const parsed = JSON.parse(raw) as Partial<{
-        locationFilter: string;
-        startDate: string;
-        endDate: string;
-        preset: DashboardPreset;
-      }>;
-      return {
-        locationFilter: String(parsed.locationFilter || 'all'),
-        startDate: String(parsed.startDate || defaultStart),
-        endDate: String(parsed.endDate || defaultEnd),
-        preset: (parsed.preset || defaultPresetByRole) as DashboardPreset,
-      };
-    } catch {
-      return {
-        locationFilter: 'all',
-        startDate: defaultStart,
-        endDate: defaultEnd,
-        preset: defaultPresetByRole as DashboardPreset,
-      };
-    }
+  const toRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const normalizeSavedViews = (value: unknown): SavedDashboardView[] => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => ({
+        id: String((item as any)?.id || ''),
+        name: String((item as any)?.name || '').trim(),
+        locationFilter: String((item as any)?.locationFilter || 'all'),
+        startDate: String((item as any)?.startDate || defaultStart),
+        endDate: String((item as any)?.endDate || defaultEnd),
+        preset: ((item as any)?.preset || 'All') as DashboardPreset,
+        createdAt: String((item as any)?.createdAt || new Date().toISOString()),
+      }))
+      .filter((item) => item.id && item.name);
   };
+  const areSameViews = (left: SavedDashboardView[], right: SavedDashboardView[]): boolean =>
+    left.length === right.length &&
+    left.every((value, index) =>
+      value.id === right[index]?.id &&
+      value.name === right[index]?.name &&
+      value.locationFilter === right[index]?.locationFilter &&
+      value.startDate === right[index]?.startDate &&
+      value.endDate === right[index]?.endDate &&
+      value.preset === right[index]?.preset,
+    );
 
-  const readViews = (): SavedDashboardView[] => {
-    try {
-      const raw = localStorage.getItem(viewsStorageKey);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed
-        .map((item) => ({
-          id: String(item?.id || ''),
-          name: String(item?.name || '').trim(),
-          locationFilter: String(item?.locationFilter || 'all'),
-          startDate: String(item?.startDate || defaultStart),
-          endDate: String(item?.endDate || defaultEnd),
-          preset: (item?.preset || 'All') as DashboardPreset,
-          createdAt: String(item?.createdAt || new Date().toISOString()),
-        }))
-        .filter((item) => item.id && item.name);
-    } catch {
-      return [];
-    }
-  };
+  const dashboardPreferencesRaw = useMemo(
+    () => toRecord(userPreferences.dashboard),
+    [userPreferences],
+  );
+  const storedSticky = useMemo(() => {
+    const storedStickyRaw = toRecord(dashboardPreferencesRaw.sticky);
+    return {
+      locationFilter: String(storedStickyRaw.locationFilter || 'all'),
+      startDate: String(storedStickyRaw.startDate || defaultStart),
+      endDate: String(storedStickyRaw.endDate || defaultEnd),
+      preset: (storedStickyRaw.preset || defaultPresetByRole) as DashboardPreset,
+    };
+  }, [dashboardPreferencesRaw, defaultStart, defaultEnd, defaultPresetByRole]);
+  const storedViews = useMemo(
+    () => normalizeSavedViews(dashboardPreferencesRaw.savedViews),
+    [dashboardPreferencesRaw],
+  );
+  const chequeReminderDismissedOn = useMemo(
+    () => String(dashboardPreferencesRaw.chequeReminderDismissedOn || '').trim(),
+    [dashboardPreferencesRaw],
+  );
 
-  const sticky = readSticky();
-  const [locationFilter, setLocationFilter] = useState(sticky.locationFilter);
-  const [startDate, setStartDate] = useState(sticky.startDate);
-  const [endDate, setEndDate] = useState(sticky.endDate);
-  const [dashboardPreset, setDashboardPreset] = useState<DashboardPreset>(sticky.preset || defaultPresetByRole);
-  const [savedViews, setSavedViews] = useState<SavedDashboardView[]>(readViews);
+  const [locationFilter, setLocationFilter] = useState(storedSticky.locationFilter);
+  const [startDate, setStartDate] = useState(storedSticky.startDate);
+  const [endDate, setEndDate] = useState(storedSticky.endDate);
+  const [dashboardPreset, setDashboardPreset] = useState<DashboardPreset>(storedSticky.preset || defaultPresetByRole);
+  const [savedViews, setSavedViews] = useState<SavedDashboardView[]>(storedViews);
   const [selectedViewId, setSelectedViewId] = useState('');
   const [viewName, setViewName] = useState('');
   const [pendingDeleteViewId, setPendingDeleteViewId] = useState('');
@@ -212,41 +206,79 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       })
       .sort((a, b) => new Date(a.chequeDate!).getTime() - new Date(b.chequeDate!).getTime());
   }, [payments, tomorrowMidnight]);
-  const CHEQUE_REMINDER_KEY = 'app_cheque_reminder_date';
   const [showChequePopup, setShowChequePopup] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const lastShown = localStorage.getItem(CHEQUE_REMINDER_KEY);
     const todayStr = new Date().toISOString().split('T')[0];
-    return lastShown !== todayStr;
+    return chequeReminderDismissedOn !== todayStr;
   });
   const dismissChequePopup = () => {
-    localStorage.setItem(CHEQUE_REMINDER_KEY, new Date().toISOString().split('T')[0]);
+    const todayStr = new Date().toISOString().split('T')[0];
     setShowChequePopup(false);
+    if (!currentUser?.id) return;
+    void updateCurrentUserPreferences({
+      dashboard: {
+        ...dashboardPreferencesRaw,
+        chequeReminderDismissedOn: todayStr,
+      },
+    });
   };
 
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        stickyStorageKey,
-        JSON.stringify({
-          locationFilter,
-          startDate,
-          endDate,
-          preset: dashboardPreset,
-        }),
-      );
-    } catch {
-      // Ignore localStorage failures.
-    }
-  }, [stickyStorageKey, locationFilter, startDate, endDate, dashboardPreset]);
+    const todayStr = new Date().toISOString().split('T')[0];
+    setShowChequePopup(chequeReminderDismissedOn !== todayStr);
+  }, [chequeReminderDismissedOn]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(viewsStorageKey, JSON.stringify(savedViews));
-    } catch {
-      // Ignore localStorage failures.
-    }
-  }, [viewsStorageKey, savedViews]);
+    setLocationFilter((previous) => (previous === storedSticky.locationFilter ? previous : storedSticky.locationFilter));
+    setStartDate((previous) => (previous === storedSticky.startDate ? previous : storedSticky.startDate));
+    setEndDate((previous) => (previous === storedSticky.endDate ? previous : storedSticky.endDate));
+    setDashboardPreset((previous) => (previous === storedSticky.preset ? previous : storedSticky.preset));
+    setSavedViews((previous) => (areSameViews(previous, storedViews) ? previous : storedViews));
+  }, [storedSticky.locationFilter, storedSticky.startDate, storedSticky.endDate, storedSticky.preset, storedViews]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const nextSticky = {
+      locationFilter,
+      startDate,
+      endDate,
+      preset: dashboardPreset,
+    };
+    const stickyAlreadyPersisted =
+      nextSticky.locationFilter === storedSticky.locationFilter &&
+      nextSticky.startDate === storedSticky.startDate &&
+      nextSticky.endDate === storedSticky.endDate &&
+      nextSticky.preset === storedSticky.preset;
+    if (stickyAlreadyPersisted) return;
+    void updateCurrentUserPreferences({
+      dashboard: {
+        ...dashboardPreferencesRaw,
+        sticky: nextSticky,
+      },
+    });
+  }, [
+    locationFilter,
+    startDate,
+    endDate,
+    dashboardPreset,
+    storedSticky.locationFilter,
+    storedSticky.startDate,
+    storedSticky.endDate,
+    storedSticky.preset,
+    dashboardPreferencesRaw,
+    updateCurrentUserPreferences,
+    currentUser?.id,
+  ]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (areSameViews(savedViews, storedViews)) return;
+    void updateCurrentUserPreferences({
+      dashboard: {
+        ...dashboardPreferencesRaw,
+        savedViews,
+      },
+    });
+  }, [savedViews, storedViews, dashboardPreferencesRaw, updateCurrentUserPreferences, currentUser?.id]);
 
   const resetToRoleDefault = () => {
     setLocationFilter('all');

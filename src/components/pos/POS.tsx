@@ -552,10 +552,10 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     };
 
     const created = await addSale(newSale);
-    if (!created) {
+    if (!created.ok) {
       addNotification({
         title: 'Invoice Not Created',
-        message: 'Could not save this invoice to Postgres. Check customer/location status or permissions.',
+        message: created.error || 'Could not save this invoice to Postgres. Check customer/location status or permissions.',
         type: 'error',
       });
       return;
@@ -571,18 +571,26 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       const amountPerPoint = Number(settings.rewardAmountPerPoint) || 0;
       const minOrder = Number(settings.rewardMinOrderToEarn) || 0;
       const maxPoints = Number(settings.rewardMaxPointsPerOrder) || Infinity;
-      if (amountPerPoint > 0 && total >= minOrder) {
-        const earnedPoints = Math.min(Math.floor(total / amountPerPoint), maxPoints);
-        if (earnedPoints > 0) {
-          addCustomerRewardPoints(customerId, earnedPoints);
-          addNotification({
-            title: 'Reward Points',
-            message: `${earnedPoints} ${settings.rewardPointDisplayName || 'points'} earned.`,
-            type: 'info',
-          });
+        if (amountPerPoint > 0 && total >= minOrder) {
+          const earnedPoints = Math.min(Math.floor(total / amountPerPoint), maxPoints);
+          if (earnedPoints > 0) {
+            const rewardApplied = await addCustomerRewardPoints(customerId, earnedPoints);
+            if (!rewardApplied.ok) {
+              addNotification({
+                title: 'Reward Points Not Saved',
+                message: rewardApplied.error || 'Could not save reward points in Postgres.',
+                type: 'warning',
+              });
+            } else {
+              addNotification({
+                title: 'Reward Points',
+                message: `${earnedPoints} ${settings.rewardPointDisplayName || 'points'} earned.`,
+                type: 'info',
+              });
+            }
+          }
         }
       }
-    }
 
     if (mode === 'suspend' && settings.printInvoiceOnSuspend) {
       printSuspendReceipt(newSale);

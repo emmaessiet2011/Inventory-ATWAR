@@ -204,7 +204,7 @@ const Brands: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
     const trimmedNote = formData.note.trim();
 
@@ -222,11 +222,15 @@ const Brands: React.FC = () => {
     }
 
     if (editingBrand) {
-      updateProductBrand({
+      const result = await updateProductBrand({
         ...editingBrand,
         name: trimmedName,
         note: trimmedNote,
       });
+      if (!result.ok) {
+        setFormError(result.error || `Unable to update "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Brand Updated', message: `"${trimmedName}" updated successfully.`, type: 'success' });
     } else {
       const newBrand: ProductBrand = {
@@ -234,7 +238,11 @@ const Brands: React.FC = () => {
         name: trimmedName,
         note: trimmedNote,
       };
-      addProductBrand(newBrand);
+      const result = await addProductBrand(newBrand);
+      if (!result.ok) {
+        setFormError(result.error || `Unable to create "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Brand Created', message: `"${trimmedName}" added successfully.`, type: 'success' });
     }
     setFormData({ name: '', note: '' });
@@ -242,9 +250,17 @@ const Brands: React.FC = () => {
     setIsAddModalOpen(false);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!pendingDeleteId) return;
-    deleteProductBrand(pendingDeleteId, deleteReassignId || undefined);
+    const result = await deleteProductBrand(pendingDeleteId, deleteReassignId || undefined);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || 'Unable to delete brand.',
+        type: 'error',
+      });
+      return;
+    }
     if (pendingDeleteUsage.count > 0) {
       addNotification({
         title: 'Brand Deleted',

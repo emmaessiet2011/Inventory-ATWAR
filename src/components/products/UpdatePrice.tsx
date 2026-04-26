@@ -394,7 +394,7 @@ const UpdatePrice: React.FC = () => {
   };
 
   // Apply Changes
-  const handleApply = () => {
+  const handleApply = async () => {
     const toUpdate = parsedRows.filter(row => row.status === 'changed');
     if (toUpdate.length === 0) {
       addNotification({ title: 'No Changes', message: 'No valid price changes detected.', type: 'info' });
@@ -402,16 +402,17 @@ const UpdatePrice: React.FC = () => {
     }
 
     let updatedCount = 0;
-    toUpdate.forEach(row => {
+    for (const row of toUpdate) {
       const existing = products.find(p => p.id === row.id);
-      if (!existing) return;
-      updateProduct({
+      if (!existing) continue;
+      const result = await updateProduct({
         ...existing,
         unitPurchasePrice: row.newPurchasePrice,
         sellingPrice: row.newSellingPrice,
       });
+      if (!result.ok) continue;
       updatedCount += 1;
-    });
+    }
 
     setApplied(true);
     addNotification({ title: 'Prices Updated', message: `${updatedCount} product(s) updated successfully.`, type: 'success' });

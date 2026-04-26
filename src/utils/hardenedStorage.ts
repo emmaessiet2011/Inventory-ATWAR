@@ -6,6 +6,8 @@ export const AUTH_REMEMBER_ME_STORAGE_KEY = 'atwar_auth_remember_me_v1';
 export const AUTH_LOGIN_STARTED_AT_STORAGE_KEY = 'atwar_auth_login_started_at_v1';
 export const AUTH_LAST_ACTIVITY_STORAGE_KEY = 'atwar_auth_last_activity_v1';
 export const AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY = 'atwar_auth_remember_issued_at_v1';
+export const AUTH_TOKEN_PERSISTENT_STORAGE_KEY = 'atwar_auth_token';
+export const AUTH_TOKEN_SESSION_STORAGE_KEY = 'atwar_auth_token_session_v1';
 export const CORE_SALES_STORAGE_KEY = 'atwar_secure_sales_v1';
 export const CORE_PAYMENTS_STORAGE_KEY = 'atwar_secure_payments_v1';
 export const CORE_USERS_STORAGE_KEY = 'atwar_secure_users_v1';
@@ -141,5 +143,49 @@ export const removeLegacyKeys = (storage: Storage, legacyKeys: string[]): void =
       // ignored
     }
   });
+};
+
+export const readAuthToken = (): string => {
+  try {
+    const sessionToken = String(sessionStorage.getItem(AUTH_TOKEN_SESSION_STORAGE_KEY) || '').trim();
+    if (sessionToken) return sessionToken;
+  } catch {
+    // ignored
+  }
+  try {
+    const persistentToken = String(localStorage.getItem(AUTH_TOKEN_PERSISTENT_STORAGE_KEY) || '').trim();
+    if (persistentToken) return persistentToken;
+  } catch {
+    // ignored
+  }
+  return '';
+};
+
+export const writeAuthToken = (token: string, rememberMe: boolean): void => {
+  const normalized = String(token || '').trim();
+  try {
+    if (rememberMe) {
+      localStorage.setItem(AUTH_TOKEN_PERSISTENT_STORAGE_KEY, normalized); // atwar_auth_token
+      sessionStorage.removeItem(AUTH_TOKEN_SESSION_STORAGE_KEY);
+    } else {
+      sessionStorage.setItem(AUTH_TOKEN_SESSION_STORAGE_KEY, normalized); // AUTH_SESSION_STORAGE_KEY (token scope)
+      localStorage.removeItem(AUTH_TOKEN_PERSISTENT_STORAGE_KEY);
+    }
+  } catch {
+    // ignored
+  }
+};
+
+export const clearAuthToken = (): void => {
+  try {
+    sessionStorage.removeItem(AUTH_TOKEN_SESSION_STORAGE_KEY);
+  } catch {
+    // ignored
+  }
+  try {
+    localStorage.removeItem(AUTH_TOKEN_PERSISTENT_STORAGE_KEY);
+  } catch {
+    // ignored
+  }
 };
 

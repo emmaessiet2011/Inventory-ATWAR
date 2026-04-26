@@ -102,22 +102,23 @@ const BarcodeSettings: React.FC = () => {
       isOpen: true,
       title: 'Delete Barcode Setting',
       message: `Delete barcode setting "${setting.name}"?`,
-      onConfirm: () => {
-        const result = deleteBarcodeSetting(setting.id);
+      onConfirm: async () => {
+        const result = await deleteBarcodeSetting(setting.id);
         if (!result.success) addNotification({ title: 'Blocked', message: result.message || 'Unable to delete barcode setting.', type: 'error' });
         setConfirmModal(null);
       },
     });
   };
 
-  const setDefault = (setting: BarcodeStickerSetting) => {
-    barcodeSettings
-      .filter((s) => s.id !== setting.id && s.isDefault)
-      .forEach((s) => updateBarcodeSetting({ ...s, isDefault: false }));
-    updateBarcodeSetting({ ...setting, isDefault: true });
+  const setDefault = async (setting: BarcodeStickerSetting) => {
+    const others = barcodeSettings.filter((s) => s.id !== setting.id && s.isDefault);
+    for (const row of others) {
+      await updateBarcodeSetting({ ...row, isDefault: false });
+    }
+    await updateBarcodeSetting({ ...setting, isDefault: true });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const name = form.name.trim();
     if (!name) {
       addNotification({ title: 'Validation', message: 'Setting name is required.', type: 'error' });
@@ -236,8 +237,17 @@ const BarcodeSettings: React.FC = () => {
       isDefault: form.isDefault,
     };
 
-    if (editingId) updateBarcodeSetting(record);
-    else addBarcodeSetting(record);
+    const result = editingId
+      ? await updateBarcodeSetting(record)
+      : await addBarcodeSetting(record);
+    if (!result.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: result.error || 'Unable to save barcode setting.',
+        type: 'error',
+      });
+      return;
+    }
     setIsModalOpen(false);
   };
 

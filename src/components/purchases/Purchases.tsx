@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import { useGlobalContext } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge as printStatusBadge, paymentBadge as printPaymentBadge } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
@@ -63,6 +64,7 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
     settings,
     currentUser,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const [entries, setEntries] = useState(Number(settings.defaultTableEntries) || 25);
   const [searchTerm, setSearchTerm] = useState('');
@@ -439,8 +441,18 @@ const Purchases: React.FC<PurchasesProps> = ({ onNavigate }) => {
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeletePurchaseId(null)}
-        onConfirm={() => {
-          if (pendingDeletePurchaseId) deletePurchase(pendingDeletePurchaseId);
+        onConfirm={async () => {
+          if (pendingDeletePurchaseId) {
+            const result = await deletePurchase(pendingDeletePurchaseId);
+            if (!result.ok) {
+              addNotification({
+                title: 'Delete Failed',
+                message: result.error || 'Unable to delete purchase.',
+                type: 'error',
+              });
+              return;
+            }
+          }
           setPendingDeletePurchaseId(null);
         }}
       />

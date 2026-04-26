@@ -84,7 +84,7 @@ const InvoiceSettings: React.FC = () => {
     setIsSchemeModalOpen(true);
   };
 
-  const handleSaveScheme = () => {
+  const handleSaveScheme = async () => {
     const name = schemeForm.name.trim();
     if (!name) {
       addNotification({ title: 'Validation', message: 'Scheme name is required.', type: 'error' });
@@ -110,9 +110,17 @@ const InvoiceSettings: React.FC = () => {
       isDefault: schemeForm.isDefault,
     };
 
-    if (editingSchemeId) updateInvoiceScheme(record);
-    else addInvoiceScheme(record);
-
+    const result = editingSchemeId
+      ? await updateInvoiceScheme(record)
+      : await addInvoiceScheme(record);
+    if (!result.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: result.error || 'Unable to save invoice scheme.',
+        type: 'error',
+      });
+      return;
+    }
     setIsSchemeModalOpen(false);
   };
 
@@ -121,19 +129,20 @@ const InvoiceSettings: React.FC = () => {
       isOpen: true,
       title: 'Delete Invoice Scheme',
       message: `Delete invoice scheme "${scheme.name}"?`,
-      onConfirm: () => {
-        const result = deleteInvoiceScheme(scheme.id);
+      onConfirm: async () => {
+        const result = await deleteInvoiceScheme(scheme.id);
         if (!result.success) addNotification({ title: 'Blocked', message: result.message || 'Unable to delete invoice scheme.', type: 'error' });
         setConfirmModal(null);
       },
     });
   };
 
-  const setDefaultScheme = (scheme: InvoiceScheme) => {
-    invoiceSchemes
-      .filter(record => record.id !== scheme.id && record.isDefault)
-      .forEach(record => updateInvoiceScheme({ ...record, isDefault: false }));
-    updateInvoiceScheme({ ...scheme, isDefault: true });
+  const setDefaultScheme = async (scheme: InvoiceScheme) => {
+    const others = invoiceSchemes.filter(record => record.id !== scheme.id && record.isDefault);
+    for (const record of others) {
+      await updateInvoiceScheme({ ...record, isDefault: false });
+    }
+    await updateInvoiceScheme({ ...scheme, isDefault: true });
   };
 
   const openAddLayout = () => {
@@ -156,7 +165,7 @@ const InvoiceSettings: React.FC = () => {
     setIsLayoutModalOpen(true);
   };
 
-  const handleSaveLayout = () => {
+  const handleSaveLayout = async () => {
     const name = layoutForm.name.trim();
     if (!name) {
       addNotification({ title: 'Validation', message: 'Layout name is required.', type: 'error' });
@@ -179,9 +188,17 @@ const InvoiceSettings: React.FC = () => {
       isDefault: layoutForm.isDefault,
     };
 
-    if (editingLayoutId) updateInvoiceLayout(record);
-    else addInvoiceLayout(record);
-
+    const result = editingLayoutId
+      ? await updateInvoiceLayout(record)
+      : await addInvoiceLayout(record);
+    if (!result.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: result.error || 'Unable to save invoice layout.',
+        type: 'error',
+      });
+      return;
+    }
     setIsLayoutModalOpen(false);
   };
 
@@ -190,19 +207,20 @@ const InvoiceSettings: React.FC = () => {
       isOpen: true,
       title: 'Delete Invoice Layout',
       message: `Delete invoice layout "${layout.name}"?`,
-      onConfirm: () => {
-        const result = deleteInvoiceLayout(layout.id);
+      onConfirm: async () => {
+        const result = await deleteInvoiceLayout(layout.id);
         if (!result.success) addNotification({ title: 'Blocked', message: result.message || 'Unable to delete invoice layout.', type: 'error' });
         setConfirmModal(null);
       },
     });
   };
 
-  const setDefaultLayout = (layout: InvoiceLayout) => {
-    invoiceLayouts
-      .filter(record => record.id !== layout.id && record.isDefault)
-      .forEach(record => updateInvoiceLayout({ ...record, isDefault: false }));
-    updateInvoiceLayout({ ...layout, isDefault: true });
+  const setDefaultLayout = async (layout: InvoiceLayout) => {
+    const others = invoiceLayouts.filter(record => record.id !== layout.id && record.isDefault);
+    for (const record of others) {
+      await updateInvoiceLayout({ ...record, isDefault: false });
+    }
+    await updateInvoiceLayout({ ...layout, isDefault: true });
   };
 
   const getInvoiceCountForScheme = (schemeName: string) =>

@@ -238,7 +238,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     setFormData(prev => ({ ...prev, [name]: val }));
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const normalizedFirstName = formData.firstName.trim();
@@ -433,10 +433,16 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
       }
     }
 
-    if (isEdit) {
-      updateUser(newUser);
-    } else {
-      addUser(newUser);
+    const result = isEdit
+      ? await updateUser(newUser)
+      : await addUser(newUser);
+    if (!result.ok) {
+      addNotification({
+        title: isEdit ? 'Update Failed' : 'Create Failed',
+        message: result.error || `Unable to ${isEdit ? 'update' : 'create'} system user.`,
+        type: 'error',
+      });
+      return;
     }
 
     addNotification({

@@ -299,8 +299,26 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
     const linkedPayment = payments.find(
       (p) => p.contactType === 'Expense' && (p.expenseId === id || p.contactId === id),
     );
-    if (linkedPayment) await deletePayment(linkedPayment.id);
-    deleteExpense(id);
+    if (linkedPayment) {
+      const paymentDeleteResult = await deletePayment(linkedPayment.id);
+      if (!paymentDeleteResult.ok) {
+        addNotification({
+          title: 'Delete Failed',
+          message: paymentDeleteResult.error || 'Unable to remove linked expense payment.',
+          type: 'error',
+        });
+        return;
+      }
+    }
+    const result = await deleteExpense(id);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || 'The expense could not be removed from Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     setConfirmDeleteId(null);
     addNotification({ title: 'Expense Deleted', message: 'The expense has been removed.', type: 'success' });
   };

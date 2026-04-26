@@ -144,7 +144,6 @@ const APP_STATIC_ROUTE_PATHS = new Set<string>([
   'report-sales-rep',
   'activity-log',
   'settings',
-  'backup-restore',
   'locations',
   'invoice-settings',
   'barcode-settings',

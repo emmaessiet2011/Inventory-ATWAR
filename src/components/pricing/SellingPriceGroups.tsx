@@ -131,7 +131,7 @@ const SellingPriceGroups: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
     if (!trimmedName) {
       const message = 'Price Group Name is required.';
@@ -213,10 +213,18 @@ const SellingPriceGroups: React.FC = () => {
     };
 
     if (editingGroup) {
-      updateSellingPriceGroup(groupData);
+      const result = await updateSellingPriceGroup(groupData);
+      if (!result.ok) {
+        setFormError(result.error || `Unable to update "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Price Group Updated', message: `"${trimmedName}" updated successfully.`, type: 'success' });
     } else {
-      addSellingPriceGroup(groupData);
+      const result = await addSellingPriceGroup(groupData);
+      if (!result.ok) {
+        setFormError(result.error || `Unable to create "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Price Group Created', message: `"${trimmedName}" created successfully.`, type: 'success' });
     }
 
@@ -304,9 +312,17 @@ const SellingPriceGroups: React.FC = () => {
     };
   }, [pendingDeleteId, sellingPriceGroups, customerGroups]);
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!pendingDeleteId) return;
-    deleteSellingPriceGroup(pendingDeleteId);
+    const result = await deleteSellingPriceGroup(pendingDeleteId);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || 'Unable to delete selling price group.',
+        type: 'error',
+      });
+      return;
+    }
     if (pendingDeleteImpact.count > 0) {
       addNotification({
         title: 'Price Group Deleted',

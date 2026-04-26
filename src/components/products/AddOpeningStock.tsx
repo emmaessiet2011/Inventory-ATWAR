@@ -117,7 +117,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
     const latestLot = latestLotRow?.lotNumber?.trim();
     const latestExp = latestExpRow?.expDate?.trim();
 
-    updateProduct({
+    const productUpdateResult = await updateProduct({
       ...product,
       stock: nextStock,
       unitPurchasePrice: nextUnitCost,
@@ -126,6 +126,14 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
       openingStock: Number(((product.openingStock || 0) + addedQty).toFixed(3)),
       openingStockLocation: product.businessLocation || product.openingStockLocation,
     });
+    if (!productUpdateResult.ok) {
+      addNotification({
+        title: 'Save Failed',
+        message: productUpdateResult.error || `Unable to update product ${product.name}.`,
+        type: 'error',
+      });
+      return;
+    }
 
     const newLedgerEntries: StockLedgerEntry[] = [];
     let runningQty = currentStock;

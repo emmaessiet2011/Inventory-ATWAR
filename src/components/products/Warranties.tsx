@@ -221,7 +221,7 @@ const Warranties: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = formData.name.trim();
     const trimmedDescription = formData.description.trim();
 
@@ -244,13 +244,17 @@ const Warranties: React.FC = () => {
     }
 
     if (editingWarranty) {
-      updateWarranty({
+      const result = await updateWarranty({
         ...editingWarranty,
         name: trimmedName,
         description: trimmedDescription,
         duration: durationValue,
         durationUnit: formData.durationUnit,
       });
+      if (!result.ok) {
+        setFormError(result.error || `Unable to update "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Warranty Updated', message: `"${trimmedName}" updated successfully.`, type: 'success' });
     } else {
       const newWarranty: ProductWarranty = {
@@ -260,7 +264,11 @@ const Warranties: React.FC = () => {
         duration: durationValue,
         durationUnit: formData.durationUnit,
       };
-      addWarranty(newWarranty);
+      const result = await addWarranty(newWarranty);
+      if (!result.ok) {
+        setFormError(result.error || `Unable to create "${trimmedName}".`);
+        return;
+      }
       addNotification({ title: 'Warranty Created', message: `"${trimmedName}" added successfully.`, type: 'success' });
     }
     setFormData({ name: '', description: '', duration: '', durationUnit: 'Months' });
@@ -268,9 +276,17 @@ const Warranties: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!pendingDeleteId) return;
-    deleteWarranty(pendingDeleteId, deleteReassignId || undefined);
+    const result = await deleteWarranty(pendingDeleteId, deleteReassignId || undefined);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || 'Unable to delete warranty.',
+        type: 'error',
+      });
+      return;
+    }
     if (pendingDeleteUsage.count > 0) {
       addNotification({
         title: 'Warranty Deleted',

@@ -490,7 +490,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   };
 
   // ── Save ─────────────────────────────────────────────────────
-  const handleSave = (addAnother = false) => {
+  const handleSave = async (addAnother = false) => {
     if (!productName.trim()) {
       addNotification({ title: 'Error', message: 'Product name is required.', type: 'error' });
       return;
@@ -677,11 +677,19 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
     };
 
     if (isEdit && productId) {
-      updateProduct(newProduct);
+      const result = await updateProduct(newProduct);
+      if (!result.ok) {
+        addNotification({ title: 'Save Failed', message: result.error || 'Product could not be updated in Postgres.', type: 'error' });
+        return;
+      }
       addNotification({ title: 'Success', message: 'Product updated successfully!', type: 'success' });
       if (onNavigate) onNavigate('products');
     } else {
-      addProduct(newProduct);
+      const result = await addProduct(newProduct);
+      if (!result.ok) {
+        addNotification({ title: 'Save Failed', message: result.error || 'Product could not be saved in Postgres.', type: 'error' });
+        return;
+      }
       addNotification({ title: 'Success', message: 'Product saved successfully!', type: 'success' });
       if (addAnother) {
         resetForm();

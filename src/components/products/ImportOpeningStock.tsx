@@ -337,9 +337,9 @@ const ImportOpeningStock: React.FC = () => {
 
     let updated = 0;
     const runningQtyByProduct = new Map<string, number>();
-    aggregate.forEach((agg, productId) => {
+    for (const [productId, agg] of aggregate.entries()) {
       const product = productMap.get(productId);
-      if (!product) return;
+      if (!product) continue;
       const currentStock = Number(product.stock) || 0;
       const currentCost = Number(product.unitPurchasePrice) || 0;
       const nextStock = round3(currentStock + agg.qty);
@@ -347,7 +347,7 @@ const ImportOpeningStock: React.FC = () => {
         ? round3(((currentStock * currentCost) + agg.value) / nextStock)
         : currentCost;
 
-      updateProduct({
+      const updatedProduct = await updateProduct({
         ...product,
         stock: nextStock,
         openingStock: round3((Number(product.openingStock) || 0) + agg.qty),
@@ -356,9 +356,12 @@ const ImportOpeningStock: React.FC = () => {
         expiryDate: agg.latestExpiry || product.expiryDate,
         openingStockLocation: agg.latestLocation || product.openingStockLocation || product.businessLocation,
       });
+      if (!updatedProduct.ok) {
+        throw new Error(updatedProduct.error || `Unable to update product stock for ${product.name}.`);
+      }
       runningQtyByProduct.set(productId, currentStock);
       updated += 1;
-    });
+    }
 
     const now = Date.now();
     const newLedgerEntries: StockLedgerEntry[] = [];

@@ -148,9 +148,7 @@ export const readStockAdjustments = (): StockAdjustmentRecord[] => {
 
 export const fetchStockAdjustmentsFromDB = async (): Promise<StockAdjustmentRecord[]> => {
   const remoteAdjustments = await fetchDedicated<StockAdjustmentRecord>('/api/sync/stock-adjustments');
-  if (remoteAdjustments) {
-    stockAdjustmentsCache = parseRows(remoteAdjustments);
-  }
+  stockAdjustmentsCache = remoteAdjustments ? parseRows(remoteAdjustments) : [];
   return readStockAdjustments();
 };
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 import {
   applyStockLotAdjustments,
   bootstrapStockLotsFromDB,
@@ -41,6 +41,8 @@ import {
   AUTH_PERSISTENT_STORAGE_KEY,
   AUTH_REMEMBER_ME_STORAGE_KEY,
   AUTH_SESSION_STORAGE_KEY,
+  clearAuthToken,
+  readAuthToken,
   readHardenedState,
   removeLegacyKeys,
   writeHardenedState,
@@ -52,6 +54,7 @@ import {
 import {
   apiFetchAll,
   apiFetchAllWithRetry,
+  updateUserPreferences as updateUserPreferencesApi,
   hasValidAuthToken,
   isLiveSyncEnabled,
   syncRecordStrict,
@@ -63,7 +66,6 @@ import {
 import {
   fetchDropdownCollections,
   isDropdownSyncEnabled,
-  pushDropdownCollections,
 } from '../utils/dropdownSync';
 import type { ProductPackagingType } from '../utils/productPackaging';
 
@@ -708,6 +710,7 @@ export interface AppUser {
   branch?: string;
   taxPayerId?: string;
   documents?: ContactDocument[];
+  preferences?: Record<string, unknown>;
 }
 
 export interface Role {
@@ -778,7 +781,13 @@ export interface Location {
   paymentMethods?: PaymentMethod[];
 }
 
-export interface LocationMutationResult {
+export interface CrudMutationResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
+
+export interface LocationMutationResult extends Partial<CrudMutationResult> {
   success: boolean;
   message?: string;
 }
@@ -1088,116 +1097,116 @@ interface GlobalContextType {
   // --- Products ---
   products: Product[];
   setProducts: React.Dispatch<React.SetStateAction<Product[]>>;
-  addProduct: (product: Product) => void;
-  updateProduct: (product: Product) => void;
-  deleteProduct: (id: string) => void;
+  addProduct: (product: Product) => Promise<CrudMutationResult>;
+  updateProduct: (product: Product) => Promise<CrudMutationResult>;
+  deleteProduct: (id: string) => Promise<CrudMutationResult>;
 
   // --- Customers ---
   customers: Customer[];
   setCustomers: React.Dispatch<React.SetStateAction<Customer[]>>;
-  addCustomer: (customer: Customer) => void;
-  updateCustomer: (customer: Customer) => void;
-  deleteCustomer: (id: string) => void;
-  addCustomerRewardPoints: (customerId: string, points: number) => void;
-  redeemCustomerRewardPoints: (customerId: string, points: number) => void;
+  addCustomer: (customer: Customer) => Promise<CrudMutationResult>;
+  updateCustomer: (customer: Customer) => Promise<CrudMutationResult>;
+  deleteCustomer: (id: string) => Promise<CrudMutationResult>;
+  addCustomerRewardPoints: (customerId: string, points: number) => Promise<CrudMutationResult>;
+  redeemCustomerRewardPoints: (customerId: string, points: number) => Promise<CrudMutationResult>;
 
   // --- Suppliers ---
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
-  addSupplier: (supplier: Supplier) => void;
-  updateSupplier: (supplier: Supplier) => void;
-  deleteSupplier: (id: string) => void;
+  addSupplier: (supplier: Supplier) => Promise<CrudMutationResult>;
+  updateSupplier: (supplier: Supplier) => Promise<CrudMutationResult>;
+  deleteSupplier: (id: string) => Promise<CrudMutationResult>;
 
   // --- Contacts (legacy — derived from customers + suppliers) ---
   contacts: Contact[];
   setContacts: React.Dispatch<React.SetStateAction<Contact[]>>;
-  addContact: (contact: Contact) => void;
-  updateContact: (contact: Contact) => void;
-  deleteContact: (id: number) => void;
+  addContact: (contact: Contact) => Promise<CrudMutationResult>;
+  updateContact: (contact: Contact) => Promise<CrudMutationResult>;
+  deleteContact: (id: number) => Promise<CrudMutationResult>;
 
   // --- Sales ---
   sales: Sale[];
   setSales: React.Dispatch<React.SetStateAction<Sale[]>>;
-  addSale: (sale: Sale) => Promise<boolean>;
-  updateSale: (sale: Sale) => Promise<boolean>;
-  deleteSale: (id: string) => Promise<boolean>;
+  addSale: (sale: Sale) => Promise<CrudMutationResult>;
+  updateSale: (sale: Sale) => Promise<CrudMutationResult>;
+  deleteSale: (id: string) => Promise<CrudMutationResult>;
 
   // --- Sell Returns ---
   sellReturns: SellReturn[];
   setSellReturns: React.Dispatch<React.SetStateAction<SellReturn[]>>;
-  addSellReturn: (sellReturn: SellReturn) => void;
-  updateSellReturn: (sellReturn: SellReturn) => void;
-  deleteSellReturn: (id: string) => Promise<{ ok: boolean; status: number; error?: string }>;
+  addSellReturn: (sellReturn: SellReturn) => Promise<CrudMutationResult>;
+  updateSellReturn: (sellReturn: SellReturn) => Promise<CrudMutationResult>;
+  deleteSellReturn: (id: string) => Promise<CrudMutationResult>;
 
   // --- Purchases ---
   purchases: Purchase[];
   setPurchases: React.Dispatch<React.SetStateAction<Purchase[]>>;
-  addPurchase: (purchase: Purchase) => void;
-  updatePurchase: (purchase: Purchase) => void;
-  deletePurchase: (id: string) => void;
+  addPurchase: (purchase: Purchase) => Promise<CrudMutationResult>;
+  updatePurchase: (purchase: Purchase) => Promise<CrudMutationResult>;
+  deletePurchase: (id: string) => Promise<CrudMutationResult>;
 
   // --- Purchase Requisitions ---
   purchaseRequisitions: PurchaseRequisition[];
   setPurchaseRequisitions: React.Dispatch<React.SetStateAction<PurchaseRequisition[]>>;
-  addPurchaseRequisition: (requisition: PurchaseRequisition) => void;
-  updatePurchaseRequisition: (requisition: PurchaseRequisition) => void;
-  deletePurchaseRequisition: (id: string) => void;
+  addPurchaseRequisition: (requisition: PurchaseRequisition) => Promise<CrudMutationResult>;
+  updatePurchaseRequisition: (requisition: PurchaseRequisition) => Promise<CrudMutationResult>;
+  deletePurchaseRequisition: (id: string) => Promise<CrudMutationResult>;
 
   // --- Purchase Orders ---
   purchaseOrders: PurchaseOrder[];
   setPurchaseOrders: React.Dispatch<React.SetStateAction<PurchaseOrder[]>>;
-  addPurchaseOrder: (order: PurchaseOrder) => void;
-  updatePurchaseOrder: (order: PurchaseOrder) => void;
-  deletePurchaseOrder: (id: string) => void;
+  addPurchaseOrder: (order: PurchaseOrder) => Promise<CrudMutationResult>;
+  updatePurchaseOrder: (order: PurchaseOrder) => Promise<CrudMutationResult>;
+  deletePurchaseOrder: (id: string) => Promise<CrudMutationResult>;
 
   // --- Purchase Returns ---
   purchaseReturns: PurchaseReturn[];
   setPurchaseReturns: React.Dispatch<React.SetStateAction<PurchaseReturn[]>>;
-  addPurchaseReturn: (purchaseReturn: PurchaseReturn) => void;
-  updatePurchaseReturn: (purchaseReturn: PurchaseReturn) => void;
-  deletePurchaseReturn: (id: string) => void;
+  addPurchaseReturn: (purchaseReturn: PurchaseReturn) => Promise<CrudMutationResult>;
+  updatePurchaseReturn: (purchaseReturn: PurchaseReturn) => Promise<CrudMutationResult>;
+  deletePurchaseReturn: (id: string) => Promise<CrudMutationResult>;
 
   // --- Payments ---
   payments: Payment[];
   setPayments: React.Dispatch<React.SetStateAction<Payment[]>>;
-  addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => Promise<boolean>;
-  updatePayment: (payment: Payment) => Promise<boolean>;
-  deletePayment: (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean; skipPermissionBoundary?: boolean }) => Promise<boolean>;
+  addPayment: (payment: Payment, options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean }) => Promise<CrudMutationResult>;
+  updatePayment: (payment: Payment) => Promise<CrudMutationResult>;
+  deletePayment: (id: string, options?: { skipActivity?: boolean; skipServerDelete?: boolean; skipPermissionBoundary?: boolean }) => Promise<CrudMutationResult>;
 
   // --- Expenses ---
   expenses: Expense[];
   setExpenses: React.Dispatch<React.SetStateAction<Expense[]>>;
-  addExpense: (expense: Expense) => void;
-  updateExpense: (expense: Expense) => void;
-  deleteExpense: (id: string) => void;
+  addExpense: (expense: Expense) => Promise<CrudMutationResult>;
+  updateExpense: (expense: Expense) => Promise<CrudMutationResult>;
+  deleteExpense: (id: string) => Promise<CrudMutationResult>;
 
   // --- Expense Categories ---
   expenseCategories: ExpenseCategory[];
   setExpenseCategories: React.Dispatch<React.SetStateAction<ExpenseCategory[]>>;
-  addExpenseCategory: (cat: ExpenseCategory) => void;
-  updateExpenseCategory: (cat: ExpenseCategory) => void;
-  deleteExpenseCategory: (id: string) => void;
+  addExpenseCategory: (cat: ExpenseCategory) => Promise<CrudMutationResult>;
+  updateExpenseCategory: (cat: ExpenseCategory) => Promise<CrudMutationResult>;
+  deleteExpenseCategory: (id: string) => Promise<CrudMutationResult>;
 
   // --- Users ---
   users: AppUser[];
   setUsers: React.Dispatch<React.SetStateAction<AppUser[]>>;
-  addUser: (user: AppUser) => void;
-  updateUser: (user: AppUser) => void;
-  deleteUser: (id: string) => void;
+  addUser: (user: AppUser) => Promise<CrudMutationResult>;
+  updateUser: (user: AppUser) => Promise<CrudMutationResult>;
+  deleteUser: (id: string) => Promise<CrudMutationResult>;
 
   // --- Roles ---
   roles: Role[];
   setRoles: React.Dispatch<React.SetStateAction<Role[]>>;
-  addRole: (role: Role) => void;
-  updateRole: (role: Role) => void;
-  deleteRole: (id: number) => void;
+  addRole: (role: Role) => Promise<CrudMutationResult>;
+  updateRole: (role: Role) => Promise<CrudMutationResult>;
+  deleteRole: (id: number) => Promise<CrudMutationResult>;
 
   // --- Commission Agents ---
   commissionAgents: CommissionAgent[];
   setCommissionAgents: React.Dispatch<React.SetStateAction<CommissionAgent[]>>;
-  addCommissionAgent: (agent: CommissionAgent) => void;
-  updateCommissionAgent: (agent: CommissionAgent) => void;
-  deleteCommissionAgent: (id: number) => void;
+  addCommissionAgent: (agent: CommissionAgent) => Promise<CrudMutationResult>;
+  updateCommissionAgent: (agent: CommissionAgent) => Promise<CrudMutationResult>;
+  deleteCommissionAgent: (id: number) => Promise<CrudMutationResult>;
 
   // --- Locations ---
   locations: Location[];
@@ -1209,98 +1218,98 @@ interface GlobalContextType {
   // --- Receipt Printers ---
   printers: ReceiptPrinter[];
   setPrinters: React.Dispatch<React.SetStateAction<ReceiptPrinter[]>>;
-  addPrinter: (printer: ReceiptPrinter) => void;
-  updatePrinter: (printer: ReceiptPrinter) => void;
-  deletePrinter: (id: string) => void;
+  addPrinter: (printer: ReceiptPrinter) => Promise<CrudMutationResult>;
+  updatePrinter: (printer: ReceiptPrinter) => Promise<CrudMutationResult>;
+  deletePrinter: (id: string) => Promise<CrudMutationResult>;
 
   // --- Invoice Settings ---
   invoiceSchemes: InvoiceScheme[];
   setInvoiceSchemes: React.Dispatch<React.SetStateAction<InvoiceScheme[]>>;
-  addInvoiceScheme: (scheme: InvoiceScheme) => void;
-  updateInvoiceScheme: (scheme: InvoiceScheme) => void;
-  deleteInvoiceScheme: (id: string) => LocationMutationResult;
+  addInvoiceScheme: (scheme: InvoiceScheme) => Promise<CrudMutationResult>;
+  updateInvoiceScheme: (scheme: InvoiceScheme) => Promise<CrudMutationResult>;
+  deleteInvoiceScheme: (id: string) => Promise<LocationMutationResult>;
   invoiceLayouts: InvoiceLayout[];
   setInvoiceLayouts: React.Dispatch<React.SetStateAction<InvoiceLayout[]>>;
-  addInvoiceLayout: (layout: InvoiceLayout) => void;
-  updateInvoiceLayout: (layout: InvoiceLayout) => void;
-  deleteInvoiceLayout: (id: string) => LocationMutationResult;
+  addInvoiceLayout: (layout: InvoiceLayout) => Promise<CrudMutationResult>;
+  updateInvoiceLayout: (layout: InvoiceLayout) => Promise<CrudMutationResult>;
+  deleteInvoiceLayout: (id: string) => Promise<LocationMutationResult>;
 
   // --- Barcode Settings ---
   barcodeSettings: BarcodeStickerSetting[];
   setBarcodeSettings: React.Dispatch<React.SetStateAction<BarcodeStickerSetting[]>>;
-  addBarcodeSetting: (setting: BarcodeStickerSetting) => void;
-  updateBarcodeSetting: (setting: BarcodeStickerSetting) => void;
-  deleteBarcodeSetting: (id: string) => LocationMutationResult;
+  addBarcodeSetting: (setting: BarcodeStickerSetting) => Promise<CrudMutationResult>;
+  updateBarcodeSetting: (setting: BarcodeStickerSetting) => Promise<CrudMutationResult>;
+  deleteBarcodeSetting: (id: string) => Promise<LocationMutationResult>;
 
   // --- Tax Rates ---
   taxRates: TaxRate[];
   setTaxRates: React.Dispatch<React.SetStateAction<TaxRate[]>>;
-  addTaxRate: (tax: TaxRate) => void;
-  updateTaxRate: (tax: TaxRate) => void;
-  deleteTaxRate: (id: string) => void;
+  addTaxRate: (tax: TaxRate) => Promise<CrudMutationResult>;
+  updateTaxRate: (tax: TaxRate) => Promise<CrudMutationResult>;
+  deleteTaxRate: (id: string) => Promise<CrudMutationResult>;
 
   // --- Customer Groups ---
   customerGroups: CustomerGroup[];
   setCustomerGroups: React.Dispatch<React.SetStateAction<CustomerGroup[]>>;
-  addCustomerGroup: (group: CustomerGroup) => void;
-  updateCustomerGroup: (group: CustomerGroup) => void;
-  deleteCustomerGroup: (id: string, reassignToGroupId?: string) => void;
+  addCustomerGroup: (group: CustomerGroup) => Promise<CrudMutationResult>;
+  updateCustomerGroup: (group: CustomerGroup) => Promise<CrudMutationResult>;
+  deleteCustomerGroup: (id: string, reassignToGroupId?: string) => Promise<CrudMutationResult>;
 
   // --- Product Categories ---
   productCategories: ProductCategory[];
   setProductCategories: React.Dispatch<React.SetStateAction<ProductCategory[]>>;
-  addProductCategory: (cat: ProductCategory) => void;
-  updateProductCategory: (cat: ProductCategory) => void;
-  deleteProductCategory: (id: string, reassignToCategoryId?: string) => void;
+  addProductCategory: (cat: ProductCategory) => Promise<CrudMutationResult>;
+  updateProductCategory: (cat: ProductCategory) => Promise<CrudMutationResult>;
+  deleteProductCategory: (id: string, reassignToCategoryId?: string) => Promise<CrudMutationResult>;
 
   // --- Product Brands ---
   productBrands: ProductBrand[];
   setProductBrands: React.Dispatch<React.SetStateAction<ProductBrand[]>>;
-  addProductBrand: (brand: ProductBrand) => void;
-  updateProductBrand: (brand: ProductBrand) => void;
-  deleteProductBrand: (id: string, reassignToBrandId?: string) => void;
+  addProductBrand: (brand: ProductBrand) => Promise<CrudMutationResult>;
+  updateProductBrand: (brand: ProductBrand) => Promise<CrudMutationResult>;
+  deleteProductBrand: (id: string, reassignToBrandId?: string) => Promise<CrudMutationResult>;
 
   // --- Product Units ---
   productUnits: ProductUnit[];
   setProductUnits: React.Dispatch<React.SetStateAction<ProductUnit[]>>;
-  addProductUnit: (unit: ProductUnit) => void;
-  updateProductUnit: (unit: ProductUnit) => void;
-  deleteProductUnit: (id: string) => void;
+  addProductUnit: (unit: ProductUnit) => Promise<CrudMutationResult>;
+  updateProductUnit: (unit: ProductUnit) => Promise<CrudMutationResult>;
+  deleteProductUnit: (id: string) => Promise<CrudMutationResult>;
 
   // --- Product Warranties ---
   warranties: ProductWarranty[];
   setWarranties: React.Dispatch<React.SetStateAction<ProductWarranty[]>>;
-  addWarranty: (warranty: ProductWarranty) => void;
-  updateWarranty: (warranty: ProductWarranty) => void;
-  deleteWarranty: (id: string, reassignToWarrantyId?: string) => void;
+  addWarranty: (warranty: ProductWarranty) => Promise<CrudMutationResult>;
+  updateWarranty: (warranty: ProductWarranty) => Promise<CrudMutationResult>;
+  deleteWarranty: (id: string, reassignToWarrantyId?: string) => Promise<CrudMutationResult>;
 
   // --- Selling Price Groups ---
   sellingPriceGroups: SellingPriceGroup[];
   setSellingPriceGroups: React.Dispatch<React.SetStateAction<SellingPriceGroup[]>>;
-  addSellingPriceGroup: (group: SellingPriceGroup) => void;
-  updateSellingPriceGroup: (group: SellingPriceGroup) => void;
-  deleteSellingPriceGroup: (id: string) => void;
+  addSellingPriceGroup: (group: SellingPriceGroup) => Promise<CrudMutationResult>;
+  updateSellingPriceGroup: (group: SellingPriceGroup) => Promise<CrudMutationResult>;
+  deleteSellingPriceGroup: (id: string) => Promise<CrudMutationResult>;
 
   // --- Product Variations ---
   productVariations: ProductVariation[];
   setProductVariations: React.Dispatch<React.SetStateAction<ProductVariation[]>>;
-  addProductVariation: (v: ProductVariation) => void;
-  updateProductVariation: (v: ProductVariation) => void;
-  deleteProductVariation: (id: string) => void;
+  addProductVariation: (v: ProductVariation) => Promise<CrudMutationResult>;
+  updateProductVariation: (v: ProductVariation) => Promise<CrudMutationResult>;
+  deleteProductVariation: (id: string) => Promise<CrudMutationResult>;
 
   // --- Discounts ---
   discounts: Discount[];
   setDiscounts: React.Dispatch<React.SetStateAction<Discount[]>>;
-  addDiscount: (discount: Discount) => void;
-  updateDiscount: (discount: Discount) => void;
-  deleteDiscount: (id: string) => void;
+  addDiscount: (discount: Discount) => Promise<CrudMutationResult>;
+  updateDiscount: (discount: Discount) => Promise<CrudMutationResult>;
+  deleteDiscount: (id: string) => Promise<CrudMutationResult>;
 
   // --- Orders ---
   orders: GlobalOrder[];
   setOrders: React.Dispatch<React.SetStateAction<GlobalOrder[]>>;
-  addOrder: (order: GlobalOrder) => void;
-  updateOrder: (order: GlobalOrder) => void;
-  deleteOrder: (id: string) => Promise<boolean>;
+  addOrder: (order: GlobalOrder) => Promise<CrudMutationResult>;
+  updateOrder: (order: GlobalOrder) => Promise<CrudMutationResult>;
+  deleteOrder: (id: string) => Promise<CrudMutationResult>;
 
   // --- Activity Logs ---
   activityLogs: ActivityLogEntry[];
@@ -1310,11 +1319,16 @@ interface GlobalContextType {
 
   // --- Settings ---
   settings: AppSettings;
-  updateSettings: (settings: AppSettings) => void;
+  updateSettings: (settings: AppSettings) => Promise<CrudMutationResult>;
 
   // --- Auth ---
   currentUser: AppUser | null;
   setCurrentUser: React.Dispatch<React.SetStateAction<AppUser | null>>;
+  userPreferences: Record<string, unknown>;
+  updateCurrentUserPreferences: (
+    patch: Record<string, unknown>,
+    options?: { replace?: boolean }
+  ) => Promise<CrudMutationResult>;
 
   // --- Utilities ---
   formatCurrency: (amount: number) => string;
@@ -1417,6 +1431,11 @@ const normalizeActiveState = (status: unknown, isActiveFallback?: unknown): 'Act
   return 'Active';
 };
 
+const toRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? ({ ...(value as Record<string, unknown>) })
+    : {};
+
 const isUserLoginEnabled = (user: Partial<AppUser> | null | undefined): boolean =>
   normalizeActiveState(user?.status, (user as any)?.isActive) === 'Active' &&
   user?.allowLogin !== false;
@@ -1446,6 +1465,9 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
   let passwordUpdatedAt = String(user.passwordUpdatedAt || '').trim();
   const normalizedEmail = normalizeUserEmail(user.email);
   let normalizedStatus = normalizeActiveState(user.status, (user as any).isActive);
+  const normalizedPreferences = toRecord(
+    (user as any).preferences ?? toRecord((user as any).meta).preferences,
+  );
 
   if (!passwordHash && normalizedPassword) {
     passwordSalt = passwordSalt || generatePasswordSalt(`${user.id}-${user.email}-${user.username}`);
@@ -1472,6 +1494,7 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
     accessLocations: Array.isArray(user.accessLocations) ? user.accessLocations : ['All Locations'],
     allowLogin,
     enableServiceStaffPin: user.enableServiceStaffPin ?? false,
+    preferences: normalizedPreferences,
   };
 };
 
@@ -1592,7 +1615,7 @@ const shouldRememberAuthSession = (): boolean => {
 
 const getAuthTokenPayload = (): Record<string, unknown> | null => {
   try {
-    const token = String(localStorage.getItem('atwar_auth_token') || '').trim();
+    const token = readAuthToken();
     if (!token) return null;
     const parts = token.split('.');
     if (parts.length < 2) return null;
@@ -2504,12 +2527,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Hard-lock business state to DB/API as the only source of truth.
   // Local business-data hydration/writes are intentionally disabled.
   const dbSourceOfTruth = true;
+  const testRuntime = String(import.meta.env.MODE || '').trim().toLowerCase() === 'test';
+  const liveSyncRuntime = isLiveSyncEnabled() && !testRuntime;
 
   // ---- Products ----
   const [products, setProducts] = useState<Product[]>(initialProducts);
 
   // ---- Customers ----
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const [customers, setCustomers] = useState<Customer[]>(liveSyncRuntime ? [] : initialCustomers);
 
   // ---- Suppliers ----
   const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
@@ -2589,17 +2614,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   // ---- Expense Categories ----
-  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(initialExpenseCategories);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>(liveSyncRuntime ? [] : initialExpenseCategories);
 
   // ---- Users ----
-  const [users, setUsers] = useState<AppUser[]>(initialUsers.map(normalizeUserRecord));
+  const [users, setUsers] = useState<AppUser[]>(liveSyncRuntime ? [] : initialUsers.map(normalizeUserRecord));
 
   // ---- Roles ----
-  const [roles, setRoles] = useState<Role[]>(ensureRequiredRoles(initialRoles));
+  const [roles, setRoles] = useState<Role[]>(liveSyncRuntime ? [] : ensureRequiredRoles(initialRoles));
 
   // ---- Commission Agents ----
   const [commissionAgents, setCommissionAgents] = useState<CommissionAgent[]>(
-    initialCommissionAgents.map(normalizeCommissionAgentRecord)
+    liveSyncRuntime ? [] : initialCommissionAgents.map(normalizeCommissionAgentRecord)
   );
 
   useEffect(() => {
@@ -2634,6 +2659,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Locations ----
   const [locations, setLocations] = useState<Location[]>(() => {
+    if (liveSyncRuntime) return [];
     const normalizedFallback = initialLocations.map((location) =>
       normalizeLocationRecord(location, location)
     );
@@ -2642,43 +2668,43 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // ---- Receipt Printers ----
   const [printers, setPrinters] = useState<ReceiptPrinter[]>(
-    initialPrinters.map(row => normalizePrinterRecord(row, row))
+    liveSyncRuntime ? [] : initialPrinters.map(row => normalizePrinterRecord(row, row))
   );
 
   // ---- Invoice Schemes ----
-  const [invoiceSchemes, setInvoiceSchemes] = useState<InvoiceScheme[]>(initialInvoiceSchemes);
+  const [invoiceSchemes, setInvoiceSchemes] = useState<InvoiceScheme[]>(liveSyncRuntime ? [] : initialInvoiceSchemes);
 
   // ---- Invoice Layouts ----
-  const [invoiceLayouts, setInvoiceLayouts] = useState<InvoiceLayout[]>(initialInvoiceLayouts);
+  const [invoiceLayouts, setInvoiceLayouts] = useState<InvoiceLayout[]>(liveSyncRuntime ? [] : initialInvoiceLayouts);
 
   // ---- Barcode Settings ----
   const [barcodeSettings, setBarcodeSettings] = useState<BarcodeStickerSetting[]>(
-    normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)))
+    liveSyncRuntime ? [] : normalizeBarcodeSettings(initialBarcodeSettings.map(row => normalizeBarcodeSettingRecord(row, row)))
   );
 
   // ---- Tax Rates ----
-  const [taxRates, setTaxRates] = useState<TaxRate[]>(normalizeTaxRates(initialTaxRates));
+  const [taxRates, setTaxRates] = useState<TaxRate[]>(liveSyncRuntime ? [] : normalizeTaxRates(initialTaxRates));
 
   // ---- Customer Groups ----
-  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(initialCustomerGroups);
+  const [customerGroups, setCustomerGroups] = useState<CustomerGroup[]>(liveSyncRuntime ? [] : initialCustomerGroups);
 
   // ---- Product Categories ----
-  const [productCategories, setProductCategories] = useState<ProductCategory[]>(initialProductCategories);
+  const [productCategories, setProductCategories] = useState<ProductCategory[]>(liveSyncRuntime ? [] : initialProductCategories);
 
   // ---- Product Brands ----
-  const [productBrands, setProductBrands] = useState<ProductBrand[]>(initialProductBrands);
+  const [productBrands, setProductBrands] = useState<ProductBrand[]>(liveSyncRuntime ? [] : initialProductBrands);
 
   // ---- Product Units ----
-  const [productUnits, setProductUnits] = useState<ProductUnit[]>(initialProductUnits);
+  const [productUnits, setProductUnits] = useState<ProductUnit[]>(liveSyncRuntime ? [] : initialProductUnits);
 
   // ---- Product Warranties ----
-  const [warranties, setWarranties] = useState<ProductWarranty[]>(initialWarranties);
+  const [warranties, setWarranties] = useState<ProductWarranty[]>(liveSyncRuntime ? [] : initialWarranties);
 
   // ---- Product Variations ----
-  const [productVariations, setProductVariations] = useState<ProductVariation[]>(initialProductVariations);
+  const [productVariations, setProductVariations] = useState<ProductVariation[]>(liveSyncRuntime ? [] : initialProductVariations);
 
   // ---- Selling Price Groups ----
-  const [sellingPriceGroups, setSellingPriceGroups] = useState<SellingPriceGroup[]>(initialSellingPriceGroups);
+  const [sellingPriceGroups, setSellingPriceGroups] = useState<SellingPriceGroup[]>(liveSyncRuntime ? [] : initialSellingPriceGroups);
 
   // ---- Discounts ----
   const [discounts, setDiscounts] = useState<Discount[]>([]);
@@ -2727,6 +2753,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     return null;
   });
+  const userPreferences = useMemo(
+    () => toRecord(currentUser?.preferences),
+    [currentUser?.preferences],
+  );
 
   useEffect(() => {
     if (!currentUser) return;
@@ -2736,11 +2766,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const effectiveUser = linkedUser ? normalizeUserRecord(linkedUser) : normalizedCurrent;
 
     if (!isUserLoginEnabled(effectiveUser)) {
-      try {
-        localStorage.removeItem('atwar_auth_token');
-      } catch {
-        // ignore storage failures
-      }
+      clearAuthToken();
       setCurrentUser(null);
       window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
       return;
@@ -2750,7 +2776,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       normalizedCurrent.status === effectiveUser.status &&
       normalizedCurrent.allowLogin === effectiveUser.allowLogin &&
       normalizeUserEmail(normalizedCurrent.email) === normalizeUserEmail(effectiveUser.email);
-    if (!sameIdentity) {
+    const samePreferences = JSON.stringify(toRecord(normalizedCurrent.preferences)) === JSON.stringify(toRecord(effectiveUser.preferences));
+    if (!sameIdentity || !samePreferences) {
       setCurrentUser(effectiveUser);
     }
   }, [currentUser, users]);
@@ -2769,7 +2796,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const dropdownSyncEnabled = isDropdownSyncEnabled();
   const dropdownSyncReadyRef = useRef(false);
   const dropdownSyncApplyingRemoteRef = useRef(false);
-  const dropdownSyncPushTimerRef = useRef<number | null>(null);
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
   const fieldPaymentsCacheRef = useRef<any[]>([]);
   const customerGroupLinkMigrationAppliedRef = useRef(false);
@@ -2924,7 +2950,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (missingAutoPayments.length === 0) return;
 
     let cancelled = false;
-    void (async () => {
+    const persistMissingAutoPayments = async () => {
       const persisted: Payment[] = [];
       for (const payment of missingAutoPayments) {
         const saved = await syncRecordStrict('payments', payment);
@@ -2938,7 +2964,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (additions.length === 0) return prev;
         return [...prev, ...additions];
       });
-    })();
+    };
+    persistMissingAutoPayments().catch(() => {
+      // ignore non-critical bootstrap sync failures
+    });
     return () => {
       cancelled = true;
     };
@@ -2987,6 +3016,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteProductCategories,
           remoteProductBrands,
           remoteProductUnits,
+          remoteCustomerGroups,
+          remoteSellingPriceGroups,
           remotePurchaseReqs,
           remotePurchaseOrders,
         ] = await Promise.all([
@@ -3008,6 +3039,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<ProductCategory>('productCategories'),
           apiFetchAllWithRetry<ProductBrand>('productBrands'),
           apiFetchAllWithRetry<ProductUnit>('productUnits'),
+          apiFetchAllWithRetry<CustomerGroup>('customerGroups'),
+          apiFetchAllWithRetry<SellingPriceGroup>('sellingPriceGroups'),
           apiFetchAllWithRetry<PurchaseRequisition>('purchaseRequisitions'),
           apiFetchAllWithRetry<PurchaseOrder>('purchaseOrders'),
         ]);
@@ -3033,6 +3066,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteProductCategories,
           remoteProductBrands,
           remoteProductUnits,
+          remoteCustomerGroups,
+          remoteSellingPriceGroups,
           remotePurchaseReqs,
           remotePurchaseOrders,
         ];
@@ -3050,7 +3085,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           );
         }
         if (remoteCustomers) {
-          setCustomers((remoteCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, customerGroups)));
+          const availableCustomerGroups = (remoteCustomerGroups as CustomerGroup[] | null) ?? customerGroups;
+          setCustomers((remoteCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, availableCustomerGroups)));
         }
         if (remoteSuppliers) {
           setSuppliers((remoteSuppliers as Supplier[]).map((supplier) => normalizeSupplierRecord(supplier)));
@@ -3063,23 +3099,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteLocations) {
-          if (remoteLocations.length > 0) {
-            setLocations((remoteLocations as Location[])
-              .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-              .filter((row) => row.id && row.name));
-          } else {
-            const fallbackLocations = initialLocations
-              .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-              .filter((row) => row.id && row.name);
-            const persistedFallback: Location[] = [];
-            for (const row of fallbackLocations) {
-              const saved = await syncRecordStrict('locations', row);
-              if (saved.ok) persistedFallback.push(row);
-            }
-            if (persistedFallback.length > 0) {
-              setLocations(persistedFallback);
-            }
-          }
+          setLocations((remoteLocations as Location[])
+            .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+            .filter((row) => row.id && row.name));
         }
         if (remoteSettings && remoteSettings.length > 0) {
           const s = remoteSettings[0];
@@ -3112,6 +3134,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remoteProductCategories) setProductCategories(remoteProductCategories as ProductCategory[]);
         if (remoteProductBrands) setProductBrands(remoteProductBrands as ProductBrand[]);
         if (remoteProductUnits) setProductUnits(remoteProductUnits as ProductUnit[]);
+        if (remoteSellingPriceGroups) {
+          setSellingPriceGroups((remoteSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
+            ...group,
+            status: group.status || 'Active',
+          })));
+        }
+        if (remoteCustomerGroups) {
+          const availablePriceGroups = (remoteSellingPriceGroups as SellingPriceGroup[] | null) ?? sellingPriceGroups;
+          setCustomerGroups((remoteCustomerGroups as CustomerGroup[]).map((group) =>
+            normalizeCustomerGroupRecord(group, availablePriceGroups),
+          ));
+        }
         if (remotePurchaseReqs) {
           setPurchaseRequisitions((remotePurchaseReqs as PurchaseRequisition[]).map((record) => normalizePurchaseRequisitionRecordLoaded(record)));
         }
@@ -3150,13 +3184,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         apiFetchAll<{ name?: string; isActive?: boolean }>('paymentAccountTypes').catch(() => null),
       ]);
       if (cancelled) return;
-      if (remoteAccounts) setStoredPaymentAccounts(remoteAccounts);
+      setStoredPaymentAccounts(remoteAccounts || []);
       if (remoteAccountTypes) {
         const types = remoteAccountTypes
           .filter((row) => row?.isActive !== false)
           .map((row) => String(row?.name || '').trim())
           .filter(Boolean);
         setStoredPaymentAccountTypes(types);
+      } else {
+        setStoredPaymentAccountTypes([]);
       }
       dispatchPaymentAccountsUpdated();
     };
@@ -3171,7 +3207,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let cancelled = false;
     const refreshFieldPaymentsCache = async () => {
       const rows = await fetchDedicated<any>('/api/sync/field-payments').catch(() => null);
-      if (cancelled || !rows) return;
+      if (cancelled) return;
       fieldPaymentsCacheRef.current = Array.isArray(rows) ? rows : [];
     };
     void refreshFieldPaymentsCache();
@@ -3204,6 +3240,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           freshProducts, freshSales, freshPayments, freshCustomers, freshLocations,
           freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
           freshTaxRates, freshProductCategories, freshProductBrands, freshProductUnits,
+          freshCustomerGroups, freshSellingPriceGroups,
         ] = await Promise.all([
           apiFetchAll<Product>('products').catch(() => null),
           apiFetchAll<Sale>('sales').catch(() => null),
@@ -3220,6 +3257,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<ProductCategory>('productCategories').catch(() => null),
           apiFetchAll<ProductBrand>('productBrands').catch(() => null),
           apiFetchAll<ProductUnit>('productUnits').catch(() => null),
+          apiFetchAll<CustomerGroup>('customerGroups').catch(() => null),
+          apiFetchAll<SellingPriceGroup>('sellingPriceGroups').catch(() => null),
         ]);
         if (freshProducts) {
           const availableCategories = (freshProductCategories as ProductCategory[] | null) ?? [];
@@ -3237,7 +3276,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setPayments((freshPayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
         }
         if (freshCustomers) {
-          setCustomers((freshCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, customerGroups)));
+          const availableCustomerGroups = (freshCustomerGroups as CustomerGroup[] | null) ?? customerGroups;
+          setCustomers((freshCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, availableCustomerGroups)));
         }
         if (freshLocations) {
           setLocations((freshLocations as Location[])
@@ -3266,6 +3306,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (freshProductCategories) setProductCategories(freshProductCategories as ProductCategory[]);
         if (freshProductBrands) setProductBrands(freshProductBrands as ProductBrand[]);
         if (freshProductUnits) setProductUnits(freshProductUnits as ProductUnit[]);
+        if (freshSellingPriceGroups) {
+          setSellingPriceGroups((freshSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
+            ...group,
+            status: group.status || 'Active',
+          })));
+        }
+        if (freshCustomerGroups) {
+          const availablePriceGroups = (freshSellingPriceGroups as SellingPriceGroup[] | null) ?? sellingPriceGroups;
+          setCustomerGroups((freshCustomerGroups as CustomerGroup[]).map((group) =>
+            normalizeCustomerGroupRecord(group, availablePriceGroups),
+          ));
+        }
       } catch {
         // polling failure is non-fatal — the user keeps their current data
       }
@@ -3279,6 +3331,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     if (!dropdownSyncEnabled) {
       dropdownSyncReadyRef.current = true;
+      return;
+    }
+    if (isLiveSyncEnabled() && !hasValidAuthToken()) {
+      dropdownSyncReadyRef.current = false;
       return;
     }
 
@@ -3302,28 +3358,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const remote = await fetchDropdownCollections(keys);
       if (cancelled) return;
 
-      let hasRemoteData = false;
-      const hasRemoteSnapshot = Object.keys(remote).length > 0;
-
+      const hasRemoteKey = (key: string): boolean => Object.prototype.hasOwnProperty.call(remote, key);
       const getRows = (key: string) => (Array.isArray(remote[key]) ? remote[key] : []);
 
       const remoteRoles = getRows('roles');
-      if (remoteRoles.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('roles')) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setRoles(ensureRequiredRoles(remoteRoles as Role[]));
+        setRoles((remoteRoles as Role[]).map(normalizeRoleRecord));
       }
 
       const remoteAgents = getRows('commissionAgents');
-      if (remoteAgents.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('commissionAgents')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
       }
 
       const remotePrinters = getRows('printers');
-      if (remotePrinters.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('printers')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setPrinters((remotePrinters as ReceiptPrinter[])
           .map((row, index) => normalizePrinterRecord(row, initialPrinters[index] || initialPrinters[0]))
@@ -3331,22 +3382,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       const remoteInvoiceSchemes = getRows('invoiceSchemes');
-      if (remoteInvoiceSchemes.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('invoiceSchemes')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setInvoiceSchemes(remoteInvoiceSchemes as InvoiceScheme[]);
       }
 
       const remoteInvoiceLayouts = getRows('invoiceLayouts');
-      if (remoteInvoiceLayouts.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('invoiceLayouts')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setInvoiceLayouts(remoteInvoiceLayouts as InvoiceLayout[]);
       }
 
       const remoteBarcodeSettings = getRows('barcodeSettings');
-      if (remoteBarcodeSettings.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('barcodeSettings')) {
         dropdownSyncApplyingRemoteRef.current = true;
         const normalized = normalizeBarcodeSettings(
           (remoteBarcodeSettings as BarcodeStickerSetting[])
@@ -3356,86 +3404,48 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setBarcodeSettings(normalized);
       }
 
-      const remoteCustomerGroups = getRows('customerGroups');
-      if (remoteCustomerGroups.length > 0) {
-        hasRemoteData = true;
+      const remoteSellingPriceGroups = getRows('sellingPriceGroups');
+      if (hasRemoteKey('sellingPriceGroups')) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setCustomerGroups(remoteCustomerGroups as CustomerGroup[]);
+        setSellingPriceGroups((remoteSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
+          ...group,
+          status: group.status || 'Active',
+        })));
+      }
+
+      const remoteCustomerGroups = getRows('customerGroups');
+      if (hasRemoteKey('customerGroups')) {
+        dropdownSyncApplyingRemoteRef.current = true;
+        const availablePriceGroups = hasRemoteKey('sellingPriceGroups')
+          ? (remoteSellingPriceGroups as SellingPriceGroup[])
+          : sellingPriceGroups;
+        setCustomerGroups((remoteCustomerGroups as CustomerGroup[]).map((group) =>
+          normalizeCustomerGroupRecord(group, availablePriceGroups),
+        ));
       }
 
       const remoteWarranties = getRows('warranties');
-      if (remoteWarranties.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('warranties')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setWarranties(remoteWarranties as ProductWarranty[]);
       }
 
       const remoteProductVariations = getRows('productVariations');
-      if (remoteProductVariations.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('productVariations')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setProductVariations(remoteProductVariations as ProductVariation[]);
       }
 
-      const remoteSellingPriceGroups = getRows('sellingPriceGroups');
-      if (remoteSellingPriceGroups.length > 0) {
-        hasRemoteData = true;
-        dropdownSyncApplyingRemoteRef.current = true;
-        setSellingPriceGroups(remoteSellingPriceGroups as SellingPriceGroup[]);
-      }
-
       const remoteDiscounts = getRows('discounts');
-      if (remoteDiscounts.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('discounts')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setDiscounts((remoteDiscounts as Discount[]).map((row) => normalizeDiscountRecord(row)));
       }
 
       const remoteExpenseCategories = getRows('expenseCategories');
-      if (remoteExpenseCategories.length > 0) {
-        hasRemoteData = true;
+      if (hasRemoteKey('expenseCategories')) {
         dropdownSyncApplyingRemoteRef.current = true;
         setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
-      }
-
-      if (dbSourceOfTruth && hasRemoteSnapshot) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setRoles(ensureRequiredRoles(remoteRoles as Role[]));
-        setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
-        setPrinters((remotePrinters as ReceiptPrinter[])
-          .map((row, index) => normalizePrinterRecord(row, initialPrinters[index] || initialPrinters[0]))
-          .filter((row) => row.id && row.name));
-        setInvoiceSchemes(remoteInvoiceSchemes as InvoiceScheme[]);
-        setInvoiceLayouts(remoteInvoiceLayouts as InvoiceLayout[]);
-        setBarcodeSettings(normalizeBarcodeSettings(
-          (remoteBarcodeSettings as BarcodeStickerSetting[])
-            .map((row, index) => normalizeBarcodeSettingRecord(row, initialBarcodeSettings[index] || initialBarcodeSettings[0]))
-            .filter((row) => row.id && row.name)
-        ));
-        setCustomerGroups(remoteCustomerGroups as CustomerGroup[]);
-        setWarranties(remoteWarranties as ProductWarranty[]);
-        setProductVariations(remoteProductVariations as ProductVariation[]);
-        setSellingPriceGroups(remoteSellingPriceGroups as SellingPriceGroup[]);
-        setDiscounts((remoteDiscounts as Discount[]).map((row) => normalizeDiscountRecord(row)));
-        setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
-      }
-
-      const seedCollections = {
-        roles: remoteRoles.length > 0 ? remoteRoles : roles,
-        commissionAgents: remoteAgents.length > 0 ? remoteAgents : commissionAgents,
-        printers: remotePrinters.length > 0 ? remotePrinters : printers,
-        invoiceSchemes: remoteInvoiceSchemes.length > 0 ? remoteInvoiceSchemes : invoiceSchemes,
-        invoiceLayouts: remoteInvoiceLayouts.length > 0 ? remoteInvoiceLayouts : invoiceLayouts,
-        barcodeSettings: remoteBarcodeSettings.length > 0 ? remoteBarcodeSettings : barcodeSettings,
-        customerGroups: remoteCustomerGroups.length > 0 ? remoteCustomerGroups : customerGroups,
-        warranties: remoteWarranties.length > 0 ? remoteWarranties : warranties,
-        productVariations: remoteProductVariations.length > 0 ? remoteProductVariations : productVariations,
-        sellingPriceGroups: remoteSellingPriceGroups.length > 0 ? remoteSellingPriceGroups : sellingPriceGroups,
-        discounts: remoteDiscounts.length > 0 ? remoteDiscounts : discounts,
-        expenseCategories: remoteExpenseCategories.length > 0 ? remoteExpenseCategories : expenseCategories,
-      };
-      if (!hasRemoteData || Object.values(seedCollections).some((rows) => Array.isArray(rows) && rows.length > 0)) {
-        await pushDropdownCollections(seedCollections);
       }
 
       if (!cancelled) {
@@ -3450,58 +3460,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       cancelled = true;
     };
-  }, [dropdownSyncEnabled, dbSourceOfTruth]);
-
-  useEffect(() => {
-    if (!dropdownSyncEnabled || !dropdownSyncReadyRef.current || dropdownSyncApplyingRemoteRef.current) return;
-
-    const collections = {
-      roles,
-      commissionAgents,
-      printers,
-      invoiceSchemes,
-      invoiceLayouts,
-      barcodeSettings,
-      customerGroups,
-      warranties,
-      productVariations,
-      sellingPriceGroups,
-      discounts,
-      expenseCategories,
-    };
-
-    if (dropdownSyncPushTimerRef.current !== null) {
-      window.clearTimeout(dropdownSyncPushTimerRef.current);
-    }
-
-    dropdownSyncPushTimerRef.current = window.setTimeout(() => {
-      void (async () => {
-        await pushDropdownCollections(collections);
-      })();
-    }, 900);
-
-    return () => {
-      if (dropdownSyncPushTimerRef.current !== null) {
-        window.clearTimeout(dropdownSyncPushTimerRef.current);
-        dropdownSyncPushTimerRef.current = null;
-      }
-    };
-  }, [
-    dbSourceOfTruth,
-    dropdownSyncEnabled,
-    roles,
-    commissionAgents,
-    printers,
-    invoiceSchemes,
-    invoiceLayouts,
-    barcodeSettings,
-    customerGroups,
-    warranties,
-    productVariations,
-    sellingPriceGroups,
-    discounts,
-    expenseCategories,
-  ]);
+  }, [dropdownSyncEnabled, dbSourceOfTruth, currentUser?.id]);
 
   // ============================================================
   //  RUNTIME SETTINGS + AUTH SESSION STORAGE ONLY
@@ -3684,7 +3643,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const recordActivity = (entry: ActivityLogInput) => {
+  const recordActivity = async (entry: ActivityLogInput): Promise<void> => {
     const userLabel = String(entry.user || currentUser?.name || currentUser?.username || 'System').trim() || 'System';
     const timestamp = entry.date || getBusinessDateTimeString();
     const id = entry.id || `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
@@ -3698,11 +3657,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ipAddress: entry.ipAddress || '',
     };
     setActivityLogs(prev => [next, ...prev].slice(0, 5000));
-    void (async () => {
+    try {
       const saved = await syncRecordStrict('activityLogs', next);
-      if (saved.ok) return;
+      if (!saved.ok) {
+        setActivityLogs(prev => prev.filter(entry => entry.id !== next.id));
+      }
+    } catch {
       setActivityLogs(prev => prev.filter(entry => entry.id !== next.id));
-    })();
+    }
 
     // Broadcast bell notifications for key business activities
     const module = next.module;
@@ -4842,72 +4804,92 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCTS
   // ============================================================
 
-  const addProduct = (product: Product) => {
+  const toCrudResult = (
+    result: { ok: boolean; status: number; error?: string },
+  ): CrudMutationResult => ({
+    ok: !!result.ok,
+    status: Number(result.status || 0),
+    error: result.ok ? undefined : (result.error || `HTTP ${result.status || 0}`),
+  });
+  const okResult = (status = 200): CrudMutationResult => ({ ok: true, status });
+  const failResult = (status = 0, error = 'Operation failed'): CrudMutationResult => ({ ok: false, status, error });
+  const toLocationResult = (
+    result: CrudMutationResult,
+    fallbackMessage: string,
+  ): LocationMutationResult => ({
+    ...result,
+    success: result.ok,
+    message: result.ok ? undefined : (result.error || fallbackMessage),
+  });
+
+  const addProduct = async (product: Product): Promise<CrudMutationResult> => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
-    void (async () => {
-      const saved = await syncRecordStrict('products', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Products',
-          description: `Failed to add product ${normalized.name || normalized.sku || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setProducts(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('products', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Products',
-        description: `Added product: ${normalized.name || normalized.sku || normalized.id}`,
+        description: `Failed to add product ${normalized.name || normalized.sku || normalized.id} to Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setProducts(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Products',
+      description: `Added product: ${normalized.name || normalized.sku || normalized.id}`,
+    });
+    return result;
   };
   const confirmDeleteFromPostgres = (
     resource: string,
     id: string,
     module: string,
     failureLabel: string,
-    onConfirmed: () => void,
-  ) => {
+    onConfirmed: () => void | Promise<void>,
+  ): Promise<CrudMutationResult> => {
     const normalizedId = String(id || '').trim();
-    if (!normalizedId) return;
-    void (async () => {
+    if (!normalizedId) return Promise.resolve(failResult(400, 'Missing record id.'));
+    return (async () => {
       const outcome = await deleteRecordStrict(resource, normalizedId);
-      if (!outcome.ok) {
+      const result = toCrudResult(outcome);
+      if (!result.ok) {
         recordActivity({
           action: 'Blocked',
           module,
-          description: `Failed to delete ${failureLabel} from Postgres (${outcome.status || 0}).`,
+          description: `Failed to delete ${failureLabel} from Postgres (${result.status || 0}).`,
         });
-        return;
+        return result;
       }
-      onConfirmed();
+      await onConfirmed();
+      return result;
     })();
   };
 
-  const updateProduct = (product: Product) => {
+  const updateProduct = async (product: Product): Promise<CrudMutationResult> => {
     const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
-    void (async () => {
-      const saved = await syncRecordStrict('products', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Products',
-          description: `Failed to update product ${normalized.name || normalized.sku || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
+    const saved = await syncRecordStrict('products', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Products',
-        description: `Updated product: ${normalized.name || normalized.sku || normalized.id}`,
+        description: `Failed to update product ${normalized.name || normalized.sku || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
+    recordActivity({
+      action: 'Updated',
+      module: 'Products',
+      description: `Updated product: ${normalized.name || normalized.sku || normalized.id}`,
+    });
+    return result;
   };
-  const deleteProduct = (id: string) => {
+  const deleteProduct = async (id: string): Promise<CrudMutationResult> => {
     const existing = products.find(p => p.id === id);
-    confirmDeleteFromPostgres('products', id, 'Products', existing?.name || existing?.sku || id, () => {
+    return confirmDeleteFromPostgres('products', id, 'Products', existing?.name || existing?.sku || id, () => {
       setProducts(prev => prev.filter(p => p.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -4921,91 +4903,91 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: CUSTOMERS
   // ============================================================
 
-  const addCustomer = (customer: Customer) => {
+  const addCustomer = async (customer: Customer): Promise<CrudMutationResult> => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
-    void (async () => {
-      const saved = await syncRecordStrict('customers', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Customers',
-          description: `Failed to add customer ${normalized.businessName || normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCustomers(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('customers', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Customers',
-        description: `Added customer: ${normalized.businessName || normalized.name || normalized.id}`,
+        description: `Failed to add customer ${normalized.businessName || normalized.name || normalized.id} to Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setCustomers(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Customers',
+      description: `Added customer: ${normalized.businessName || normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const updateCustomer = (customer: Customer) => {
+  const updateCustomer = async (customer: Customer): Promise<CrudMutationResult> => {
     const normalized = normalizeCustomerRecord(customer, customerGroups);
-    void (async () => {
-      const saved = await syncRecordStrict('customers', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Customers',
-          description: `Failed to update customer ${normalized.businessName || normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCustomers(prev => prev.map(c => c.id === customer.id ? normalized : c));
+    const saved = await syncRecordStrict('customers', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Customers',
-        description: `Updated customer: ${normalized.businessName || normalized.name || normalized.id}`,
+        description: `Failed to update customer ${normalized.businessName || normalized.name || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setCustomers(prev => prev.map(c => c.id === customer.id ? normalized : c));
+    recordActivity({
+      action: 'Updated',
+      module: 'Customers',
+      description: `Updated customer: ${normalized.businessName || normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const addCustomerRewardPoints = (customerId: string, points: number) => {
+  const addCustomerRewardPoints = async (customerId: string, points: number): Promise<CrudMutationResult> => {
     const existing = customers.find(customer => customer.id === customerId);
-    if (!existing) return;
+    if (!existing) return failResult(404, 'Customer not found.');
     const updatedCustomer: Customer = {
       ...existing,
       rewardPoints: Math.max(0, Number(existing.rewardPoints || 0) + Number(points || 0)),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('customers', updatedCustomer);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Customers',
-          description: `Failed to update reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
-    })();
+    const saved = await syncRecordStrict('customers', updatedCustomer);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Customers',
+        description: `Failed to update reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${result.status || 0}).`,
+      });
+      return result;
+    }
+    setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
+    return result;
   };
 
-  const redeemCustomerRewardPoints = (customerId: string, points: number) => {
+  const redeemCustomerRewardPoints = async (customerId: string, points: number): Promise<CrudMutationResult> => {
     const existing = customers.find(customer => customer.id === customerId);
-    if (!existing) return;
+    if (!existing) return failResult(404, 'Customer not found.');
     const updatedCustomer: Customer = {
       ...existing,
       rewardPoints: Math.max(0, Number(existing.rewardPoints || 0) - Number(points || 0)),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('customers', updatedCustomer);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Customers',
-          description: `Failed to redeem reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
-    })();
+    const saved = await syncRecordStrict('customers', updatedCustomer);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Customers',
+        description: `Failed to redeem reward points for ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} in Postgres (${result.status || 0}).`,
+      });
+      return result;
+    }
+    setCustomers(prev => prev.map(customer => customer.id === customerId ? updatedCustomer : customer));
+    return result;
   };
 
-  const deleteCustomer = (id: string) => {
+  const deleteCustomer = async (id: string): Promise<CrudMutationResult> => {
     const existing = customers.find(c => c.id === id);
-    confirmDeleteFromPostgres('customers', id, 'Customers', existing?.businessName || existing?.name || id, () => {
+    return confirmDeleteFromPostgres('customers', id, 'Customers', existing?.businessName || existing?.name || id, () => {
       setCustomers(prev => prev.filter(c => c.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -5019,49 +5001,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: SUPPLIERS
   // ============================================================
 
-  const addSupplier = (supplier: Supplier) => {
+  const addSupplier = async (supplier: Supplier): Promise<CrudMutationResult> => {
     const normalized = normalizeSupplierRecord(supplier);
-    void (async () => {
-      const saved = await syncRecordStrict('suppliers', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Suppliers',
-          description: `Failed to add supplier ${normalized.businessName || normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setSuppliers(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('suppliers', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Suppliers',
-        description: `Added supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+        description: `Failed to add supplier ${normalized.businessName || normalized.name || normalized.id} to Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setSuppliers(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Suppliers',
+      description: `Added supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const updateSupplier = (supplier: Supplier) => {
+  const updateSupplier = async (supplier: Supplier): Promise<CrudMutationResult> => {
     const normalized = normalizeSupplierRecord(supplier);
-    void (async () => {
-      const saved = await syncRecordStrict('suppliers', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Suppliers',
-          description: `Failed to update supplier ${normalized.businessName || normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setSuppliers(prev => prev.map(s => s.id === supplier.id ? normalized : s));
+    const saved = await syncRecordStrict('suppliers', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Suppliers',
-        description: `Updated supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+        description: `Failed to update supplier ${normalized.businessName || normalized.name || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setSuppliers(prev => prev.map(s => s.id === supplier.id ? normalized : s));
+    recordActivity({
+      action: 'Updated',
+      module: 'Suppliers',
+      description: `Updated supplier: ${normalized.businessName || normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const deleteSupplier = (id: string) => {
+  const deleteSupplier = async (id: string): Promise<CrudMutationResult> => {
     const existing = suppliers.find(s => s.id === id);
-    confirmDeleteFromPostgres('suppliers', id, 'Suppliers', existing?.businessName || existing?.name || id, () => {
+    return confirmDeleteFromPostgres('suppliers', id, 'Suppliers', existing?.businessName || existing?.name || id, () => {
       setSuppliers(prev => prev.filter(s => s.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -5075,7 +5057,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: CONTACTS (legacy)
   // ============================================================
 
-  const addContact = (contact: Contact) => {
+  const addContact = async (contact: Contact): Promise<CrudMutationResult> => {
     const recordId = String(contact.contactId || `${contact.type === 'Supplier' ? 'SUP' : 'CUST'}-${contact.id}`).trim();
     if (contact.type === 'Supplier') {
       const supplier: Supplier = {
@@ -5096,19 +5078,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         status: contact.status,
       };
       const normalizedSupplier = normalizeSupplierRecord(supplier);
-      void (async () => {
-        const saved = await syncRecordStrict('suppliers', normalizedSupplier);
-        if (!saved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Suppliers',
-            description: `Failed to save supplier contact ${normalizedSupplier.businessName || normalizedSupplier.name || normalizedSupplier.id} to Postgres (${saved.status || 0}).`,
-          });
-          return;
-        }
-        setSuppliers(prev => [...prev.filter(row => row.id !== recordId), normalizedSupplier]);
-      })();
-      return;
+      const saved = await syncRecordStrict('suppliers', normalizedSupplier);
+      const result = toCrudResult(saved);
+      if (!result.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Suppliers',
+          description: `Failed to save supplier contact ${normalizedSupplier.businessName || normalizedSupplier.name || normalizedSupplier.id} to Postgres (${result.status || 0}).`,
+        });
+        return result;
+      }
+      setSuppliers(prev => [...prev.filter(row => row.id !== recordId), normalizedSupplier]);
+      return result;
     }
 
     const customer: Customer = {
@@ -5131,34 +5112,33 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       status: contact.status,
     };
     const normalizedCustomer = normalizeCustomerRecord(customer, customerGroups);
-    void (async () => {
-      const saved = await syncRecordStrict('customers', normalizedCustomer);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Customers',
-          description: `Failed to save customer contact ${normalizedCustomer.businessName || normalizedCustomer.name || normalizedCustomer.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCustomers(prev => [...prev.filter(row => row.id !== recordId), normalizedCustomer]);
-    })();
+    const saved = await syncRecordStrict('customers', normalizedCustomer);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Customers',
+        description: `Failed to save customer contact ${normalizedCustomer.businessName || normalizedCustomer.name || normalizedCustomer.id} to Postgres (${result.status || 0}).`,
+      });
+      return result;
+    }
+    setCustomers(prev => [...prev.filter(row => row.id !== recordId), normalizedCustomer]);
+    return result;
   };
-  const updateContact = (contact: Contact) => {
-    addContact(contact);
+  const updateContact = async (contact: Contact): Promise<CrudMutationResult> => {
+    return addContact(contact);
   };
-  const deleteContact = (id: number) => {
+  const deleteContact = async (id: number): Promise<CrudMutationResult> => {
     const existing = contacts.find(contact => contact.id === id);
-    if (!existing) return;
+    if (!existing) return failResult(404, 'Contact not found.');
     if (existing.type === 'Supplier') {
       const contactId = String(existing.contactId || '').trim();
-      confirmDeleteFromPostgres('suppliers', contactId, 'Suppliers', existing.businessName || existing.name || contactId, () => {
+      return confirmDeleteFromPostgres('suppliers', contactId, 'Suppliers', existing.businessName || existing.name || contactId, () => {
         setSuppliers(prev => prev.filter(supplier => supplier.id !== existing.contactId));
       });
-      return;
     }
     const contactId = String(existing.contactId || '').trim();
-    confirmDeleteFromPostgres('customers', contactId, 'Customers', existing.businessName || existing.name || contactId, () => {
+    return confirmDeleteFromPostgres('customers', contactId, 'Customers', existing.businessName || existing.name || contactId, () => {
       setCustomers(prev => prev.filter(customer => customer.id !== existing.contactId));
     });
   };
@@ -5260,24 +5240,37 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const applyStockDelta = (deltaByProduct: Record<string, number>) => {
-    if (Object.keys(deltaByProduct).length === 0) return;
-    setProducts(prevProducts => prevProducts.map(p => {
-      const delta = (deltaByProduct[p.id] || 0) + (deltaByProduct[p.sku] || 0);
-      if (!delta) return p;
-      const updated = { ...p, stock: p.stock + delta };
-      // Use atomic stock delta so concurrent sales from different users/locations
-      // both apply correctly instead of the last write overwriting the other.
-      void (async () => {
-        const outcome = await syncStockDeltaStrict(p.id, delta);
-        if (outcome.ok) return;
-        // Roll back local stock if Postgres delta failed.
-        setProducts(prev => prev.map(row => (
-          row.id === p.id ? { ...row, stock: row.stock - delta } : row
-        )));
-      })();
-      return updated;
+  const applyStockDelta = async (deltaByProduct: Record<string, number>): Promise<CrudMutationResult> => {
+    if (Object.keys(deltaByProduct).length === 0) return okResult(200);
+    const perProductDeltas = products
+      .map((product) => {
+        const delta = Number((deltaByProduct[product.id] || 0) + (deltaByProduct[product.sku] || 0));
+        if (!delta) return null;
+        return { id: product.id, delta };
+      })
+      .filter((entry): entry is { id: string; delta: number } => !!entry);
+    if (perProductDeltas.length === 0) return okResult(200);
+
+    const deltaById = new Map<string, number>(perProductDeltas.map((entry) => [entry.id, entry.delta]));
+    setProducts(prevProducts => prevProducts.map((product) => {
+      const delta = deltaById.get(product.id) || 0;
+      if (!delta) return product;
+      return { ...product, stock: product.stock + delta };
     }));
+
+    let firstFailure: CrudMutationResult | null = null;
+    for (const entry of perProductDeltas) {
+      const outcome = await syncStockDeltaStrict(entry.id, entry.delta);
+      if (outcome.ok) continue;
+      setProducts(prev => prev.map(row => (
+        row.id === entry.id ? { ...row, stock: row.stock - entry.delta } : row
+      )));
+      if (!firstFailure) {
+        firstFailure = toCrudResult(outcome);
+      }
+    }
+
+    return firstFailure || okResult(200);
   };
 
   const refreshSalesFromServer = async (): Promise<void> => {
@@ -5287,8 +5280,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)));
   };
 
-  const addSale = async (sale: Sale): Promise<boolean> => {
-    if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return false;
+  const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return failResult(403, 'Permission denied.');
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
     const linkedLocation = resolveLocationRecordByName(saleWithSnapshot.location);
     if (!linkedLocation || linkedLocation.isActive === false) {
@@ -5297,7 +5290,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Sales',
         description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: selected location is inactive.`,
       });
-      return false;
+      return failResult(400, 'Selected location is inactive.');
     }
     if (!isWalkInSale(saleWithSnapshot)) {
       const linkedCustomer = resolveCustomerRecordForTransaction(
@@ -5310,7 +5303,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           module: 'Sales',
           description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: customer not found.`,
         });
-        return false;
+        return failResult(404, 'Customer not found.');
       }
       if (!isCustomerRecordActive(linkedCustomer)) {
         recordActivity({
@@ -5318,7 +5311,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           module: 'Sales',
           description: `Blocked sale creation for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: customer is inactive.`,
         });
-        return false;
+        return failResult(400, 'Customer is inactive.');
       }
     }
 
@@ -5329,7 +5322,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Sales',
         description: `Failed to save sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} to Postgres (${syncOutcome.status || 0}).`,
       });
-      return false;
+      return toCrudResult(syncOutcome);
     }
 
     setSales(prev => {
@@ -5347,8 +5340,17 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: `Created sale: ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}`,
     });
 
+    let stockSyncFailure: CrudMutationResult | null = null;
     if (isFinalizedSale(saleWithSnapshot)) {
-      applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1));
+      const stockResult = await applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1));
+      if (!stockResult.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sales',
+          description: `Sale saved but stock sync failed for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
+        });
+        stockSyncFailure = stockResult;
+      }
 
       if (!isWalkInSale(saleWithSnapshot)) {
         const dueToAdd = saleDueAmount(saleWithSnapshot);
@@ -5399,13 +5401,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
     void refreshSalesFromServer();
-    return true;
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sale saved, but stock sync failed.',
+      );
+    }
+    return okResult(syncOutcome.status || 200);
   };
 
-  const updateSale = async (sale: Sale): Promise<boolean> => {
-    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Edit Sell'], 'Update sale')) return false;
+  const updateSale = async (sale: Sale): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Edit Sell'], 'Update sale')) return failResult(403, 'Permission denied.');
     const normalizedSale = normalizeSaleRecordLoaded(sale);
-    if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) return false;
+    if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) {
+      return failResult(403, 'Edit window expired.');
+    }
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizedSale);
     const syncOutcome = await syncRecordStrict('sales', saleWithSnapshot);
     if (!syncOutcome.ok) {
@@ -5414,15 +5424,24 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Sales',
         description: `Failed to update sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} in Postgres (${syncOutcome.status || 0}).`,
       });
-      return false;
+      return toCrudResult(syncOutcome);
     }
     const oldSale = sales.find(s => s.id === saleWithSnapshot.id);
-    if (!oldSale) return false;
+    if (!oldSale) return failResult(404, 'Sale not found.');
+    let stockSyncFailure: CrudMutationResult | null = null;
 
     const stockDelta: Record<string, number> = {};
     if (isFinalizedSale(oldSale)) mergeStockDelta(stockDelta, buildSaleStockDelta(oldSale, +1));
     if (isFinalizedSale(saleWithSnapshot)) mergeStockDelta(stockDelta, buildSaleStockDelta(saleWithSnapshot, -1));
-    applyStockDelta(stockDelta);
+    const stockResult = await applyStockDelta(stockDelta);
+    if (!stockResult.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sales',
+        description: `Sale updated but stock sync failed for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
+      });
+      stockSyncFailure = stockResult;
+    }
 
     const oldDue = isFinalizedSale(oldSale) && !isWalkInSale(oldSale) ? saleDueAmount(oldSale) : 0;
     const newDue = isFinalizedSale(saleWithSnapshot) && !isWalkInSale(saleWithSnapshot) ? saleDueAmount(saleWithSnapshot) : 0;
@@ -5509,15 +5528,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     }
     void refreshSalesFromServer();
-    return true;
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sale updated, but stock sync failed.',
+      );
+    }
+    return okResult(syncOutcome.status || 200);
   };
 
-  const deleteSale = async (id: string): Promise<boolean> => {
-    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Delete Sell'], 'Delete sale')) return false;
+  const deleteSale = async (id: string): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('Sell', ['Add Sell', 'Delete Sell'], 'Delete sale')) return failResult(403, 'Permission denied.');
     const normalizedSaleId = String(id || '').trim();
     const hasLinkedSellReturn = (saleId: string) =>
       sellReturns.some(ret => String(ret.parentSaleId || '').trim() === saleId);
-    if (hasLinkedSellReturn(normalizedSaleId)) return false;
+    if (hasLinkedSellReturn(normalizedSaleId)) return failResult(409, 'Sale has linked sell return.');
     const existingSale = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
     const deleteOutcome = await deleteRecordStrict('sales', normalizedSaleId);
     if (!deleteOutcome.ok) {
@@ -5526,12 +5551,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Sales',
         description: `Failed to delete sale ${existingSale?.invoiceNo || normalizedSaleId} from Postgres (${deleteOutcome.status || 0}).`,
       });
-      return false;
+      return toCrudResult(deleteOutcome);
     }
     const saleToDelete = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
+    let stockSyncFailure: CrudMutationResult | null = null;
     if (saleToDelete) {
       if (isFinalizedSale(saleToDelete)) {
-        applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
+        const stockResult = await applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
+        if (!stockResult.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Sales',
+            description: `Sale deleted but stock rollback failed for ${saleToDelete.invoiceNo || saleToDelete.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
+          });
+          stockSyncFailure = stockResult;
+        }
       }
 
       if (!isWalkInSale(saleToDelete) && isFinalizedSale(saleToDelete)) {
@@ -5564,7 +5598,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId}`,
     });
     void refreshSalesFromServer();
-    return true;
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sale deleted, but stock rollback failed.',
+      );
+    }
+    return okResult(deleteOutcome.status || 200);
   };
 
   // ============================================================
@@ -5584,8 +5624,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return delta;
   };
 
-  const applySellReturnEffects = (sellReturn: SellReturn, factor: 1 | -1) => {
-    applyStockDelta(buildSellReturnStockDelta(sellReturn, factor));
+  const applySellReturnEffects = async (sellReturn: SellReturn, factor: 1 | -1): Promise<CrudMutationResult> => {
+    return applyStockDelta(buildSellReturnStockDelta(sellReturn, factor));
   };
 
   const resolveSaleDueCeiling = (sale: Sale): number =>
@@ -5688,7 +5728,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return true;
   };
 
-  const addSellReturn = (sellReturn: SellReturn) => {
+  const addSellReturn = async (sellReturn: SellReturn): Promise<CrudMutationResult> => {
     const normalizedBase = normalizeSellReturnRecord(sellReturn);
     const normalized: SellReturn = {
       ...normalizedBase,
@@ -5696,34 +5736,51 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         ? String(normalizedBase.autoRefundPaymentId || `pay-sell-return-${normalizedBase.id}`)
         : '',
     };
-    void (async () => {
-      const saved = await syncRecordStrict('sellReturns', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Sell Returns',
-          description: `Failed to create sell return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setSellReturns(prev => [...prev, normalized]);
-      applySellReturnEffects(normalized, 1);
-      applySellReturnFinancialEffects(normalized, 1);
-      if (normalized.settlementMode === 'refund_now') {
-        await upsertAutoRefundPaymentForSellReturn(normalized);
-      } else {
-        await removeAutoRefundPaymentForSellReturn(normalized);
-      }
+    const saved = await syncRecordStrict('sellReturns', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Sell Returns',
-        description: `Created sell return: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to create sell return ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setSellReturns(prev => [...prev, normalized]);
+    const stockResult = await applySellReturnEffects(normalized, 1);
+    let stockSyncFailure: CrudMutationResult | null = null;
+    if (!stockResult.ok) {
+      stockSyncFailure = stockResult;
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sell Returns',
+        description: `Sell return saved but stock sync failed for ${normalized.referenceNo || normalized.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
+      });
+    }
+    applySellReturnFinancialEffects(normalized, 1);
+    if (normalized.settlementMode === 'refund_now') {
+      await upsertAutoRefundPaymentForSellReturn(normalized);
+    } else {
+      await removeAutoRefundPaymentForSellReturn(normalized);
+    }
+    recordActivity({
+      action: 'Created',
+      module: 'Sell Returns',
+      description: `Created sell return: ${normalized.referenceNo || normalized.id}`,
+    });
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sell return saved, but stock sync failed.',
+      );
+    }
+    return result;
   };
 
-  const updateSellReturn = (sellReturn: SellReturn) => {
-    if (!canEditTransaction('Sell Returns', String(sellReturn.referenceNo || sellReturn.id || '').trim(), sellReturn.date)) return;
+  const updateSellReturn = async (sellReturn: SellReturn): Promise<CrudMutationResult> => {
+    if (!canEditTransaction('Sell Returns', String(sellReturn.referenceNo || sellReturn.id || '').trim(), sellReturn.date)) {
+      return failResult(403, 'Edit window expired.');
+    }
     const existing = sellReturns.find(record => record.id === sellReturn.id);
     const normalizedDraft = normalizeSellReturnRecord(sellReturn);
     const normalized: SellReturn = {
@@ -5736,46 +5793,69 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         )
         : '',
     };
-    void (async () => {
-      const saved = await syncRecordStrict('sellReturns', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Sell Returns',
-          description: `Failed to update sell return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setSellReturns(prev => {
-        const previous = prev.find(record => record.id === normalized.id);
-        if (previous) {
-          applySellReturnEffects(previous, -1);
-          applySellReturnFinancialEffects(previous, -1);
-          applySellReturnEffects(normalized, 1);
-          applySellReturnFinancialEffects(normalized, 1);
-          return prev.map(record => record.id === normalized.id ? normalized : record);
-        }
-        applySellReturnEffects(normalized, 1);
-        applySellReturnFinancialEffects(normalized, 1);
-        return [...prev, normalized];
-      });
-      if (existing) {
-        await removeAutoRefundPaymentForSellReturn(existing);
-      }
-      if (normalized.settlementMode === 'refund_now') {
-        await upsertAutoRefundPaymentForSellReturn(normalized);
-      }
+    const saved = await syncRecordStrict('sellReturns', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Sell Returns',
-        description: `Updated sell return: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to update sell return ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    let stockSyncFailure: CrudMutationResult | null = null;
+    const trackStockFailure = (phase: string, stockResult: CrudMutationResult) => {
+      if (stockSyncFailure) return;
+      stockSyncFailure = stockResult;
+      recordActivity({
+        action: 'Blocked',
+        module: 'Sell Returns',
+        description: `Sell return updated but stock sync failed (${phase}) for ${normalized.referenceNo || normalized.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
+      });
+    };
+
+    if (existing) {
+      const rollbackResult = await applySellReturnEffects(existing, -1);
+      if (!rollbackResult.ok) {
+        trackStockFailure('rollback', rollbackResult);
+      }
+      applySellReturnFinancialEffects(existing, -1);
+      const applyResult = await applySellReturnEffects(normalized, 1);
+      if (!applyResult.ok) {
+        trackStockFailure('apply', applyResult);
+      }
+      applySellReturnFinancialEffects(normalized, 1);
+      setSellReturns(prev => prev.map(record => record.id === normalized.id ? normalized : record));
+    } else {
+      const applyResult = await applySellReturnEffects(normalized, 1);
+      if (!applyResult.ok) {
+        trackStockFailure('apply', applyResult);
+      }
+      applySellReturnFinancialEffects(normalized, 1);
+      setSellReturns(prev => [...prev, normalized]);
+    }
+
+    if (existing) {
+      await removeAutoRefundPaymentForSellReturn(existing);
+    }
+    if (normalized.settlementMode === 'refund_now') {
+      await upsertAutoRefundPaymentForSellReturn(normalized);
+    }
+    recordActivity({
+      action: 'Updated',
+      module: 'Sell Returns',
+      description: `Updated sell return: ${normalized.referenceNo || normalized.id}`,
+    });
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sell return updated, but stock sync failed.',
+      );
+    }
+    return result;
   };
 
-  const deleteSellReturn = async (
-    id: string,
-  ): Promise<{ ok: boolean; status: number; error?: string }> => {
+  const deleteSellReturn = async (id: string): Promise<CrudMutationResult> => {
     const existingReturn = sellReturns.find(record => record.id === id);
     if (!existingReturn) {
       return { ok: false, status: 404, error: 'Sell return not found.' };
@@ -5789,15 +5869,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return deleteOutcome;
     }
-    setSellReturns(prev => {
-      const existing = prev.find(record => record.id === id);
-      if (existing) {
-        applySellReturnEffects(existing, -1);
-        applySellReturnFinancialEffects(existing, -1);
-        removeAutoRefundPaymentForSellReturn(existing);
+    let stockSyncFailure: CrudMutationResult | null = null;
+    if (existingReturn) {
+      const rollbackResult = await applySellReturnEffects(existingReturn, -1);
+      if (!rollbackResult.ok) {
+        stockSyncFailure = rollbackResult;
+        recordActivity({
+          action: 'Blocked',
+          module: 'Sell Returns',
+          description: `Sell return deleted but stock rollback failed for ${existingReturn.referenceNo || existingReturn.id}: ${rollbackResult.error || `HTTP ${rollbackResult.status || 0}`}.`,
+        });
       }
-      return prev.filter(record => record.id !== id);
-    });
+      applySellReturnFinancialEffects(existingReturn, -1);
+      await removeAutoRefundPaymentForSellReturn(existingReturn);
+    }
+    setSellReturns(prev => prev.filter(record => record.id !== id));
     const autoRefundPaymentId = String(
       existingReturn.autoRefundPaymentId || `pay-sell-return-${existingReturn.id}`,
     ).trim();
@@ -5809,6 +5895,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       module: 'Sell Returns',
       description: `Deleted sell return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
     });
+    if (stockSyncFailure) {
+      return failResult(
+        stockSyncFailure.status || 500,
+        stockSyncFailure.error || 'Sell return deleted, but stock rollback failed.',
+      );
+    }
     return { ok: true, status: deleteOutcome.status || 200 };
   };
 
@@ -6081,102 +6173,104 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return true;
   };
 
-  const addPurchase = (purchase: Purchase) => {
+  const addPurchase = async (purchase: Purchase): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseRecordLoaded(purchase);
-    void (async () => {
-      const saved = await syncRecordStrict('purchases', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchases',
-          description: `Failed to create purchase ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchases(prev => [...prev, normalized]);
-      const effectsApplied = await applyPurchaseEffects(normalized, 1);
-      if (!effectsApplied) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchases',
-          description: `Purchase ${normalized.refNo || normalized.id} saved but stock-lot sync failed.`,
-        });
-      }
+    const saved = await syncRecordStrict('purchases', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Purchases',
-        description: `Created purchase: ${normalized.refNo || normalized.id}`,
+        description: `Failed to create purchase ${normalized.refNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchases(prev => [...prev, normalized]);
+    const effectsApplied = await applyPurchaseEffects(normalized, 1);
+    if (!effectsApplied) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchases',
+        description: `Purchase ${normalized.refNo || normalized.id} saved but stock-lot sync failed.`,
+      });
+      return failResult(500, 'Purchase saved, but stock-lot sync failed.');
+    }
+    recordActivity({
+      action: 'Created',
+      module: 'Purchases',
+      description: `Created purchase: ${normalized.refNo || normalized.id}`,
+    });
+    return result;
   };
 
-  const updatePurchase = (purchase: Purchase) => {
+  const updatePurchase = async (purchase: Purchase): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseRecordLoaded(purchase);
-    if (!canEditTransaction('Purchases', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('purchases', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchases',
-          description: `Failed to update purchase ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      const existing = purchases.find(item => item.id === normalized.id);
-      if (!existing) return;
-      const reverted = await applyPurchaseEffects(existing, -1);
-      if (!reverted) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchases',
-          description: `Failed to reverse effects for purchase ${existing.refNo || existing.id}.`,
-        });
-        return;
-      }
-      const applied = await applyPurchaseEffects(normalized, 1);
-      if (!applied) {
-        await applyPurchaseEffects(existing, 1);
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchases',
-          description: `Failed to apply updated effects for purchase ${normalized.refNo || normalized.id}.`,
-        });
-        return;
-      }
-      setPurchases(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    if (!canEditTransaction('Purchases', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) {
+      return failResult(403, 'Edit window expired.');
+    }
+    const saved = await syncRecordStrict('purchases', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Purchases',
-        description: `Updated purchase: ${normalized.refNo || normalized.id}`,
+        description: `Failed to update purchase ${normalized.refNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    const existing = purchases.find(item => item.id === normalized.id);
+    if (!existing) return failResult(404, 'Purchase not found.');
+    const reverted = await applyPurchaseEffects(existing, -1);
+    if (!reverted) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchases',
+        description: `Failed to reverse effects for purchase ${existing.refNo || existing.id}.`,
+      });
+      return failResult(500, 'Failed to reverse previous purchase effects.');
+    }
+    const applied = await applyPurchaseEffects(normalized, 1);
+    if (!applied) {
+      await applyPurchaseEffects(existing, 1);
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchases',
+        description: `Failed to apply updated effects for purchase ${normalized.refNo || normalized.id}.`,
+      });
+      return failResult(500, 'Failed to apply updated purchase effects.');
+    }
+    setPurchases(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    recordActivity({
+      action: 'Updated',
+      module: 'Purchases',
+      description: `Updated purchase: ${normalized.refNo || normalized.id}`,
+    });
+    return result;
   };
 
-  const deletePurchase = (id: string) => {
+  const deletePurchase = async (id: string): Promise<CrudMutationResult> => {
     const existingPurchase = purchases.find(item => item.id === id);
-    if (purchaseReturns.some(ret => ret.parentPurchaseId === id)) return;
-    confirmDeleteFromPostgres('purchases', id, 'Purchases', existingPurchase?.refNo || existingPurchase?.id || id, () => {
-      void (async () => {
-        const existing = purchases.find(item => item.id === id);
-        if (existing) {
-          const reverted = await applyPurchaseEffects(existing, -1);
-          if (!reverted) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Purchases',
-              description: `Deleted purchase ${existing.refNo || existing.id}, but failed to sync stock lot reversal.`,
-            });
-            return;
-          }
+    if (purchaseReturns.some(ret => ret.parentPurchaseId === id)) {
+      return failResult(409, 'Purchase has linked return.');
+    }
+    return confirmDeleteFromPostgres('purchases', id, 'Purchases', existingPurchase?.refNo || existingPurchase?.id || id, async () => {
+      const existing = purchases.find(item => item.id === id);
+      if (existing) {
+        const reverted = await applyPurchaseEffects(existing, -1);
+        if (!reverted) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Purchases',
+            description: `Deleted purchase ${existing.refNo || existing.id}, but failed to sync stock lot reversal.`,
+          });
         }
-        setPurchases(prev => prev.filter(item => item.id !== id));
-        recordActivity({
-          action: 'Deleted',
-          module: 'Purchases',
-          description: `Deleted purchase: ${existingPurchase?.refNo || existingPurchase?.id || id}`,
-        });
-      })();
+      }
+      setPurchases(prev => prev.filter(item => item.id !== id));
+      recordActivity({
+        action: 'Deleted',
+        module: 'Purchases',
+        description: `Deleted purchase: ${existingPurchase?.refNo || existingPurchase?.id || id}`,
+      });
     });
   };
 
@@ -6184,51 +6278,53 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PURCHASE REQUISITIONS
   // ============================================================
 
-  const addPurchaseRequisition = (requisition: PurchaseRequisition) => {
+  const addPurchaseRequisition = async (requisition: PurchaseRequisition): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseRequisitions', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Requisitions',
-          description: `Failed to create requisition ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchaseRequisitions(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('purchaseRequisitions', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Purchase Requisitions',
-        description: `Created requisition: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to create requisition ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchaseRequisitions(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Purchase Requisitions',
+      description: `Created requisition: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
   };
-  const updatePurchaseRequisition = (requisition: PurchaseRequisition) => {
+  const updatePurchaseRequisition = async (requisition: PurchaseRequisition): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseRequisitionRecordLoaded(requisition);
-    if (!canEditTransaction('Purchase Requisitions', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseRequisitions', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Requisitions',
-          description: `Failed to update requisition ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchaseRequisitions(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    if (!canEditTransaction('Purchase Requisitions', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) {
+      return failResult(403, 'Edit window expired.');
+    }
+    const saved = await syncRecordStrict('purchaseRequisitions', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Purchase Requisitions',
-        description: `Updated requisition: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to update requisition ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchaseRequisitions(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    recordActivity({
+      action: 'Updated',
+      module: 'Purchase Requisitions',
+      description: `Updated requisition: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
   };
-  const deletePurchaseRequisition = (id: string) => {
+  const deletePurchaseRequisition = async (id: string): Promise<CrudMutationResult> => {
     const existing = purchaseRequisitions.find(item => item.id === id);
-    if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return;
-    confirmDeleteFromPostgres('purchaseRequisitions', id, 'Purchase Requisitions', existing?.referenceNo || existing?.id || id, () => {
+    if (purchaseOrders.some(order => order.purchaseRequisitionId === id)) return failResult(409, 'Requisition has linked purchase order.');
+    return confirmDeleteFromPostgres('purchaseRequisitions', id, 'Purchase Requisitions', existing?.referenceNo || existing?.id || id, () => {
       setPurchaseRequisitions(prev => prev.filter(item => item.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -6242,51 +6338,53 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PURCHASE ORDERS
   // ============================================================
 
-  const addPurchaseOrder = (order: PurchaseOrder) => {
+  const addPurchaseOrder = async (order: PurchaseOrder): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseOrderRecordLoaded(order);
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseOrders', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Orders',
-          description: `Failed to create purchase order ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchaseOrders(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('purchaseOrders', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Purchase Orders',
-        description: `Created order: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to create purchase order ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchaseOrders(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Purchase Orders',
+      description: `Created order: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
   };
-  const updatePurchaseOrder = (order: PurchaseOrder) => {
+  const updatePurchaseOrder = async (order: PurchaseOrder): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseOrderRecordLoaded(order);
-    if (!canEditTransaction('Purchase Orders', String(normalized.referenceNo || normalized.id || '').trim(), normalized.orderDate)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseOrders', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Orders',
-          description: `Failed to update purchase order ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchaseOrders(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    if (!canEditTransaction('Purchase Orders', String(normalized.referenceNo || normalized.id || '').trim(), normalized.orderDate)) {
+      return failResult(403, 'Edit window expired.');
+    }
+    const saved = await syncRecordStrict('purchaseOrders', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Purchase Orders',
-        description: `Updated order: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to update purchase order ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchaseOrders(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    recordActivity({
+      action: 'Updated',
+      module: 'Purchase Orders',
+      description: `Updated order: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
   };
-  const deletePurchaseOrder = (id: string) => {
+  const deletePurchaseOrder = async (id: string): Promise<CrudMutationResult> => {
     const existing = purchaseOrders.find(item => item.id === id);
-    if (purchases.some(purchase => purchase.purchaseOrderId === id)) return;
-    confirmDeleteFromPostgres('purchaseOrders', id, 'Purchase Orders', existing?.referenceNo || existing?.id || id, () => {
+    if (purchases.some(purchase => purchase.purchaseOrderId === id)) return failResult(409, 'Purchase order has linked purchase.');
+    return confirmDeleteFromPostgres('purchaseOrders', id, 'Purchase Orders', existing?.referenceNo || existing?.id || id, () => {
       setPurchaseOrders(prev => prev.filter(item => item.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -6300,102 +6398,102 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PURCHASE RETURNS
   // ============================================================
 
-  const addPurchaseReturn = (purchaseReturn: PurchaseReturn) => {
+  const addPurchaseReturn = async (purchaseReturn: PurchaseReturn): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseReturns', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Returns',
-          description: `Failed to create purchase return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPurchaseReturns(prev => [...prev, normalized]);
-      const effectsApplied = await applyPurchaseReturnEffects(normalized, 1);
-      if (!effectsApplied) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Returns',
-          description: `Purchase return ${normalized.referenceNo || normalized.id} saved but stock-lot sync failed.`,
-        });
-      }
+    const saved = await syncRecordStrict('purchaseReturns', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Purchase Returns',
-        description: `Created purchase return: ${normalized.referenceNo || normalized.id}`,
+        description: `Failed to create purchase return ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPurchaseReturns(prev => [...prev, normalized]);
+    const effectsApplied = await applyPurchaseReturnEffects(normalized, 1);
+    if (!effectsApplied) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchase Returns',
+        description: `Purchase return ${normalized.referenceNo || normalized.id} saved but stock-lot sync failed.`,
+      });
+      return failResult(500, 'Purchase return saved, but stock-lot sync failed.');
+    }
+    recordActivity({
+      action: 'Created',
+      module: 'Purchase Returns',
+      description: `Created purchase return: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
   };
 
-  const updatePurchaseReturn = (purchaseReturn: PurchaseReturn) => {
+  const updatePurchaseReturn = async (purchaseReturn: PurchaseReturn): Promise<CrudMutationResult> => {
     const normalized = normalizePurchaseReturnRecordLoaded(purchaseReturn);
-    if (!canEditTransaction('Purchase Returns', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('purchaseReturns', normalized);
-      if (!saved.ok) {
+    if (!canEditTransaction('Purchase Returns', String(normalized.referenceNo || normalized.id || '').trim(), normalized.date)) {
+      return failResult(403, 'Edit window expired.');
+    }
+    const saved = await syncRecordStrict('purchaseReturns', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchase Returns',
+        description: `Failed to update purchase return ${normalized.referenceNo || normalized.id} in Postgres (${result.status || 0}).`,
+      });
+      return result;
+    }
+    const existing = purchaseReturns.find(item => item.id === normalized.id);
+    if (existing) {
+      const reverted = await applyPurchaseReturnEffects(existing, -1);
+      if (!reverted) {
         recordActivity({
           action: 'Blocked',
           module: 'Purchase Returns',
-          description: `Failed to update purchase return ${normalized.referenceNo || normalized.id} in Postgres (${saved.status || 0}).`,
+          description: `Failed to reverse effects for purchase return ${existing.referenceNo || existing.id}.`,
         });
-        return;
+        return failResult(500, 'Failed to reverse previous purchase return effects.');
       }
-      const existing = purchaseReturns.find(item => item.id === normalized.id);
+    }
+    const applied = await applyPurchaseReturnEffects(normalized, 1);
+    if (!applied) {
+      if (existing) await applyPurchaseReturnEffects(existing, 1);
+      recordActivity({
+        action: 'Blocked',
+        module: 'Purchase Returns',
+        description: `Failed to apply updated effects for purchase return ${normalized.referenceNo || normalized.id}.`,
+      });
+      return failResult(500, 'Failed to apply updated purchase return effects.');
+    }
+    setPurchaseReturns(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+    recordActivity({
+      action: 'Updated',
+      module: 'Purchase Returns',
+      description: `Updated purchase return: ${normalized.referenceNo || normalized.id}`,
+    });
+    return result;
+  };
+
+  const deletePurchaseReturn = async (id: string): Promise<CrudMutationResult> => {
+    const existingReturn = purchaseReturns.find(item => item.id === id);
+    return confirmDeleteFromPostgres('purchaseReturns', id, 'Purchase Returns', existingReturn?.referenceNo || existingReturn?.id || id, async () => {
+      const existing = purchaseReturns.find(item => item.id === id);
       if (existing) {
         const reverted = await applyPurchaseReturnEffects(existing, -1);
         if (!reverted) {
           recordActivity({
             action: 'Blocked',
             module: 'Purchase Returns',
-            description: `Failed to reverse effects for purchase return ${existing.referenceNo || existing.id}.`,
+            description: `Deleted purchase return ${existing.referenceNo || existing.id}, but failed to sync stock lot reversal.`,
           });
-          return;
         }
       }
-      const applied = await applyPurchaseReturnEffects(normalized, 1);
-      if (!applied) {
-        if (existing) await applyPurchaseReturnEffects(existing, 1);
-        recordActivity({
-          action: 'Blocked',
-          module: 'Purchase Returns',
-          description: `Failed to apply updated effects for purchase return ${normalized.referenceNo || normalized.id}.`,
-        });
-        return;
-      }
-      setPurchaseReturns(prev => prev.map(item => item.id === normalized.id ? normalized : item));
+      setPurchaseReturns(prev => prev.filter(item => item.id !== id));
       recordActivity({
-        action: 'Updated',
+        action: 'Deleted',
         module: 'Purchase Returns',
-        description: `Updated purchase return: ${normalized.referenceNo || normalized.id}`,
+        description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
       });
-    })();
-  };
-
-  const deletePurchaseReturn = (id: string) => {
-    const existingReturn = purchaseReturns.find(item => item.id === id);
-    confirmDeleteFromPostgres('purchaseReturns', id, 'Purchase Returns', existingReturn?.referenceNo || existingReturn?.id || id, () => {
-      void (async () => {
-        const existing = purchaseReturns.find(item => item.id === id);
-        if (existing) {
-          const reverted = await applyPurchaseReturnEffects(existing, -1);
-          if (!reverted) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Purchase Returns',
-              description: `Deleted purchase return ${existing.referenceNo || existing.id}, but failed to sync stock lot reversal.`,
-            });
-            return;
-          }
-        }
-        setPurchaseReturns(prev => prev.filter(item => item.id !== id));
-        recordActivity({
-          action: 'Deleted',
-          module: 'Purchase Returns',
-          description: `Deleted purchase return: ${existingReturn?.referenceNo || existingReturn?.id || id}`,
-        });
-      })();
     });
   };
 
@@ -6403,7 +6501,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: ORDERS
   // ============================================================
 
-  const addOrder = (order: GlobalOrder) => {
+  const addOrder = async (order: GlobalOrder): Promise<CrudMutationResult> => {
     const normalized = normalizeOrderRecordLoaded(order);
     if (normalized.status === 'Cancelled') {
       recordActivity({
@@ -6411,27 +6509,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Blocked order creation for ${normalized.orderNumber || normalized.id}: orders cannot be created directly as Cancelled.`,
       });
-      return;
+      return failResult(400, 'Orders cannot be created directly as cancelled.');
     }
-    void (async () => {
-      const saved = await syncRecordStrict('orders', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Orders',
-          description: `Failed to create order ${normalized.orderNumber || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setOrders(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('orders', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Orders',
-        description: `Created order: ${normalized.orderNumber || normalized.id}`,
+        description: `Failed to create order ${normalized.orderNumber || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setOrders(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Orders',
+      description: `Created order: ${normalized.orderNumber || normalized.id}`,
+    });
+    return result;
   };
-  const updateOrder = (order: GlobalOrder) => {
+  const updateOrder = async (order: GlobalOrder): Promise<CrudMutationResult> => {
     const normalized = normalizeOrderRecordLoaded(order);
     const existingOrder = orders.find(o => o.id === normalized.id);
     if (existingOrder?.status === 'Cancelled') {
@@ -6440,7 +6538,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Blocked update for cancelled order: ${existingOrder.orderNumber || existingOrder.id}`,
       });
-      return;
+      return failResult(409, 'Cancelled orders cannot be updated.');
     }
 
     const isCancellingNow = existingOrder?.status !== 'Cancelled' && normalized.status === 'Cancelled';
@@ -6454,30 +6552,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           module: 'Orders',
           description: `Blocked cancellation for ${normalized.orderNumber || normalized.id}: missing cancellation reason/by/at.`,
         });
-        return;
+        return failResult(400, 'Missing cancellation metadata.');
       }
     }
 
-    if (!canEditTransaction('Orders', String(normalized.orderNumber || normalized.id || '').trim(), normalized.orderDate)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('orders', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Orders',
-          description: `Failed to update order ${normalized.orderNumber || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setOrders(prev => prev.map(o => o.id === normalized.id ? normalized : o));
+    if (!canEditTransaction('Orders', String(normalized.orderNumber || normalized.id || '').trim(), normalized.orderDate)) {
+      return failResult(403, 'Edit window expired.');
+    }
+    const saved = await syncRecordStrict('orders', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Orders',
-        description: `Updated order: ${normalized.orderNumber || normalized.id}`,
+        description: `Failed to update order ${normalized.orderNumber || normalized.id} in Postgres (${result.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setOrders(prev => prev.map(o => o.id === normalized.id ? normalized : o));
+    recordActivity({
+      action: 'Updated',
+      module: 'Orders',
+      description: `Updated order: ${normalized.orderNumber || normalized.id}`,
+    });
+    return result;
   };
-  const deleteOrder = async (id: string): Promise<boolean> => {
+  const deleteOrder = async (id: string): Promise<CrudMutationResult> => {
     const existing = orders.find(o => o.id === id);
     if (!existing) {
       recordActivity({
@@ -6485,7 +6585,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Delete failed: order not found (${id}).`,
       });
-      return false;
+      return failResult(404, 'Order not found.');
     }
 
     const currentRoleRecord = roles.find((role) => role.name === currentUser?.role);
@@ -6511,7 +6611,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Permission blocked: Delete approved order ${existing.orderNumber || existing.id}. Missing permission "Approve order".`,
       });
-      return false;
+      return failResult(403, 'Missing permission to delete approved order.');
     }
     if (!existing.isApproved && !canDeleteUnapprovedOrder) {
       recordActivity({
@@ -6519,7 +6619,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Permission blocked: Delete unapproved order ${existing.orderNumber || existing.id}. Missing permission "Add order" (or "Delete order").`,
       });
-      return false;
+      return failResult(403, 'Missing permission to delete unapproved order.');
     }
 
     const linkedSale = existing.convertedSaleId
@@ -6535,7 +6635,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Delete blocked for ${existing.orderNumber || existing.id}: linked invoice ${linkedSale?.invoiceNo || linkedSale?.id} is delivered.`,
       });
-      return false;
+      return failResult(409, 'Linked delivered invoice prevents delete.');
     }
 
     const result = await deleteRecordStrict('orders', id);
@@ -6545,7 +6645,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Orders',
         description: `Delete failed for order ${existing?.orderNumber || existing?.id || id}: ${result.error || `HTTP ${result.status}`}`,
       });
-      return false;
+      return toCrudResult(result);
     }
     setOrders(prev => prev.filter(o => o.id !== id));
     recordActivity({
@@ -6553,7 +6653,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       module: 'Orders',
       description: `Deleted order: ${existing?.orderNumber || existing?.id || id}`,
     });
-    return true;
+    return okResult(result.status || 200);
   };
 
   // ============================================================
@@ -6561,10 +6661,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  addPayment also: updates sale paymentStatus + customer/supplier balances
   // ============================================================
 
-  const addPayment = (
+  const addPayment = async (
     payment: Payment,
     options?: { skipActivity?: boolean; skipPermissionBoundary?: boolean },
-  ): Promise<boolean> => {
+  ): Promise<CrudMutationResult> => {
     const canCreatePayment =
       options?.skipPermissionBoundary === true ||
       hasContextPermission('POS', 'Add/Edit Payment') ||
@@ -6575,7 +6675,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Payments',
         description: 'Permission blocked: Create payment. Missing permission "Add/Edit Payment" or "Add sell payment".',
       });
-      return Promise.resolve(false);
+      return failResult(403, 'Missing permission to create payment.');
     }
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
     const normalizedPayment = normalizePaymentRecordLoaded({
@@ -6640,10 +6740,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         paymentToStore = { ...normalizedPayment, strictLinkedAllocation: true };
       }
     }
-    return (async () => {
-      const saved = await syncRecordStrict('payments', paymentToStore);
-      if (!saved.ok) return false;
-      setPayments(prev => [...prev, paymentToStore]);
+    const saved = await syncRecordStrict('payments', paymentToStore);
+    if (!saved.ok) {
+      return toCrudResult(saved);
+    }
+    setPayments(prev => [...prev, paymentToStore]);
     const appliedPayment = paymentToStore;
 
     if (appliedPayment.contactType === 'Customer') {
@@ -6688,7 +6789,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           });
           return updated;
         });
-        return true;
+        return okResult(saved.status || 200);
       }
 
       if (customerAllocationBySaleId.size > 0) {
@@ -6763,12 +6864,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           description: `${direction} payment: ${appliedPayment.referenceNo || appliedPayment.id}`,
         });
       }
-      return true;
-    })();
+      return okResult(saved.status || 200);
   };
 
-  const updatePayment = async (payment: Payment): Promise<boolean> => {
-    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Update payment')) return false;
+  const updatePayment = async (payment: Payment): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Update payment')) {
+      return failResult(403, 'Missing permission to update payment.');
+    }
     const normalizedMethod = String(payment.method || '').trim() || 'Cash';
     const normalizedPayment = normalizePaymentRecordLoaded({
       ...payment,
@@ -6779,7 +6881,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!existing) {
       return addPayment(normalizedPayment);
     }
-    if (!canEditTransaction('Payments', String(normalizedPayment.referenceNo || normalizedPayment.id || '').trim(), existing.date || normalizedPayment.date)) return false;
+    if (!canEditTransaction('Payments', String(normalizedPayment.referenceNo || normalizedPayment.id || '').trim(), existing.date || normalizedPayment.date)) {
+      return failResult(403, 'Payment is outside editable transaction window.');
+    }
 
     const normalizeLinkedInvoices = (values?: string[]) =>
       (values || [])
@@ -6800,41 +6904,46 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (!hasFinancialImpact) {
       const saved = await syncRecordStrict('payments', normalizedPayment);
-      if (!saved.ok) return false;
+      const result = toCrudResult(saved);
+      if (!result.ok) return result;
       setPayments(prev => prev.map(p => p.id === normalizedPayment.id ? normalizedPayment : p));
       recordActivity({
         action: 'Updated',
         module: 'Payments',
         description: `Updated payment: ${normalizedPayment.referenceNo || normalizedPayment.id}`,
       });
-      return true;
+      return result;
     }
 
     // Rebuild balances/statuses by removing old effects then applying updated payment.
-    await deletePayment(existing.id, {
+    const deleteResult = await deletePayment(existing.id, {
       skipActivity: true,
       skipServerDelete: true,
       skipPermissionBoundary: true,
     });
-    await addPayment(
+    if (!deleteResult.ok) return deleteResult;
+    const addResult = await addPayment(
       { ...normalizedPayment, id: existing.id },
       { skipActivity: true, skipPermissionBoundary: true },
     );
+    if (!addResult.ok) return addResult;
     recordActivity({
       action: 'Updated',
       module: 'Payments',
       description: `Updated payment: ${normalizedPayment.referenceNo || normalizedPayment.id}`,
     });
-    return true;
+    return okResult(addResult.status || 200);
   };
 
   const deletePayment = async (
     id: string,
     options?: { skipActivity?: boolean; skipServerDelete?: boolean; skipPermissionBoundary?: boolean },
-  ): Promise<boolean> => {
-    if (!(options?.skipPermissionBoundary === true) && !enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) return false;
+  ): Promise<CrudMutationResult> => {
+    if (!(options?.skipPermissionBoundary === true) && !enforcePermissionBoundary('POS', 'Add/Edit Payment', 'Delete payment')) {
+      return failResult(403, 'Missing permission to delete payment.');
+    }
     const payment = payments.find(p => p.id === id);
-    if (!payment) return false;
+    if (!payment) return failResult(404, 'Payment not found.');
 
     const applyLocalDelete = () => {
       setPayments(prev => prev.filter(p => p.id !== id));
@@ -7003,60 +7112,69 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     if (options?.skipServerDelete) {
       applyLocalDelete();
-      return true;
+      return okResult(200);
     }
-    confirmDeleteFromPostgres('payments', id, 'Payments', payment.referenceNo || payment.id, applyLocalDelete);
-    return true;
+    return confirmDeleteFromPostgres(
+      'payments',
+      id,
+      'Payments',
+      payment.referenceNo || payment.id,
+      async () => {
+        applyLocalDelete();
+      },
+    );
   };
 
   // ============================================================
   //  CRUD: EXPENSES
   // ============================================================
 
-  const addExpense = (expense: Expense) => {
+  const addExpense = async (expense: Expense): Promise<CrudMutationResult> => {
     const normalized = normalizeExpenseRecordLoaded(expense);
-    void (async () => {
-      const saved = await syncRecordStrict('expenses', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Expenses',
-          description: `Failed to add expense ${normalized.refNo || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setExpenses(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('expenses', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Expenses',
-        description: `Added expense: ${normalized.refNo || normalized.id}`,
+        description: `Failed to add expense ${normalized.refNo || normalized.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setExpenses(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Expenses',
+      description: `Added expense: ${normalized.refNo || normalized.id}`,
+    });
+    return result;
   };
-  const updateExpense = (expense: Expense) => {
+  const updateExpense = async (expense: Expense): Promise<CrudMutationResult> => {
     const normalized = normalizeExpenseRecordLoaded(expense);
-    if (!canEditTransaction('Expenses', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) return;
-    void (async () => {
-      const saved = await syncRecordStrict('expenses', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Expenses',
-          description: `Failed to update expense ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+    if (!canEditTransaction('Expenses', String(normalized.refNo || normalized.id || '').trim(), normalized.date)) {
+      return failResult(403, 'Expense is outside editable transaction window.');
+    }
+    const saved = await syncRecordStrict('expenses', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Expenses',
-        description: `Updated expense: ${normalized.refNo || normalized.id}`,
+        description: `Failed to update expense ${normalized.refNo || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setExpenses(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+    recordActivity({
+      action: 'Updated',
+      module: 'Expenses',
+      description: `Updated expense: ${normalized.refNo || normalized.id}`,
+    });
+    return result;
   };
-  const deleteExpense = (id: string) => {
+  const deleteExpense = async (id: string): Promise<CrudMutationResult> => {
     const existing = expenses.find(e => e.id === id);
-    confirmDeleteFromPostgres('expenses', id, 'Expenses', existing?.refNo || existing?.id || id, () => {
+    return confirmDeleteFromPostgres('expenses', id, 'Expenses', existing?.refNo || existing?.id || id, async () => {
       setExpenses(prev => prev.filter(e => e.id !== id));
       setPayments(prev => prev.filter(payment =>
         !(
@@ -7072,22 +7190,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const addExpenseCategory = (cat: ExpenseCategory) => {
-    void (async () => {
-      const saved = await syncRecordStrict('expenseCategories', cat);
-      if (!saved.ok) return;
-      setExpenseCategories(prev => [...prev, cat]);
-    })();
+  const addExpenseCategory = async (cat: ExpenseCategory): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('expenseCategories', cat);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setExpenseCategories(prev => [...prev, cat]);
+    return result;
   };
-  const updateExpenseCategory = (cat: ExpenseCategory) => {
-    void (async () => {
-      const saved = await syncRecordStrict('expenseCategories', cat);
-      if (!saved.ok) return;
-      setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
-    })();
+  const updateExpenseCategory = async (cat: ExpenseCategory): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('expenseCategories', cat);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setExpenseCategories(prev => prev.map(c => c.id === cat.id ? cat : c));
+    return result;
   };
-  const deleteExpenseCategory = (id: string) => {
-    confirmDeleteFromPostgres('expenseCategories', id, 'Expense Categories', id, () => {
+  const deleteExpenseCategory = async (id: string): Promise<CrudMutationResult> => {
+    return confirmDeleteFromPostgres('expenseCategories', id, 'Expense Categories', id, async () => {
       setExpenseCategories(prev => prev.filter(c => c.id !== id));
     });
   };
@@ -7096,54 +7214,60 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: USERS
   // ============================================================
 
-  const addUser = (user: AppUser) => {
-    if (!enforcePermissionBoundary('User', 'Add user', 'Create user')) return;
+  const addUser = async (user: AppUser): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('User', 'Add user', 'Create user')) {
+      return failResult(403, 'Missing permission to create user.');
+    }
     const normalized = normalizeUserRecord(user);
-    void (async () => {
-      const saved = await syncRecordStrict('users', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Users',
-          description: `Failed to add user ${normalized.name || normalized.username || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setUsers(prev => [...prev, normalized]);
-      setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    const saved = await syncRecordStrict('users', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Users',
-        description: `Added user: ${normalized.name || normalized.username || normalized.id}`,
+        description: `Failed to add user ${normalized.name || normalized.username || normalized.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setUsers(prev => [...prev, normalized]);
+    setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    recordActivity({
+      action: 'Created',
+      module: 'Users',
+      description: `Added user: ${normalized.name || normalized.username || normalized.id}`,
+    });
+    return result;
   };
-  const updateUser = (user: AppUser) => {
-    if (!enforcePermissionBoundary('User', ['Add user', 'Edit user'], 'Update user')) return;
+  const updateUser = async (user: AppUser): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('User', ['Add user', 'Edit user'], 'Update user')) {
+      return failResult(403, 'Missing permission to update user.');
+    }
     const normalized = normalizeUserRecord(user);
-    void (async () => {
-      const saved = await syncRecordStrict('users', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Users',
-          description: `Failed to update user ${normalized.name || normalized.username || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
-      setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    const saved = await syncRecordStrict('users', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Users',
-        description: `Updated user: ${normalized.name || normalized.username || normalized.id}`,
+        description: `Failed to update user ${normalized.name || normalized.username || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setUsers(prev => prev.map(u => u.id === user.id ? normalized : u));
+    setCommissionAgents(prev => upsertCommissionAgentForUser(prev, normalized));
+    recordActivity({
+      action: 'Updated',
+      module: 'Users',
+      description: `Updated user: ${normalized.name || normalized.username || normalized.id}`,
+    });
+    return result;
   };
-  const deleteUser = (id: string) => {
-    if (!enforcePermissionBoundary('User', ['Add user', 'Delete user'], 'Delete user')) return;
+  const deleteUser = async (id: string): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('User', ['Add user', 'Delete user'], 'Delete user')) {
+      return failResult(403, 'Missing permission to delete user.');
+    }
     const existing = users.find(u => u.id === id);
-    confirmDeleteFromPostgres('users', id, 'Users', existing?.name || existing?.username || id, () => {
+    return confirmDeleteFromPostgres('users', id, 'Users', existing?.name || existing?.username || id, async () => {
       setUsers(prev => prev.filter(u => u.id !== id));
       setCommissionAgents(prev =>
         prev.filter(agent => String(agent.linkedUserId || '').trim() !== String(id || '').trim())
@@ -7160,49 +7284,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: ROLES
   // ============================================================
 
-  const addRole = (role: Role) => {
+  const addRole = async (role: Role): Promise<CrudMutationResult> => {
     const normalized = normalizeRoleRecord(role);
-    void (async () => {
-      const saved = await syncRecordStrict('roles', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Roles',
-          description: `Failed to add role ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setRoles(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('roles', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Roles',
-        description: `Added role: ${normalized.name || normalized.id}`,
+        description: `Failed to add role ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setRoles(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Roles',
+      description: `Added role: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const updateRole = (role: Role) => {
+  const updateRole = async (role: Role): Promise<CrudMutationResult> => {
     const normalized = normalizeRoleRecord(role);
-    void (async () => {
-      const saved = await syncRecordStrict('roles', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Roles',
-          description: `Failed to update role ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setRoles(prev => prev.map(r => r.id === role.id ? normalized : r));
+    const saved = await syncRecordStrict('roles', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Roles',
-        description: `Updated role: ${normalized.name || normalized.id}`,
+        description: `Failed to update role ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setRoles(prev => prev.map(r => r.id === role.id ? normalized : r));
+    recordActivity({
+      action: 'Updated',
+      module: 'Roles',
+      description: `Updated role: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const deleteRole = (id: number) => {
+  const deleteRole = async (id: number): Promise<CrudMutationResult> => {
     const existing = roles.find(r => r.id === id);
-    confirmDeleteFromPostgres('roles', String(id), 'Roles', existing?.name || String(id), () => {
+    return confirmDeleteFromPostgres('roles', String(id), 'Roles', existing?.name || String(id), async () => {
       setRoles(prev => prev.filter(r => r.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -7216,49 +7340,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: COMMISSION AGENTS
   // ============================================================
 
-  const addCommissionAgent = (agent: CommissionAgent) => {
+  const addCommissionAgent = async (agent: CommissionAgent): Promise<CrudMutationResult> => {
     const normalized = normalizeCommissionAgentRecord(agent);
-    void (async () => {
-      const saved = await syncRecordStrict('commissionAgents', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Commission Agents',
-          description: `Failed to add agent ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCommissionAgents(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('commissionAgents', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Commission Agents',
-        description: `Added agent: ${normalized.name || normalized.id}`,
+        description: `Failed to add agent ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setCommissionAgents(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Commission Agents',
+      description: `Added agent: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const updateCommissionAgent = (agent: CommissionAgent) => {
+  const updateCommissionAgent = async (agent: CommissionAgent): Promise<CrudMutationResult> => {
     const normalized = normalizeCommissionAgentRecord(agent);
-    void (async () => {
-      const saved = await syncRecordStrict('commissionAgents', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Commission Agents',
-          description: `Failed to update agent ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setCommissionAgents(prev => prev.map(a => a.id === agent.id ? normalized : a));
+    const saved = await syncRecordStrict('commissionAgents', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Commission Agents',
-        description: `Updated agent: ${normalized.name || normalized.id}`,
+        description: `Failed to update agent ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setCommissionAgents(prev => prev.map(a => a.id === agent.id ? normalized : a));
+    recordActivity({
+      action: 'Updated',
+      module: 'Commission Agents',
+      description: `Updated agent: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const deleteCommissionAgent = (id: number) => {
+  const deleteCommissionAgent = async (id: number): Promise<CrudMutationResult> => {
     const existing = commissionAgents.find(a => a.id === id);
-    confirmDeleteFromPostgres('commissionAgents', String(id), 'Commission Agents', existing?.name || String(id), () => {
+    return confirmDeleteFromPostgres('commissionAgents', String(id), 'Commission Agents', existing?.name || String(id), async () => {
       setCommissionAgents(prev => prev.filter(a => a.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -7746,7 +7870,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: RECEIPT PRINTERS
   // ============================================================
 
-  const addPrinter = (printer: ReceiptPrinter) => {
+  const addPrinter = async (printer: ReceiptPrinter): Promise<CrudMutationResult> => {
     const normalized = normalizePrinterRecord(printer, printer);
     const resolvedId = String(normalized.id || `PRN-${Date.now()}`).trim();
     const payload: ReceiptPrinter = { ...normalized, id: resolvedId };
@@ -7758,7 +7882,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: 'Add blocked. Printer name is required.',
       });
-      return;
+      return failResult(400, 'Printer name is required.');
     }
 
     const duplicateId = printers.some(existing => existing.id === payload.id);
@@ -7768,7 +7892,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Add blocked. Duplicate printer id: ${payload.id}`,
       });
-      return;
+      return failResult(409, `Printer ID "${payload.id}" already exists.`);
     }
 
     const duplicateName = printers.some(existing => normalizeText(existing.name) === normalizedName);
@@ -7778,29 +7902,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Add blocked. Duplicate printer name: ${payload.name}`,
       });
-      return;
+      return failResult(409, `Printer name "${payload.name}" already exists.`);
     }
 
-    void (async () => {
-      const saved = await syncRecordStrict('receiptPrinters', payload);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Receipt Printers',
-          description: `Failed to add printer ${payload.name || payload.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPrinters(prev => [...prev, payload]);
+    const saved = await syncRecordStrict('receiptPrinters', payload);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Receipt Printers',
-        description: `Added printer: ${payload.name || payload.id}`,
+        description: `Failed to add printer ${payload.name || payload.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPrinters(prev => [...prev, payload]);
+    recordActivity({
+      action: 'Created',
+      module: 'Receipt Printers',
+      description: `Added printer: ${payload.name || payload.id}`,
+    });
+    return result;
   };
 
-  const updatePrinter = (printer: ReceiptPrinter) => {
+  const updatePrinter = async (printer: ReceiptPrinter): Promise<CrudMutationResult> => {
     const existing = printers.find(row => row.id === printer.id);
     if (!existing) {
       recordActivity({
@@ -7808,7 +7932,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Update blocked. Printer not found: ${printer.id}`,
       });
-      return;
+      return failResult(404, 'Printer not found.');
     }
 
     const normalized = normalizePrinterRecord(printer, existing);
@@ -7819,7 +7943,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Update blocked. Printer name is required: ${normalized.id}`,
       });
-      return;
+      return failResult(400, 'Printer name is required.');
     }
 
     const duplicateName = printers.some(
@@ -7831,29 +7955,29 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Update blocked. Duplicate printer name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Printer name "${normalized.name}" already exists.`);
     }
 
-    void (async () => {
-      const saved = await syncRecordStrict('receiptPrinters', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Receipt Printers',
-          description: `Failed to update printer ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setPrinters(prev => prev.map(row => (row.id === normalized.id ? normalized : row)));
+    const saved = await syncRecordStrict('receiptPrinters', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Receipt Printers',
-        description: `Updated printer: ${normalized.name || normalized.id}`,
+        description: `Failed to update printer ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setPrinters(prev => prev.map(row => (row.id === normalized.id ? normalized : row)));
+    recordActivity({
+      action: 'Updated',
+      module: 'Receipt Printers',
+      description: `Updated printer: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
 
-  const deletePrinter = (id: string) => {
+  const deletePrinter = async (id: string): Promise<CrudMutationResult> => {
     const existing = printers.find(row => row.id === id);
     if (!existing) {
       recordActivity({
@@ -7861,41 +7985,39 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Receipt Printers',
         description: `Delete blocked. Printer not found: ${id}`,
       });
-      return;
+      return failResult(404, 'Printer not found.');
     }
 
-    confirmDeleteFromPostgres('receiptPrinters', id, 'Receipt Printers', existing.name || existing.id, () => {
-      void (async () => {
-        const affectedLocations = locations
-          .filter(location => String(location.receiptPrinterId || '').trim() === id)
-          .map(location => ({
-            ...location,
-            receiptPrinterType: 'browser' as const,
-            receiptPrinterId: '',
-          }));
-        const persistedLocations = new Map<string, Location>();
-        for (const location of affectedLocations) {
-          const saved = await syncRecordStrict('locations', location);
-          if (!saved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Receipt Printers',
-              description: `Failed to sync linked location ${location.name || location.id} after printer delete (${saved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedLocations.set(location.id, location);
+    return confirmDeleteFromPostgres('receiptPrinters', id, 'Receipt Printers', existing.name || existing.id, async () => {
+      const affectedLocations = locations
+        .filter(location => String(location.receiptPrinterId || '').trim() === id)
+        .map(location => ({
+          ...location,
+          receiptPrinterType: 'browser' as const,
+          receiptPrinterId: '',
+        }));
+      const persistedLocations = new Map<string, Location>();
+      for (const location of affectedLocations) {
+        const saved = await syncRecordStrict('locations', location);
+        if (!saved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Receipt Printers',
+            description: `Failed to sync linked location ${location.name || location.id} after printer delete (${saved.status || 0}).`,
+          });
+          continue;
         }
-        setPrinters(prev => prev.filter(row => row.id !== id));
-        if (persistedLocations.size > 0) {
-          setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
-        }
-        recordActivity({
-          action: 'Deleted',
-          module: 'Receipt Printers',
-          description: `Deleted printer: ${existing.name || existing.id}`,
-        });
-      })();
+        persistedLocations.set(location.id, location);
+      }
+      setPrinters(prev => prev.filter(row => row.id !== id));
+      if (persistedLocations.size > 0) {
+        setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+      }
+      recordActivity({
+        action: 'Deleted',
+        module: 'Receipt Printers',
+        description: `Deleted printer: ${existing.name || existing.id}`,
+      });
     });
   };
 
@@ -7954,7 +8076,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isDefault: !!layout.isDefault,
   });
 
-  const addInvoiceScheme = (scheme: InvoiceScheme) => {
+  const addInvoiceScheme = async (scheme: InvoiceScheme): Promise<CrudMutationResult> => {
     const normalized = normalizeInvoiceSchemeRecord(scheme);
     if (!normalized.name) {
       recordActivity({
@@ -7962,7 +8084,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: 'Add invoice scheme blocked. Name is required.',
       });
-      return;
+      return failResult(400, 'Invoice scheme name is required.');
     }
     const duplicateByName = invoiceSchemes.some(record =>
       normalizeText(record.name) === normalizeText(normalized.name)
@@ -7973,34 +8095,35 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Add invoice scheme blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Invoice scheme "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('invoiceSchemes', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Invoice Settings',
-          description: `Failed to add invoice scheme ${normalized.name} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setInvoiceSchemes(prev => {
-        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-        const nextRecords = normalized.isDefault
-          ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
-          : [...withoutDuplicate, normalized];
-        return normalizeInvoiceSchemes(nextRecords);
-      });
+
+    const saved = await syncRecordStrict('invoiceSchemes', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Invoice Settings',
-        description: `Added invoice scheme: ${normalized.name}`,
+        description: `Failed to add invoice scheme ${normalized.name} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setInvoiceSchemes(prev => {
+      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+      const nextRecords = normalized.isDefault
+        ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
+        : [...withoutDuplicate, normalized];
+      return normalizeInvoiceSchemes(nextRecords);
+    });
+    recordActivity({
+      action: 'Created',
+      module: 'Invoice Settings',
+      description: `Added invoice scheme: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const updateInvoiceScheme = (scheme: InvoiceScheme) => {
+  const updateInvoiceScheme = async (scheme: InvoiceScheme): Promise<CrudMutationResult> => {
     const existing = invoiceSchemes.find(record => record.id === scheme.id);
     if (!existing) {
       recordActivity({
@@ -8008,7 +8131,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice scheme blocked. Scheme not found: ${scheme.id}`,
       });
-      return;
+      return failResult(404, 'Invoice scheme not found.');
     }
     const normalized = normalizeInvoiceSchemeRecord(scheme);
     if (!normalized.name) {
@@ -8017,7 +8140,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice scheme blocked. Name is required: ${scheme.id}`,
       });
-      return;
+      return failResult(400, 'Invoice scheme name is required.');
     }
     const duplicateByName = invoiceSchemes.some(record =>
       record.id !== normalized.id &&
@@ -8029,88 +8152,95 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice scheme blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Invoice scheme "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('invoiceSchemes', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Invoice Settings',
-          description: `Failed to update invoice scheme ${normalized.name} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
 
-      const oldName = String(existing.name || '').trim();
-      const newName = String(normalized.name || '').trim();
-      const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
-      const persistedLocations = new Map<string, Location>();
-      const persistedSales = new Map<string, Sale>();
-
-      if (renamed) {
-        const affectedLocations = locations
-          .filter(location => normalizeText(location.invoiceScheme) === normalizeText(oldName))
-          .map(location => ({ ...location, invoiceScheme: newName }));
-        for (const location of affectedLocations) {
-          const locationSaved = await syncRecordStrict('locations', location);
-          if (!locationSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Invoice Settings',
-              description: `Failed to sync linked location ${location.name || location.id} after scheme rename (${locationSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedLocations.set(location.id, location);
-        }
-
-        const affectedSales = sales
-          .filter(sale => normalizeText(sale.invoiceScheme) === normalizeText(oldName))
-          .map(sale => ({ ...sale, invoiceScheme: newName }));
-        for (const sale of affectedSales) {
-          const saleSaved = await syncRecordStrict('sales', sale);
-          if (!saleSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Invoice Settings',
-              description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after scheme rename (${saleSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedSales.set(sale.id, sale);
-        }
-      }
-
-      setInvoiceSchemes(prev => {
-        const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
-        const withExclusiveDefault = normalized.isDefault
-          ? mapped.map(record => (
-            record.id === normalized.id
-              ? { ...record, isDefault: true }
-              : { ...record, isDefault: false }
-          ))
-          : mapped;
-        return normalizeInvoiceSchemes(withExclusiveDefault);
-      });
-      if (persistedLocations.size > 0) {
-        setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
-      }
-      if (persistedSales.size > 0) {
-        setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
-      }
+    const saved = await syncRecordStrict('invoiceSchemes', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Invoice Settings',
-        description: `Updated invoice scheme: ${normalized.name}`,
+        description: `Failed to update invoice scheme ${normalized.name} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+
+    const oldName = String(existing.name || '').trim();
+    const newName = String(normalized.name || '').trim();
+    const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
+    const persistedLocations = new Map<string, Location>();
+    const persistedSales = new Map<string, Sale>();
+
+    if (renamed) {
+      const affectedLocations = locations
+        .filter(location => normalizeText(location.invoiceScheme) === normalizeText(oldName))
+        .map(location => ({ ...location, invoiceScheme: newName }));
+      for (const location of affectedLocations) {
+        const locationSaved = await syncRecordStrict('locations', location);
+        if (!locationSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Invoice Settings',
+            description: `Failed to sync linked location ${location.name || location.id} after scheme rename (${locationSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedLocations.set(location.id, location);
+      }
+
+      const affectedSales = sales
+        .filter(sale => normalizeText(sale.invoiceScheme) === normalizeText(oldName))
+        .map(sale => ({ ...sale, invoiceScheme: newName }));
+      for (const sale of affectedSales) {
+        const saleSaved = await syncRecordStrict('sales', sale);
+        if (!saleSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Invoice Settings',
+            description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after scheme rename (${saleSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedSales.set(sale.id, sale);
+      }
+    }
+
+    setInvoiceSchemes(prev => {
+      const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
+      const withExclusiveDefault = normalized.isDefault
+        ? mapped.map(record => (
+          record.id === normalized.id
+            ? { ...record, isDefault: true }
+            : { ...record, isDefault: false }
+        ))
+        : mapped;
+      return normalizeInvoiceSchemes(withExclusiveDefault);
+    });
+    if (persistedLocations.size > 0) {
+      setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+    }
+    if (persistedSales.size > 0) {
+      setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
+    }
+    recordActivity({
+      action: 'Updated',
+      module: 'Invoice Settings',
+      description: `Updated invoice scheme: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const deleteInvoiceScheme = (id: string): LocationMutationResult => {
+  const deleteInvoiceScheme = async (id: string): Promise<LocationMutationResult> => {
     const existing = invoiceSchemes.find(record => record.id === id);
     if (!existing) {
-      return { success: false, message: 'Invoice scheme not found.' };
+      return {
+        ok: false,
+        success: false,
+        status: 404,
+        error: 'Invoice scheme not found.',
+        message: 'Invoice scheme not found.',
+      };
     }
     const usageByLocations = locations.filter(location =>
       normalizeText(location.invoiceScheme) === normalizeText(existing.name)
@@ -8128,9 +8258,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Delete invoice scheme blocked for ${existing.name}: ${parts.join(', ')}`,
       });
-      return { success: false, message };
+      return {
+        ok: false,
+        success: false,
+        status: 409,
+        error: message,
+        message,
+      };
     }
-    confirmDeleteFromPostgres('invoiceSchemes', id, 'Invoice Settings', existing.name, () => {
+    const result = await confirmDeleteFromPostgres('invoiceSchemes', id, 'Invoice Settings', existing.name, async () => {
       setInvoiceSchemes(prev => normalizeInvoiceSchemes(prev.filter(record => record.id !== id)));
       recordActivity({
         action: 'Deleted',
@@ -8138,10 +8274,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Deleted invoice scheme: ${existing.name}`,
       });
     });
-    return { success: true };
+    return toLocationResult(result, 'Failed to delete invoice scheme from database.');
   };
 
-  const addInvoiceLayout = (layout: InvoiceLayout) => {
+  const addInvoiceLayout = async (layout: InvoiceLayout): Promise<CrudMutationResult> => {
     const normalized = normalizeInvoiceLayoutRecord(layout);
     if (!normalized.name) {
       recordActivity({
@@ -8149,7 +8285,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: 'Add invoice layout blocked. Name is required.',
       });
-      return;
+      return failResult(400, 'Invoice layout name is required.');
     }
     const duplicateByName = invoiceLayouts.some(record =>
       normalizeText(record.name) === normalizeText(normalized.name)
@@ -8160,34 +8296,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Add invoice layout blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Invoice layout "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('invoiceLayouts', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Invoice Settings',
-          description: `Failed to add invoice layout ${normalized.name} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setInvoiceLayouts(prev => {
-        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-        const nextRecords = normalized.isDefault
-          ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
-          : [...withoutDuplicate, normalized];
-        return normalizeInvoiceLayouts(nextRecords);
-      });
+    const saved = await syncRecordStrict('invoiceLayouts', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Invoice Settings',
-        description: `Added invoice layout: ${normalized.name}`,
+        description: `Failed to add invoice layout ${normalized.name} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setInvoiceLayouts(prev => {
+      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+      const nextRecords = normalized.isDefault
+        ? [...withoutDuplicate.map(record => ({ ...record, isDefault: false })), { ...normalized, isDefault: true }]
+        : [...withoutDuplicate, normalized];
+      return normalizeInvoiceLayouts(nextRecords);
+    });
+    recordActivity({
+      action: 'Created',
+      module: 'Invoice Settings',
+      description: `Added invoice layout: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const updateInvoiceLayout = (layout: InvoiceLayout) => {
+  const updateInvoiceLayout = async (layout: InvoiceLayout): Promise<CrudMutationResult> => {
     const existing = invoiceLayouts.find(record => record.id === layout.id);
     if (!existing) {
       recordActivity({
@@ -8195,7 +8331,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice layout blocked. Layout not found: ${layout.id}`,
       });
-      return;
+      return failResult(404, 'Invoice layout not found.');
     }
     const normalized = normalizeInvoiceLayoutRecord(layout);
     if (!normalized.name) {
@@ -8204,7 +8340,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice layout blocked. Name is required: ${layout.id}`,
       });
-      return;
+      return failResult(400, 'Invoice layout name is required.');
     }
     const duplicateByName = invoiceLayouts.some(record =>
       record.id !== normalized.id &&
@@ -8216,98 +8352,104 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Update invoice layout blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Invoice layout "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('invoiceLayouts', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Invoice Settings',
-          description: `Failed to update invoice layout ${normalized.name} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      const oldName = String(existing.name || '').trim();
-      const newName = String(normalized.name || '').trim();
-      const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
-      const persistedLocations = new Map<string, Location>();
-      const persistedSales = new Map<string, Sale>();
-
-      if (renamed) {
-        const affectedLocations = locations
-          .filter(location => (
-            normalizeText(location.invoiceLayoutPos) === normalizeText(oldName) ||
-            normalizeText(location.invoiceLayoutSale) === normalizeText(oldName)
-          ))
-          .map(location => {
-            const matchedPos = normalizeText(location.invoiceLayoutPos) === normalizeText(oldName);
-            const matchedSale = normalizeText(location.invoiceLayoutSale) === normalizeText(oldName);
-            return {
-              ...location,
-              invoiceLayoutPos: matchedPos ? newName : location.invoiceLayoutPos,
-              invoiceLayoutSale: matchedSale ? newName : location.invoiceLayoutSale,
-            };
-          });
-        for (const location of affectedLocations) {
-          const locationSaved = await syncRecordStrict('locations', location);
-          if (!locationSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Invoice Settings',
-              description: `Failed to sync linked location ${location.name || location.id} after layout rename (${locationSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedLocations.set(location.id, location);
-        }
-
-        const affectedSales = sales
-          .filter(sale => normalizeText(sale.invoiceLayout) === normalizeText(oldName))
-          .map(sale => ({ ...sale, invoiceLayout: newName }));
-        for (const sale of affectedSales) {
-          const saleSaved = await syncRecordStrict('sales', sale);
-          if (!saleSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Invoice Settings',
-              description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after layout rename (${saleSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedSales.set(sale.id, sale);
-        }
-      }
-
-      setInvoiceLayouts(prev => {
-        const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
-        const withExclusiveDefault = normalized.isDefault
-          ? mapped.map(record => (
-            record.id === normalized.id
-              ? { ...record, isDefault: true }
-              : { ...record, isDefault: false }
-          ))
-          : mapped;
-        return normalizeInvoiceLayouts(withExclusiveDefault);
-      });
-      if (persistedLocations.size > 0) {
-        setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
-      }
-      if (persistedSales.size > 0) {
-        setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
-      }
+    const saved = await syncRecordStrict('invoiceLayouts', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Invoice Settings',
-        description: `Updated invoice layout: ${normalized.name}`,
+        description: `Failed to update invoice layout ${normalized.name} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    const oldName = String(existing.name || '').trim();
+    const newName = String(normalized.name || '').trim();
+    const renamed = oldName && newName && normalizeText(oldName) !== normalizeText(newName);
+    const persistedLocations = new Map<string, Location>();
+    const persistedSales = new Map<string, Sale>();
+
+    if (renamed) {
+      const affectedLocations = locations
+        .filter(location => (
+          normalizeText(location.invoiceLayoutPos) === normalizeText(oldName) ||
+          normalizeText(location.invoiceLayoutSale) === normalizeText(oldName)
+        ))
+        .map(location => {
+          const matchedPos = normalizeText(location.invoiceLayoutPos) === normalizeText(oldName);
+          const matchedSale = normalizeText(location.invoiceLayoutSale) === normalizeText(oldName);
+          return {
+            ...location,
+            invoiceLayoutPos: matchedPos ? newName : location.invoiceLayoutPos,
+            invoiceLayoutSale: matchedSale ? newName : location.invoiceLayoutSale,
+          };
+        });
+      for (const location of affectedLocations) {
+        const locationSaved = await syncRecordStrict('locations', location);
+        if (!locationSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Invoice Settings',
+            description: `Failed to sync linked location ${location.name || location.id} after layout rename (${locationSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedLocations.set(location.id, location);
+      }
+
+      const affectedSales = sales
+        .filter(sale => normalizeText(sale.invoiceLayout) === normalizeText(oldName))
+        .map(sale => ({ ...sale, invoiceLayout: newName }));
+      for (const sale of affectedSales) {
+        const saleSaved = await syncRecordStrict('sales', sale);
+        if (!saleSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Invoice Settings',
+            description: `Failed to sync linked sale ${sale.invoiceNo || sale.id} after layout rename (${saleSaved.status || 0}).`,
+          });
+          continue;
+        }
+        persistedSales.set(sale.id, sale);
+      }
+    }
+
+    setInvoiceLayouts(prev => {
+      const mapped = prev.map(record => record.id === normalized.id ? normalized : record);
+      const withExclusiveDefault = normalized.isDefault
+        ? mapped.map(record => (
+          record.id === normalized.id
+            ? { ...record, isDefault: true }
+            : { ...record, isDefault: false }
+        ))
+        : mapped;
+      return normalizeInvoiceLayouts(withExclusiveDefault);
+    });
+    if (persistedLocations.size > 0) {
+      setLocations(prev => prev.map(location => persistedLocations.get(location.id) || location));
+    }
+    if (persistedSales.size > 0) {
+      setSales(prev => prev.map(sale => persistedSales.get(sale.id) || sale));
+    }
+    recordActivity({
+      action: 'Updated',
+      module: 'Invoice Settings',
+      description: `Updated invoice layout: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const deleteInvoiceLayout = (id: string): LocationMutationResult => {
+  const deleteInvoiceLayout = async (id: string): Promise<LocationMutationResult> => {
     const existing = invoiceLayouts.find(record => record.id === id);
     if (!existing) {
-      return { success: false, message: 'Invoice layout not found.' };
+      return {
+        ok: false,
+        success: false,
+        status: 404,
+        error: 'Invoice layout not found.',
+        message: 'Invoice layout not found.',
+      };
     }
     const usageByLocations = locations.filter(location =>
       normalizeText(location.invoiceLayoutPos) === normalizeText(existing.name) ||
@@ -8326,9 +8468,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Invoice Settings',
         description: `Delete invoice layout blocked for ${existing.name}: ${parts.join(', ')}`,
       });
-      return { success: false, message };
+      return {
+        ok: false,
+        success: false,
+        status: 409,
+        error: message,
+        message,
+      };
     }
-    confirmDeleteFromPostgres('invoiceLayouts', id, 'Invoice Settings', existing.name, () => {
+    const result = await confirmDeleteFromPostgres('invoiceLayouts', id, 'Invoice Settings', existing.name, async () => {
       setInvoiceLayouts(prev => normalizeInvoiceLayouts(prev.filter(record => record.id !== id)));
       recordActivity({
         action: 'Deleted',
@@ -8336,14 +8484,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Deleted invoice layout: ${existing.name}`,
       });
     });
-    return { success: true };
+    return toLocationResult(result, 'Failed to delete invoice layout from database.');
   };
 
   // ============================================================
   //  CRUD: BARCODE SETTINGS
   // ============================================================
 
-  const addBarcodeSetting = (setting: BarcodeStickerSetting) => {
+  const addBarcodeSetting = async (setting: BarcodeStickerSetting): Promise<CrudMutationResult> => {
     const normalized = normalizeBarcodeSettingRecord(setting);
     if (!normalized.name) {
       recordActivity({
@@ -8351,7 +8499,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: 'Add barcode setting blocked. Name is required.',
       });
-      return;
+      return failResult(400, 'Barcode setting name is required.');
     }
     const duplicateByName = barcodeSettings.some(record =>
       normalizeText(record.name) === normalizeText(normalized.name)
@@ -8362,37 +8510,38 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: `Add barcode setting blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Barcode setting "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('barcodeSettings', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Barcode Settings',
-          description: `Failed to add barcode setting ${normalized.name} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setBarcodeSettings(prev => {
-        const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
-        if (normalized.isDefault) {
-          return normalizeBarcodeSettings([
-            ...withoutDuplicate.map(record => ({ ...record, isDefault: false })),
-            { ...normalized, isDefault: true },
-          ]);
-        }
-        return normalizeBarcodeSettings([...withoutDuplicate, normalized]);
-      });
+
+    const saved = await syncRecordStrict('barcodeSettings', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Barcode Settings',
-        description: `Added barcode setting: ${normalized.name}`,
+        description: `Failed to add barcode setting ${normalized.name} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setBarcodeSettings(prev => {
+      const withoutDuplicate = prev.filter(record => record.id !== normalized.id);
+      if (normalized.isDefault) {
+        return normalizeBarcodeSettings([
+          ...withoutDuplicate.map(record => ({ ...record, isDefault: false })),
+          { ...normalized, isDefault: true },
+        ]);
+      }
+      return normalizeBarcodeSettings([...withoutDuplicate, normalized]);
+    });
+    recordActivity({
+      action: 'Created',
+      module: 'Barcode Settings',
+      description: `Added barcode setting: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const updateBarcodeSetting = (setting: BarcodeStickerSetting) => {
+  const updateBarcodeSetting = async (setting: BarcodeStickerSetting): Promise<CrudMutationResult> => {
     const existing = barcodeSettings.find(record => record.id === setting.id);
     if (!existing) {
       recordActivity({
@@ -8400,7 +8549,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: `Update barcode setting blocked. Setting not found: ${setting.id}`,
       });
-      return;
+      return failResult(404, 'Barcode setting not found.');
     }
     const normalized = normalizeBarcodeSettingRecord(setting, existing);
     if (!normalized.name) {
@@ -8409,7 +8558,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: `Update barcode setting blocked. Name is required: ${setting.id}`,
       });
-      return;
+      return failResult(400, 'Barcode setting name is required.');
     }
     const duplicateByName = barcodeSettings.some(record =>
       record.id !== normalized.id &&
@@ -8421,40 +8570,46 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: `Update barcode setting blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Barcode setting "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('barcodeSettings', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Barcode Settings',
-          description: `Failed to update barcode setting ${normalized.name} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setBarcodeSettings(prev => {
-        const nextRecords = prev.map(record => (
-          record.id === normalized.id
-            ? normalized
-            : normalized.isDefault
-              ? { ...record, isDefault: false }
-              : record
-        ));
-        return normalizeBarcodeSettings(nextRecords);
-      });
+    const saved = await syncRecordStrict('barcodeSettings', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Barcode Settings',
-        description: `Updated barcode setting: ${normalized.name}`,
+        description: `Failed to update barcode setting ${normalized.name} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setBarcodeSettings(prev => {
+      const nextRecords = prev.map(record => (
+        record.id === normalized.id
+          ? normalized
+          : normalized.isDefault
+            ? { ...record, isDefault: false }
+            : record
+      ));
+      return normalizeBarcodeSettings(nextRecords);
+    });
+    recordActivity({
+      action: 'Updated',
+      module: 'Barcode Settings',
+      description: `Updated barcode setting: ${normalized.name}`,
+    });
+    return result;
   };
 
-  const deleteBarcodeSetting = (id: string): LocationMutationResult => {
+  const deleteBarcodeSetting = async (id: string): Promise<LocationMutationResult> => {
     const existing = barcodeSettings.find(record => record.id === id);
     if (!existing) {
-      return { success: false, message: 'Barcode setting not found.' };
+      return {
+        ok: false,
+        success: false,
+        status: 404,
+        error: 'Barcode setting not found.',
+        message: 'Barcode setting not found.',
+      };
     }
     if (barcodeSettings.length <= 1) {
       const message = 'At least one barcode setting must remain.';
@@ -8463,9 +8618,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Barcode Settings',
         description: `Delete barcode setting blocked for ${existing.name}: minimum one setting required.`,
       });
-      return { success: false, message };
+      return {
+        ok: false,
+        success: false,
+        status: 409,
+        error: message,
+        message,
+      };
     }
-    confirmDeleteFromPostgres('barcodeSettings', id, 'Barcode Settings', existing.name, () => {
+    const result = await confirmDeleteFromPostgres('barcodeSettings', id, 'Barcode Settings', existing.name, async () => {
       setBarcodeSettings(prev => normalizeBarcodeSettings(prev.filter(record => record.id !== id)));
       recordActivity({
         action: 'Deleted',
@@ -8473,14 +8634,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Deleted barcode setting: ${existing.name}`,
       });
     });
-    return { success: true };
+    return toLocationResult(result, 'Failed to delete barcode setting from database.');
   };
 
   // ============================================================
   //  CRUD: TAX RATES
   // ============================================================
 
-  const addTaxRate = (tax: TaxRate) => {
+  const addTaxRate = async (tax: TaxRate): Promise<CrudMutationResult> => {
     const normalized = normalizeTaxRateRecord(tax, initialTaxRates[0], taxRates.length);
     const duplicateByName = taxRates.some(existing => (
       existing.name.trim().toLowerCase() === normalized.name.trim().toLowerCase()
@@ -8491,30 +8652,30 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Tax Rates',
         description: `Add tax rate blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Tax rate "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('taxRates', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Tax Rates',
-          description: `Failed to add tax rate ${normalized.name} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setTaxRates(prev => normalizeTaxRates([...prev, normalized]));
+    const saved = await syncRecordStrict('taxRates', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Added',
+        action: 'Blocked',
         module: 'Tax Rates',
-        description: `Added tax rate: ${normalized.name} (${normalized.rate}%)`,
+        description: `Failed to add tax rate ${normalized.name} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setTaxRates(prev => normalizeTaxRates([...prev, normalized]));
+    recordActivity({
+      action: 'Added',
+      module: 'Tax Rates',
+      description: `Added tax rate: ${normalized.name} (${normalized.rate}%)`,
+    });
+    return result;
   };
 
-  const updateTaxRate = (tax: TaxRate) => {
+  const updateTaxRate = async (tax: TaxRate): Promise<CrudMutationResult> => {
     const existing = taxRates.find(record => record.id === tax.id);
-    if (!existing) return;
+    if (!existing) return failResult(404, 'Tax rate not found.');
     const normalized = normalizeTaxRateRecord(tax, existing);
     const duplicateByName = taxRates.some(record => (
       record.id !== normalized.id &&
@@ -8526,39 +8687,39 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         module: 'Tax Rates',
         description: `Update tax rate blocked. Duplicate name: ${normalized.name}`,
       });
-      return;
+      return failResult(409, `Tax rate "${normalized.name}" already exists.`);
     }
-    void (async () => {
-      const saved = await syncRecordStrict('taxRates', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Tax Rates',
-          description: `Failed to update tax rate ${normalized.name} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setTaxRates(prev => normalizeTaxRates(prev.map(record => record.id === normalized.id ? normalized : record)));
+    const saved = await syncRecordStrict('taxRates', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Tax Rates',
-        description: `Updated tax rate: ${normalized.name} (${normalized.rate}%)`,
+        description: `Failed to update tax rate ${normalized.name} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setTaxRates(prev => normalizeTaxRates(prev.map(record => record.id === normalized.id ? normalized : record)));
+    recordActivity({
+      action: 'Updated',
+      module: 'Tax Rates',
+      description: `Updated tax rate: ${normalized.name} (${normalized.rate}%)`,
+    });
+    return result;
   };
 
-  const deleteTaxRate = (id: string) => {
+  const deleteTaxRate = async (id: string): Promise<CrudMutationResult> => {
     const existing = taxRates.find(record => record.id === id);
-    if (!existing) return;
+    if (!existing) return failResult(404, 'Tax rate not found.');
     if (taxRates.length <= 1) {
       recordActivity({
         action: 'Blocked',
         module: 'Tax Rates',
         description: `Delete tax rate blocked for ${existing.name}: minimum one tax rate required.`,
       });
-      return;
+      return failResult(409, 'At least one tax rate must remain.');
     }
-    confirmDeleteFromPostgres('taxRates', id, 'Tax Rates', existing.name, () => {
+    return confirmDeleteFromPostgres('taxRates', id, 'Tax Rates', existing.name, async () => {
       setTaxRates(prev => normalizeTaxRates(prev.filter(record => record.id !== id)));
       recordActivity({
         action: 'Deleted',
@@ -8572,22 +8733,60 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: CUSTOMER GROUPS
   // ============================================================
 
-  const addCustomerGroup = (group: CustomerGroup) => {
+  const addCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    void (async () => {
-      const saved = await syncRecordStrict('customerGroups', normalizedGroup);
-      if (!saved.ok) return;
-      setCustomerGroups(prev => [...prev, normalizedGroup]);
-    })();
+    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setCustomerGroups(prev => [...prev, normalizedGroup]);
+    return result;
   };
-  const updateCustomerGroup = (group: CustomerGroup) => {
+  const updateCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
     const existingGroup = customerGroups.find(g => g.id === group.id);
     const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    void (async () => {
-      const saved = await syncRecordStrict('customerGroups', normalizedGroup);
-      if (!saved.ok) return;
+    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const linkedCustomers = customers.filter((customer) => {
+      const linkedById = customer.customerGroupId === group.id;
+      const linkedByLegacyName = !customer.customerGroupId &&
+        !!existingGroup &&
+        normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
+      return linkedById || linkedByLegacyName;
+    });
+    const persistedById = new Map<string, Customer>();
+    for (const customer of linkedCustomers) {
+      const updatedCustomer: Customer = {
+        ...customer,
+        customerGroupId: normalizedGroup.id,
+        customerGroup: normalizedGroup.name,
+      };
+      const customerSaved = await syncRecordStrict('customers', updatedCustomer);
+      if (!customerSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Customer Groups',
+          description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group update (${customerSaved.status || 0}).`,
+        });
+        continue;
+      }
+      persistedById.set(updatedCustomer.id, updatedCustomer);
+    }
+    setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
+    if (persistedById.size > 0) {
+      setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
+    }
+    return result;
+  };
+  const deleteCustomerGroup = async (id: string, reassignToGroupId?: string): Promise<CrudMutationResult> => {
+    const existingGroup = customerGroups.find(g => g.id === id);
+    const reassignGroup = reassignToGroupId
+      ? customerGroups.find(g => g.id === reassignToGroupId)
+      : undefined;
+    return confirmDeleteFromPostgres('customerGroups', id, 'Customer Groups', existingGroup?.name || id, async () => {
+      setCustomerGroups(prev => prev.filter(g => g.id !== id));
       const linkedCustomers = customers.filter((customer) => {
-        const linkedById = customer.customerGroupId === group.id;
+        const linkedById = customer.customerGroupId === id;
         const linkedByLegacyName = !customer.customerGroupId &&
           !!existingGroup &&
           normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
@@ -8595,71 +8794,31 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       const persistedById = new Map<string, Customer>();
       for (const customer of linkedCustomers) {
-        const updatedCustomer: Customer = {
-          ...customer,
-          customerGroupId: normalizedGroup.id,
-          customerGroup: normalizedGroup.name,
-        };
+        const updatedCustomer: Customer = (reassignGroup && reassignGroup.id !== id)
+          ? {
+              ...customer,
+              customerGroupId: reassignGroup.id,
+              customerGroup: reassignGroup.name,
+            }
+          : {
+              ...customer,
+              customerGroupId: '',
+              customerGroup: '',
+            };
         const customerSaved = await syncRecordStrict('customers', updatedCustomer);
         if (!customerSaved.ok) {
           recordActivity({
             action: 'Blocked',
             module: 'Customer Groups',
-            description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group update (${customerSaved.status || 0}).`,
+            description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group delete (${customerSaved.status || 0}).`,
           });
           continue;
         }
         persistedById.set(updatedCustomer.id, updatedCustomer);
       }
-      setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
       if (persistedById.size > 0) {
         setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
       }
-    })();
-  };
-  const deleteCustomerGroup = (id: string, reassignToGroupId?: string) => {
-    const existingGroup = customerGroups.find(g => g.id === id);
-    const reassignGroup = reassignToGroupId
-      ? customerGroups.find(g => g.id === reassignToGroupId)
-      : undefined;
-    confirmDeleteFromPostgres('customerGroups', id, 'Customer Groups', existingGroup?.name || id, () => {
-      setCustomerGroups(prev => prev.filter(g => g.id !== id));
-      void (async () => {
-        const linkedCustomers = customers.filter((customer) => {
-          const linkedById = customer.customerGroupId === id;
-          const linkedByLegacyName = !customer.customerGroupId &&
-            !!existingGroup &&
-            normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
-          return linkedById || linkedByLegacyName;
-        });
-        const persistedById = new Map<string, Customer>();
-        for (const customer of linkedCustomers) {
-          const updatedCustomer: Customer = (reassignGroup && reassignGroup.id !== id)
-            ? {
-                ...customer,
-                customerGroupId: reassignGroup.id,
-                customerGroup: reassignGroup.name,
-              }
-            : {
-                ...customer,
-                customerGroupId: '',
-                customerGroup: '',
-              };
-          const customerSaved = await syncRecordStrict('customers', updatedCustomer);
-          if (!customerSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Customer Groups',
-              description: `Failed to sync linked customer ${updatedCustomer.businessName || updatedCustomer.name || updatedCustomer.id} after group delete (${customerSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedById.set(updatedCustomer.id, updatedCustomer);
-        }
-        if (persistedById.size > 0) {
-          setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
-        }
-      })();
     });
   };
 
@@ -8667,45 +8826,45 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCT CATEGORIES
   // ============================================================
 
-  const addProductCategory = (cat: ProductCategory) => {
+  const addProductCategory = async (cat: ProductCategory): Promise<CrudMutationResult> => {
     const normalizedCategory: ProductCategory = {
       ...cat,
       name: String(cat.name || '').trim() || 'Uncategorized',
       code: String(cat.code || '').trim(),
       description: String(cat.description || '').trim(),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productCategories', normalizedCategory);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => (
-        !product.categoryId &&
-        normalizeText(product.category) === normalizeText(normalizedCategory.name)
-      ));
-      const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
-        const updatedProduct: Product = {
-          ...product,
-          categoryId: normalizedCategory.id,
-          category: normalizedCategory.name,
-        };
-        const productSaved = await syncRecordStrict('products', updatedProduct);
-        if (!productSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Product Categories',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category add (${productSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedProducts.set(updatedProduct.id, updatedProduct);
+    const saved = await syncRecordStrict('productCategories', normalizedCategory);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => (
+      !product.categoryId &&
+      normalizeText(product.category) === normalizeText(normalizedCategory.name)
+    ));
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = {
+        ...product,
+        categoryId: normalizedCategory.id,
+        category: normalizedCategory.name,
+      };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Product Categories',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category add (${productSaved.status || 0}).`,
+        });
+        continue;
       }
-      setProductCategories(prev => [...prev, normalizedCategory]);
-      if (persistedProducts.size > 0) {
-        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-      }
-    })();
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setProductCategories(prev => [...prev, normalizedCategory]);
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
   };
-  const updateProductCategory = (cat: ProductCategory) => {
+  const updateProductCategory = async (cat: ProductCategory): Promise<CrudMutationResult> => {
     const existingCategory = productCategories.find(category => category.id === cat.id);
     const normalizedCategory: ProductCategory = {
       ...cat,
@@ -8713,43 +8872,43 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       code: String(cat.code || '').trim(),
       description: String(cat.description || '').trim(),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productCategories', normalizedCategory);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => {
-        const linkedById = product.categoryId === normalizedCategory.id;
-        const linkedByLegacyName = !product.categoryId &&
-          !!existingCategory &&
-          normalizeText(product.category) === normalizeText(existingCategory.name);
-        return linkedById || linkedByLegacyName;
-      });
-      const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
-        const updatedProduct: Product = {
-          ...product,
-          categoryId: normalizedCategory.id,
-          category: normalizedCategory.name,
-        };
-        const productSaved = await syncRecordStrict('products', updatedProduct);
-        if (!productSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Product Categories',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category update (${productSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedProducts.set(updatedProduct.id, updatedProduct);
+    const saved = await syncRecordStrict('productCategories', normalizedCategory);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => {
+      const linkedById = product.categoryId === normalizedCategory.id;
+      const linkedByLegacyName = !product.categoryId &&
+        !!existingCategory &&
+        normalizeText(product.category) === normalizeText(existingCategory.name);
+      return linkedById || linkedByLegacyName;
+    });
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = {
+        ...product,
+        categoryId: normalizedCategory.id,
+        category: normalizedCategory.name,
+      };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Product Categories',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category update (${productSaved.status || 0}).`,
+        });
+        continue;
       }
-      setProductCategories(prev => prev.map(category => category.id === cat.id ? normalizedCategory : category));
-      if (persistedProducts.size > 0) {
-        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-      }
-    })();
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setProductCategories(prev => prev.map(category => category.id === cat.id ? normalizedCategory : category));
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
   };
-  const deleteProductCategory = (id: string, reassignToCategoryId?: string) => {
+  const deleteProductCategory = async (id: string, reassignToCategoryId?: string): Promise<CrudMutationResult> => {
     const existingCategory = productCategories.find(category => category.id === id);
-    if (!existingCategory) return;
+    if (!existingCategory) return failResult(404, 'Product category not found.');
 
     const explicitReplacement = reassignToCategoryId
       ? productCategories.find(category => category.id === reassignToCategoryId && category.id !== id)
@@ -8769,62 +8928,60 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
     const replacementCategory = explicitReplacement || fallbackUncategorized || createdUncategorized;
 
-    confirmDeleteFromPostgres('productCategories', id, 'Product Categories', existingCategory.name || id, () => {
-      void (async () => {
-        let ensuredReplacement = replacementCategory;
-        if (createdUncategorized && !productCategories.some(category => normalizeText(category.name) === 'uncategorized')) {
-          const createdSaved = await syncRecordStrict('productCategories', createdUncategorized);
-          if (!createdSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Product Categories',
-              description: `Failed to create fallback category "Uncategorized" after delete (${createdSaved.status || 0}).`,
-            });
-            ensuredReplacement = fallbackUncategorized || explicitReplacement;
-          }
+    return confirmDeleteFromPostgres('productCategories', id, 'Product Categories', existingCategory.name || id, async () => {
+      let ensuredReplacement = replacementCategory;
+      if (createdUncategorized && !productCategories.some(category => normalizeText(category.name) === 'uncategorized')) {
+        const createdSaved = await syncRecordStrict('productCategories', createdUncategorized);
+        if (!createdSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Categories',
+            description: `Failed to create fallback category "Uncategorized" after delete (${createdSaved.status || 0}).`,
+          });
+          ensuredReplacement = fallbackUncategorized || explicitReplacement;
         }
+      }
 
-        setProductCategories(prev => {
-          let next = prev;
-          if (
-            createdUncategorized &&
-            ensuredReplacement?.id === createdUncategorized.id &&
-            !prev.some(category => normalizeText(category.name) === 'uncategorized')
-          ) {
-            next = [...next, createdUncategorized];
-          }
-          return next.filter(category => category.id !== id);
-        });
+      setProductCategories(prev => {
+        let next = prev;
+        if (
+          createdUncategorized &&
+          ensuredReplacement?.id === createdUncategorized.id &&
+          !prev.some(category => normalizeText(category.name) === 'uncategorized')
+        ) {
+          next = [...next, createdUncategorized];
+        }
+        return next.filter(category => category.id !== id);
+      });
 
-        if (!ensuredReplacement) return;
-        const linkedProducts = products.filter((product) => {
-          const linkedById = product.categoryId === id;
-          const linkedByLegacyName = !product.categoryId &&
-            normalizeText(product.category) === normalizeText(existingCategory.name);
-          return linkedById || linkedByLegacyName;
-        });
-        const persistedProducts = new Map<string, Product>();
-        for (const product of linkedProducts) {
-          const updatedProduct: Product = {
-            ...product,
-            categoryId: ensuredReplacement.id,
-            category: ensuredReplacement.name,
-          };
-          const productSaved = await syncRecordStrict('products', updatedProduct);
-          if (!productSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Product Categories',
-              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category delete (${productSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedProducts.set(updatedProduct.id, updatedProduct);
+      if (!ensuredReplacement) return;
+      const linkedProducts = products.filter((product) => {
+        const linkedById = product.categoryId === id;
+        const linkedByLegacyName = !product.categoryId &&
+          normalizeText(product.category) === normalizeText(existingCategory.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of linkedProducts) {
+        const updatedProduct: Product = {
+          ...product,
+          categoryId: ensuredReplacement.id,
+          category: ensuredReplacement.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Categories',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after category delete (${productSaved.status || 0}).`,
+          });
+          continue;
         }
-        if (persistedProducts.size > 0) {
-          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-        }
-      })();
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
     });
   };
 
@@ -8832,87 +8989,87 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCT BRANDS
   // ============================================================
 
-  const addProductBrand = (brand: ProductBrand) => {
+  const addProductBrand = async (brand: ProductBrand): Promise<CrudMutationResult> => {
     const normalizedBrand: ProductBrand = {
       ...brand,
       name: String(brand.name || '').trim() || '--',
       note: String(brand.note || '').trim(),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productBrands', normalizedBrand);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => (
-        !product.brandId &&
-        normalizeText(product.brand) === normalizeText(normalizedBrand.name)
-      ));
-      const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
-        const updatedProduct: Product = {
-          ...product,
-          brandId: normalizedBrand.id,
-          brand: normalizedBrand.name,
-        };
-        const productSaved = await syncRecordStrict('products', updatedProduct);
-        if (!productSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Product Brands',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand add (${productSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedProducts.set(updatedProduct.id, updatedProduct);
+    const saved = await syncRecordStrict('productBrands', normalizedBrand);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => (
+      !product.brandId &&
+      normalizeText(product.brand) === normalizeText(normalizedBrand.name)
+    ));
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = {
+        ...product,
+        brandId: normalizedBrand.id,
+        brand: normalizedBrand.name,
+      };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Product Brands',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand add (${productSaved.status || 0}).`,
+        });
+        continue;
       }
-      setProductBrands(prev => [...prev, normalizedBrand]);
-      if (persistedProducts.size > 0) {
-        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-      }
-    })();
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setProductBrands(prev => [...prev, normalizedBrand]);
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
   };
-  const updateProductBrand = (brand: ProductBrand) => {
+  const updateProductBrand = async (brand: ProductBrand): Promise<CrudMutationResult> => {
     const existingBrand = productBrands.find(currentBrand => currentBrand.id === brand.id);
     const normalizedBrand: ProductBrand = {
       ...brand,
       name: String(brand.name || '').trim() || '--',
       note: String(brand.note || '').trim(),
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productBrands', normalizedBrand);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => {
-        const linkedById = product.brandId === normalizedBrand.id;
-        const linkedByLegacyName = !product.brandId &&
-          !!existingBrand &&
-          normalizeText(product.brand) === normalizeText(existingBrand.name);
-        return linkedById || linkedByLegacyName;
-      });
-      const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
-        const updatedProduct: Product = {
-          ...product,
-          brandId: normalizedBrand.id,
-          brand: normalizedBrand.name,
-        };
-        const productSaved = await syncRecordStrict('products', updatedProduct);
-        if (!productSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Product Brands',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand update (${productSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedProducts.set(updatedProduct.id, updatedProduct);
+    const saved = await syncRecordStrict('productBrands', normalizedBrand);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => {
+      const linkedById = product.brandId === normalizedBrand.id;
+      const linkedByLegacyName = !product.brandId &&
+        !!existingBrand &&
+        normalizeText(product.brand) === normalizeText(existingBrand.name);
+      return linkedById || linkedByLegacyName;
+    });
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = {
+        ...product,
+        brandId: normalizedBrand.id,
+        brand: normalizedBrand.name,
+      };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Product Brands',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand update (${productSaved.status || 0}).`,
+        });
+        continue;
       }
-      setProductBrands(prev => prev.map(currentBrand => currentBrand.id === brand.id ? normalizedBrand : currentBrand));
-      if (persistedProducts.size > 0) {
-        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-      }
-    })();
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setProductBrands(prev => prev.map(currentBrand => currentBrand.id === brand.id ? normalizedBrand : currentBrand));
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
   };
-  const deleteProductBrand = (id: string, reassignToBrandId?: string) => {
+  const deleteProductBrand = async (id: string, reassignToBrandId?: string): Promise<CrudMutationResult> => {
     const existingBrand = productBrands.find(brand => brand.id === id);
-    if (!existingBrand) return;
+    if (!existingBrand) return failResult(404, 'Product brand not found.');
 
     const explicitReplacement = reassignToBrandId
       ? productBrands.find(brand => brand.id === reassignToBrandId && brand.id !== id)
@@ -8931,62 +9088,60 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           };
     const replacementBrand = explicitReplacement || fallbackUnknown || createdUnknownBrand;
 
-    confirmDeleteFromPostgres('productBrands', id, 'Product Brands', existingBrand.name || id, () => {
-      void (async () => {
-        let ensuredReplacement = replacementBrand;
-        if (createdUnknownBrand && !productBrands.some((brand) => normalizeText(brand.name) === '--')) {
-          const createdSaved = await syncRecordStrict('productBrands', createdUnknownBrand);
-          if (!createdSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Product Brands',
-              description: `Failed to create fallback brand "--" after delete (${createdSaved.status || 0}).`,
-            });
-            ensuredReplacement = fallbackUnknown || explicitReplacement;
-          }
+    return confirmDeleteFromPostgres('productBrands', id, 'Product Brands', existingBrand.name || id, async () => {
+      let ensuredReplacement = replacementBrand;
+      if (createdUnknownBrand && !productBrands.some((brand) => normalizeText(brand.name) === '--')) {
+        const createdSaved = await syncRecordStrict('productBrands', createdUnknownBrand);
+        if (!createdSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Brands',
+            description: `Failed to create fallback brand "--" after delete (${createdSaved.status || 0}).`,
+          });
+          ensuredReplacement = fallbackUnknown || explicitReplacement;
         }
+      }
 
-        setProductBrands(prev => {
-          let next = prev;
-          if (
-            createdUnknownBrand &&
-            ensuredReplacement?.id === createdUnknownBrand.id &&
-            !prev.some((brand) => normalizeText(brand.name) === '--')
-          ) {
-            next = [...next, createdUnknownBrand];
-          }
-          return next.filter(brand => brand.id !== id);
-        });
+      setProductBrands(prev => {
+        let next = prev;
+        if (
+          createdUnknownBrand &&
+          ensuredReplacement?.id === createdUnknownBrand.id &&
+          !prev.some((brand) => normalizeText(brand.name) === '--')
+        ) {
+          next = [...next, createdUnknownBrand];
+        }
+        return next.filter(brand => brand.id !== id);
+      });
 
-        if (!ensuredReplacement) return;
-        const linkedProducts = products.filter((product) => {
-          const linkedById = product.brandId === id;
-          const linkedByLegacyName = !product.brandId &&
-            normalizeText(product.brand) === normalizeText(existingBrand.name);
-          return linkedById || linkedByLegacyName;
-        });
-        const persistedProducts = new Map<string, Product>();
-        for (const product of linkedProducts) {
-          const updatedProduct: Product = {
-            ...product,
-            brandId: ensuredReplacement.id,
-            brand: ensuredReplacement.name,
-          };
-          const productSaved = await syncRecordStrict('products', updatedProduct);
-          if (!productSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Product Brands',
-              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand delete (${productSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedProducts.set(updatedProduct.id, updatedProduct);
+      if (!ensuredReplacement) return;
+      const linkedProducts = products.filter((product) => {
+        const linkedById = product.brandId === id;
+        const linkedByLegacyName = !product.brandId &&
+          normalizeText(product.brand) === normalizeText(existingBrand.name);
+        return linkedById || linkedByLegacyName;
+      });
+      const persistedProducts = new Map<string, Product>();
+      for (const product of linkedProducts) {
+        const updatedProduct: Product = {
+          ...product,
+          brandId: ensuredReplacement.id,
+          brand: ensuredReplacement.name,
+        };
+        const productSaved = await syncRecordStrict('products', updatedProduct);
+        if (!productSaved.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Product Brands',
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after brand delete (${productSaved.status || 0}).`,
+          });
+          continue;
         }
-        if (persistedProducts.size > 0) {
-          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-        }
-      })();
+        persistedProducts.set(updatedProduct.id, updatedProduct);
+      }
+      if (persistedProducts.size > 0) {
+        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+      }
     });
   };
 
@@ -8994,22 +9149,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCT UNITS
   // ============================================================
 
-  const addProductUnit = (unit: ProductUnit) => {
-    void (async () => {
-      const saved = await syncRecordStrict('productUnits', unit);
-      if (!saved.ok) return;
-      setProductUnits(prev => [...prev, unit]);
-    })();
+  const addProductUnit = async (unit: ProductUnit): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('productUnits', unit);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setProductUnits(prev => [...prev, unit]);
+    return result;
   };
-  const updateProductUnit = (unit: ProductUnit) => {
-    void (async () => {
-      const saved = await syncRecordStrict('productUnits', unit);
-      if (!saved.ok) return;
-      setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
-    })();
+  const updateProductUnit = async (unit: ProductUnit): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('productUnits', unit);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setProductUnits(prev => prev.map(u => u.id === unit.id ? unit : u));
+    return result;
   };
-  const deleteProductUnit = (id: string) => {
-    confirmDeleteFromPostgres('productUnits', id, 'Product Units', id, () => {
+  const deleteProductUnit = async (id: string): Promise<CrudMutationResult> => {
+    return confirmDeleteFromPostgres('productUnits', id, 'Product Units', id, async () => {
       setProductUnits(prev => prev.filter(u => u.id !== id));
     });
   };
@@ -9018,7 +9173,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: PRODUCT WARRANTIES
   // ============================================================
 
-  const addWarranty = (warranty: ProductWarranty) => {
+  const addWarranty = async (warranty: ProductWarranty): Promise<CrudMutationResult> => {
     const parsedDuration = Number(warranty.duration);
     const normalizedWarranty: ProductWarranty = {
       ...warranty,
@@ -9027,34 +9182,34 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       duration: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1,
       durationUnit: warranty.durationUnit || 'Months',
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => {
-        const linked = resolveProductWarrantyLink(product.warranty, [normalizedWarranty]);
-        return Boolean(linked.id);
-      });
-      const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
-        const updatedProduct: Product = { ...product, warranty: normalizedWarranty.id };
-        const productSaved = await syncRecordStrict('products', updatedProduct);
-        if (!productSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Warranties',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty add (${productSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedProducts.set(updatedProduct.id, updatedProduct);
+    const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => {
+      const linked = resolveProductWarrantyLink(product.warranty, [normalizedWarranty]);
+      return Boolean(linked.id);
+    });
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = { ...product, warranty: normalizedWarranty.id };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Warranties',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty add (${productSaved.status || 0}).`,
+        });
+        continue;
       }
-      setWarranties(prev => [...prev, normalizedWarranty]);
-      if (persistedProducts.size > 0) {
-        setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-      }
-    })();
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setWarranties(prev => [...prev, normalizedWarranty]);
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
   };
-  const updateWarranty = (warranty: ProductWarranty) => {
+  const updateWarranty = async (warranty: ProductWarranty): Promise<CrudMutationResult> => {
     const existingWarranty = warranties.find(currentWarranty => currentWarranty.id === warranty.id);
     const parsedDuration = Number(warranty.duration);
     const normalizedWarranty: ProductWarranty = {
@@ -9064,75 +9219,73 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       duration: Number.isFinite(parsedDuration) && parsedDuration > 0 ? parsedDuration : 1,
       durationUnit: warranty.durationUnit || 'Months',
     };
-    void (async () => {
-      const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
-      if (!saved.ok) return;
-      const productsToLink = products.filter((product) => {
-        const linkedById = product.warranty === normalizedWarranty.id;
-        const linkedByLegacyName = !!existingWarranty &&
-          normalizeText(product.warranty) === normalizeText(existingWarranty.name);
+    const saved = await syncRecordStrict('productWarranties', normalizedWarranty);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const productsToLink = products.filter((product) => {
+      const linkedById = product.warranty === normalizedWarranty.id;
+      const linkedByLegacyName = !!existingWarranty &&
+        normalizeText(product.warranty) === normalizeText(existingWarranty.name);
+      return linkedById || linkedByLegacyName;
+    });
+    const persistedProducts = new Map<string, Product>();
+    for (const product of productsToLink) {
+      const updatedProduct: Product = {
+        ...product,
+        warranty: normalizedWarranty.id,
+      };
+      const productSaved = await syncRecordStrict('products', updatedProduct);
+      if (!productSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Warranties',
+          description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty update (${productSaved.status || 0}).`,
+        });
+        continue;
+      }
+      persistedProducts.set(updatedProduct.id, updatedProduct);
+    }
+    setWarranties(prev => prev.map(currentWarranty => currentWarranty.id === warranty.id ? normalizedWarranty : currentWarranty));
+    if (persistedProducts.size > 0) {
+      setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
+    }
+    return result;
+  };
+  const deleteWarranty = async (id: string, reassignToWarrantyId?: string): Promise<CrudMutationResult> => {
+    const existingWarranty = warranties.find(warranty => warranty.id === id);
+    if (!existingWarranty) return failResult(404, 'Warranty not found.');
+
+    const replacementWarranty = reassignToWarrantyId
+      ? warranties.find(warranty => warranty.id === reassignToWarrantyId && warranty.id !== id)
+      : undefined;
+
+    return confirmDeleteFromPostgres('productWarranties', id, 'Product Warranties', existingWarranty.name || id, async () => {
+      setWarranties(prev => prev.filter(warranty => warranty.id !== id));
+      const linkedProducts = products.filter((product) => {
+        const linkedById = product.warranty === id;
+        const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
         return linkedById || linkedByLegacyName;
       });
       const persistedProducts = new Map<string, Product>();
-      for (const product of productsToLink) {
+      for (const product of linkedProducts) {
         const updatedProduct: Product = {
           ...product,
-          warranty: normalizedWarranty.id,
+          warranty: replacementWarranty?.id || undefined,
         };
         const productSaved = await syncRecordStrict('products', updatedProduct);
         if (!productSaved.ok) {
           recordActivity({
             action: 'Blocked',
             module: 'Warranties',
-            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty update (${productSaved.status || 0}).`,
+            description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty delete (${productSaved.status || 0}).`,
           });
           continue;
         }
         persistedProducts.set(updatedProduct.id, updatedProduct);
       }
-      setWarranties(prev => prev.map(currentWarranty => currentWarranty.id === warranty.id ? normalizedWarranty : currentWarranty));
       if (persistedProducts.size > 0) {
         setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
       }
-    })();
-  };
-  const deleteWarranty = (id: string, reassignToWarrantyId?: string) => {
-    const existingWarranty = warranties.find(warranty => warranty.id === id);
-    if (!existingWarranty) return;
-
-    const replacementWarranty = reassignToWarrantyId
-      ? warranties.find(warranty => warranty.id === reassignToWarrantyId && warranty.id !== id)
-      : undefined;
-
-    confirmDeleteFromPostgres('productWarranties', id, 'Product Warranties', existingWarranty.name || id, () => {
-      setWarranties(prev => prev.filter(warranty => warranty.id !== id));
-      void (async () => {
-        const linkedProducts = products.filter((product) => {
-          const linkedById = product.warranty === id;
-          const linkedByLegacyName = normalizeText(product.warranty) === normalizeText(existingWarranty.name);
-          return linkedById || linkedByLegacyName;
-        });
-        const persistedProducts = new Map<string, Product>();
-        for (const product of linkedProducts) {
-          const updatedProduct: Product = {
-            ...product,
-            warranty: replacementWarranty?.id || undefined,
-          };
-          const productSaved = await syncRecordStrict('products', updatedProduct);
-          if (!productSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Warranties',
-              description: `Failed to sync linked product ${updatedProduct.name || updatedProduct.sku || updatedProduct.id} after warranty delete (${productSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedProducts.set(updatedProduct.id, updatedProduct);
-        }
-        if (persistedProducts.size > 0) {
-          setProducts(prev => prev.map(product => persistedProducts.get(product.id) || product));
-        }
-      })();
     });
   };
 
@@ -9140,65 +9293,100 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: SELLING PRICE GROUPS
   // ============================================================
 
-  const addProductVariation = (v: ProductVariation) => {
-    void (async () => {
-      const saved = await syncRecordStrict('productVariations', v);
-      if (!saved.ok) return;
-      setProductVariations(prev => [...prev, v]);
-    })();
+  const addProductVariation = async (v: ProductVariation): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('productVariations', v);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setProductVariations(prev => [...prev, v]);
+    return result;
   };
-  const updateProductVariation = (v: ProductVariation) => {
-    void (async () => {
-      const saved = await syncRecordStrict('productVariations', v);
-      if (!saved.ok) return;
-      setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
-    })();
+  const updateProductVariation = async (v: ProductVariation): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('productVariations', v);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setProductVariations(prev => prev.map(x => x.id === v.id ? v : x));
+    return result;
   };
-  const deleteProductVariation = (id: string) => {
-    confirmDeleteFromPostgres('productVariations', id, 'Product Variations', id, () => {
+  const deleteProductVariation = async (id: string): Promise<CrudMutationResult> => {
+    return confirmDeleteFromPostgres('productVariations', id, 'Product Variations', id, async () => {
       setProductVariations(prev => prev.filter(x => x.id !== id));
     });
   };
 
-  const addSellingPriceGroup = (group: SellingPriceGroup) => {
-    void (async () => {
-      const saved = await syncRecordStrict('sellingPriceGroups', group);
-      if (!saved.ok) return;
-      const groupsToLink = customerGroups.filter((customerGroup) => (
-        !customerGroup.sellingPriceGroupId &&
-        normalizeText(customerGroup.sellingPriceGroup) === normalizeText(group.name)
-      ));
-      const persistedGroups = new Map<string, CustomerGroup>();
-      for (const customerGroup of groupsToLink) {
-        const updatedGroup: CustomerGroup = {
-          ...customerGroup,
-          sellingPriceGroupId: group.id,
-          sellingPriceGroup: group.name,
-        };
-        const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
-        if (!groupSaved.ok) {
-          recordActivity({
-            action: 'Blocked',
-            module: 'Selling Price Groups',
-            description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group add (${groupSaved.status || 0}).`,
-          });
-          continue;
-        }
-        persistedGroups.set(updatedGroup.id, updatedGroup);
+  const addSellingPriceGroup = async (group: SellingPriceGroup): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('sellingPriceGroups', group);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const groupsToLink = customerGroups.filter((customerGroup) => (
+      !customerGroup.sellingPriceGroupId &&
+      normalizeText(customerGroup.sellingPriceGroup) === normalizeText(group.name)
+    ));
+    const persistedGroups = new Map<string, CustomerGroup>();
+    for (const customerGroup of groupsToLink) {
+      const updatedGroup: CustomerGroup = {
+        ...customerGroup,
+        sellingPriceGroupId: group.id,
+        sellingPriceGroup: group.name,
+      };
+      const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
+      if (!groupSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Selling Price Groups',
+          description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group add (${groupSaved.status || 0}).`,
+        });
+        continue;
       }
-      setSellingPriceGroups(prev => [...prev, group]);
-      if (persistedGroups.size > 0) {
-        setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
-      }
-    })();
+      persistedGroups.set(updatedGroup.id, updatedGroup);
+    }
+    setSellingPriceGroups(prev => [...prev, group]);
+    if (persistedGroups.size > 0) {
+      setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
+    }
+    return result;
   };
-  const updateSellingPriceGroup = (group: SellingPriceGroup) => {
+  const updateSellingPriceGroup = async (group: SellingPriceGroup): Promise<CrudMutationResult> => {
     const existing = sellingPriceGroups.find(g => g.id === group.id);
-    void (async () => {
-      const saved = await syncRecordStrict('sellingPriceGroups', group);
-      if (!saved.ok) return;
+    const saved = await syncRecordStrict('sellingPriceGroups', group);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const groupsToLink = customerGroups.filter((customerGroup) => {
+      const linkedById = customerGroup.sellingPriceGroupId === group.id;
+      const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
+        !!existing &&
+        normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
+      return linkedById || linkedByLegacyName;
+    });
+    const persistedGroups = new Map<string, CustomerGroup>();
+    for (const customerGroup of groupsToLink) {
+      const updatedGroup: CustomerGroup = {
+        ...customerGroup,
+        sellingPriceGroupId: group.id,
+        sellingPriceGroup: group.name,
+      };
+      const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
+      if (!groupSaved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Selling Price Groups',
+          description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group update (${groupSaved.status || 0}).`,
+        });
+        continue;
+      }
+      persistedGroups.set(updatedGroup.id, updatedGroup);
+    }
+    setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
+    if (persistedGroups.size > 0) {
+      setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
+    }
+    return result;
+  };
+  const deleteSellingPriceGroup = async (id: string): Promise<CrudMutationResult> => {
+    const existing = sellingPriceGroups.find(g => g.id === id);
+    return confirmDeleteFromPostgres('sellingPriceGroups', id, 'Selling Price Groups', existing?.name || id, async () => {
+      setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
       const groupsToLink = customerGroups.filter((customerGroup) => {
-        const linkedById = customerGroup.sellingPriceGroupId === group.id;
+        const linkedById = customerGroup.sellingPriceGroupId === id;
         const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
           !!existing &&
           normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
@@ -9208,60 +9396,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       for (const customerGroup of groupsToLink) {
         const updatedGroup: CustomerGroup = {
           ...customerGroup,
-          sellingPriceGroupId: group.id,
-          sellingPriceGroup: group.name,
+          sellingPriceGroupId: '',
+          sellingPriceGroup: '',
         };
         const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
         if (!groupSaved.ok) {
           recordActivity({
             action: 'Blocked',
             module: 'Selling Price Groups',
-            description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group update (${groupSaved.status || 0}).`,
+            description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group delete (${groupSaved.status || 0}).`,
           });
           continue;
         }
         persistedGroups.set(updatedGroup.id, updatedGroup);
       }
-      setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
       if (persistedGroups.size > 0) {
         setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
       }
-    })();
-  };
-  const deleteSellingPriceGroup = (id: string) => {
-    const existing = sellingPriceGroups.find(g => g.id === id);
-    confirmDeleteFromPostgres('sellingPriceGroups', id, 'Selling Price Groups', existing?.name || id, () => {
-      setSellingPriceGroups(prev => prev.filter(g => g.id !== id));
-      void (async () => {
-        const groupsToLink = customerGroups.filter((customerGroup) => {
-          const linkedById = customerGroup.sellingPriceGroupId === id;
-          const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
-            !!existing &&
-            normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
-          return linkedById || linkedByLegacyName;
-        });
-        const persistedGroups = new Map<string, CustomerGroup>();
-        for (const customerGroup of groupsToLink) {
-          const updatedGroup: CustomerGroup = {
-            ...customerGroup,
-            sellingPriceGroupId: '',
-            sellingPriceGroup: '',
-          };
-          const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
-          if (!groupSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Selling Price Groups',
-              description: `Failed to sync linked customer group ${updatedGroup.name || updatedGroup.id} after selling price group delete (${groupSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedGroups.set(updatedGroup.id, updatedGroup);
-        }
-        if (persistedGroups.size > 0) {
-          setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
-        }
-      })();
     });
   };
 
@@ -9269,49 +9420,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: DISCOUNTS
   // ============================================================
 
-  const addDiscount = (discount: Discount) => {
+  const addDiscount = async (discount: Discount): Promise<CrudMutationResult> => {
     const normalized = normalizeDiscountRecord(discount);
-    void (async () => {
-      const saved = await syncRecordStrict('discounts', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Discounts',
-          description: `Failed to add discount ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setDiscounts(prev => [...prev, normalized]);
+    const saved = await syncRecordStrict('discounts', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Created',
+        action: 'Blocked',
         module: 'Discounts',
-        description: `Added discount: ${normalized.name || normalized.id}`,
+        description: `Failed to add discount ${normalized.name || normalized.id} to Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setDiscounts(prev => [...prev, normalized]);
+    recordActivity({
+      action: 'Created',
+      module: 'Discounts',
+      description: `Added discount: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const updateDiscount = (discount: Discount) => {
+  const updateDiscount = async (discount: Discount): Promise<CrudMutationResult> => {
     const normalized = normalizeDiscountRecord(discount);
-    void (async () => {
-      const saved = await syncRecordStrict('discounts', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Discounts',
-          description: `Failed to update discount ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setDiscounts(prev => prev.map(d => d.id === discount.id ? normalized : d));
+    const saved = await syncRecordStrict('discounts', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Discounts',
-        description: `Updated discount: ${normalized.name || normalized.id}`,
+        description: `Failed to update discount ${normalized.name || normalized.id} in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setDiscounts(prev => prev.map(d => d.id === discount.id ? normalized : d));
+    recordActivity({
+      action: 'Updated',
+      module: 'Discounts',
+      description: `Updated discount: ${normalized.name || normalized.id}`,
+    });
+    return result;
   };
-  const deleteDiscount = (id: string) => {
+  const deleteDiscount = async (id: string): Promise<CrudMutationResult> => {
     const existing = discounts.find(d => d.id === id);
-    confirmDeleteFromPostgres('discounts', id, 'Discounts', existing?.name || existing?.id || id, () => {
+    return confirmDeleteFromPostgres('discounts', id, 'Discounts', existing?.name || existing?.id || id, async () => {
       setDiscounts(prev => prev.filter(d => d.id !== id));
       recordActivity({
         action: 'Deleted',
@@ -9325,26 +9476,63 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  SETTINGS
   // ============================================================
 
-  const updateSettings = (newSettings: AppSettings) => {
-    if (!enforcePermissionBoundary('Settings', 'Access business settings', 'Update settings')) return;
+  const updateSettings = async (newSettings: AppSettings): Promise<CrudMutationResult> => {
+    if (!enforcePermissionBoundary('Settings', 'Access business settings', 'Update settings')) {
+      return failResult(403, 'Missing permission to update settings.');
+    }
     const normalized = normalizeAppSettings(newSettings);
-    void (async () => {
-      const saved = await syncRecordStrict('settings', normalized);
-      if (!saved.ok) {
-        recordActivity({
-          action: 'Blocked',
-          module: 'Settings',
-          description: `Failed to update settings in Postgres (${saved.status || 0}).`,
-        });
-        return;
-      }
-      setSettings(normalized);
+    const saved = await syncRecordStrict('settings', normalized);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
       recordActivity({
-        action: 'Updated',
+        action: 'Blocked',
         module: 'Settings',
-        description: 'Updated application settings',
+        description: `Failed to update settings in Postgres (${saved.status || 0}).`,
       });
-    })();
+      return result;
+    }
+    setSettings(normalized);
+    recordActivity({
+      action: 'Updated',
+      module: 'Settings',
+      description: 'Updated application settings',
+    });
+    return result;
+  };
+
+  const updateCurrentUserPreferences = async (
+    patch: Record<string, unknown>,
+    options?: { replace?: boolean },
+  ): Promise<CrudMutationResult> => {
+    const userId = String(currentUser?.id || '').trim();
+    if (!userId) {
+      return failResult(401, 'Authentication required.');
+    }
+
+    const normalizedPatch = toRecord(patch);
+    const replace = options?.replace === true;
+    if (!replace && Object.keys(normalizedPatch).length === 0) {
+      return okResult(200);
+    }
+
+    const saved = await updateUserPreferencesApi(userId, normalizedPatch, { replace });
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+
+    const nextPreferences = toRecord(saved.preferences);
+    const nextCurrentUser = normalizeUserRecord({
+      ...currentUser!,
+      preferences: nextPreferences,
+    });
+    setCurrentUser(nextCurrentUser);
+    setUsers(prev =>
+      prev.map(user =>
+        user.id === userId
+          ? normalizeUserRecord({ ...user, preferences: nextPreferences })
+          : user,
+      ),
+    );
+    return result;
   };
 
   // ============================================================
@@ -9386,7 +9574,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       discounts, setDiscounts, addDiscount, updateDiscount, deleteDiscount,
       activityLogs, setActivityLogs, addActivityLog, clearActivityLogs,
       settings, updateSettings,
-      currentUser, setCurrentUser,
+      currentUser, setCurrentUser, userPreferences, updateCurrentUserPreferences,
       formatCurrency, generateId, nextInvoiceNumber,
       syncStatus,
     }}>

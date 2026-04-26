@@ -1,21 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Search, Info, Calendar, Plus, Banknote, Clock, Folder, Calculator, Edit, CheckCircle2, Download, Upload, Settings as SettingsIcon
+  Search, Info, Calendar, Plus, Banknote, Clock, Folder, Calculator, Edit, CheckCircle2, Settings as SettingsIcon
 } from 'lucide-react';
 import { AppSettings, useGlobalContext } from '@/context/GlobalContext';
-import {
-  createLocalBackupSnapshot,
-  getBackupAuditTrail,
-  getBackupFilename,
-  markBackupExported,
-  markBackupValidated,
-  restoreLocalBackup,
-  serializeLocalBackup,
-  validateLocalBackup,
-  BackupAuditTrail,
-} from '@/utils/backupRestore';
 import { buildAvailableCurrencyOptions, type CurrencyOption } from '@/utils/currencyOptions';
-import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 
 const Settings: React.FC = () => {
@@ -27,10 +15,6 @@ const Settings: React.FC = () => {
   const [saveError, setSaveError] = useState('');
   const [tabSearch, setTabSearch] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
-  const backupInputRef = useRef<HTMLInputElement>(null);
-  const [backupMode, setBackupMode] = useState<'validate' | 'restore'>('restore');
-  const [backupNotice, setBackupNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [backupAudit, setBackupAudit] = useState<BackupAuditTrail>({});
   const currencyOptions = useMemo<CurrencyOption[]>(() => {
     const options = buildAvailableCurrencyOptions('en');
     const selectedCode = String(settings.currency || '').trim().toUpperCase();
@@ -63,7 +47,7 @@ const Settings: React.FC = () => {
   ];
   const weighingScaleLengthOptions = [1, 2, 3, 4, 5, 6, 7, 8];
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!currentUser) return;
     const currentRoleRecord = roles.find(r => r.name === currentUser.role);
     const rolePermissions = currentRoleRecord?.permissions || [];
@@ -76,7 +60,12 @@ const Settings: React.FC = () => {
       setTimeout(() => setSaveError(''), 4000);
       return;
     }
-    updateSettings(settings);
+    const result = await updateSettings(settings);
+    if (!result.ok) {
+      setSaveError(result.error || 'Unable to update settings in Postgres.');
+      setTimeout(() => setSaveError(''), 4000);
+      return;
+    }
     setSaved(true);
     setSaveError('');
     setTimeout(() => setSaved(false), 3000);
@@ -89,10 +78,6 @@ const Settings: React.FC = () => {
   useEffect(() => {
     setSettings({ ...globalSettings });
   }, [globalSettings]);
-
-  useEffect(() => {
-    setBackupAudit(getBackupAuditTrail(localStorage));
-  }, []);
 
   const handleCurrencyChange = (currencyCode: string) => {
     const normalizedCode = String(currencyCode || '').trim().toUpperCase();
@@ -182,70 +167,6 @@ const Settings: React.FC = () => {
       // keep UX silent here to avoid interrupting settings page flow
     }
     event.target.value = '';
-  };
-
-  const formatAuditTime = (value?: string) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '--';
-    return formatDateTimeBySettings(raw, settings.dateFormat, settings.timeFormat, settings.timeZone);
-  };
-
-  const handleBackupExport = () => {
-    try {
-      const snapshot = createLocalBackupSnapshot(localStorage);
-      const payload = serializeLocalBackup(localStorage);
-      const blob = new Blob([payload], { type: 'application/json;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = getBackupFilename();
-      anchor.click();
-      URL.revokeObjectURL(url);
-      const audit = markBackupExported(localStorage, snapshot);
-      setBackupAudit(audit);
-      setBackupNotice({
-        type: 'success',
-        text: `Backup exported successfully (${snapshot.recordCount} records).`,
-      });
-    } catch {
-      setBackupNotice({ type: 'error', text: 'Failed to export backup. Please retry.' });
-    }
-  };
-
-  const openBackupFilePicker = (mode: 'validate' | 'restore') => {
-    setBackupMode(mode);
-    backupInputRef.current?.click();
-  };
-
-  const handleBackupImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    try {
-      const raw = await file.text();
-      const validated = validateLocalBackup(raw);
-      const auditAfterValidation = markBackupValidated(localStorage, validated);
-      setBackupAudit(auditAfterValidation);
-
-      if (backupMode === 'validate') {
-        setBackupNotice({
-          type: 'success',
-          text: `Backup is valid (${validated.recordCount} records, created ${formatAuditTime(validated.createdAt)}).`,
-        });
-      } else {
-        const result = restoreLocalBackup(localStorage, raw);
-        setBackupAudit(getBackupAuditTrail(localStorage));
-        setBackupNotice({
-          type: 'success',
-          text: `Backup restored (${result.restored} records). Reloading app to apply changes...`,
-        });
-        setTimeout(() => window.location.reload(), 900);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to process backup file.';
-      setBackupNotice({ type: 'error', text: message });
-    } finally {
-      event.target.value = '';
-    }
   };
 
   return (
@@ -1885,67 +1806,6 @@ const Settings: React.FC = () => {
                             <option value="50">50</option>
                             <option value="100">100</option>
                         </select>
-                     </div>
-                     <div className="md:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-900">Backup & Restore</h4>
-                          <p className="text-xs text-slate-500">Export browser preferences only. Business data stays in PostgreSQL.</p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={handleBackupExport}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800"
-                          >
-                            <Download size={14} />
-                            Export Backup
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openBackupFilePicker('validate')}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-100"
-                          >
-                            <Upload size={14} />
-                            Validate Backup File
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openBackupFilePicker('restore')}
-                            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-bold hover:bg-slate-100"
-                          >
-                            <Upload size={14} />
-                            Restore Backup
-                          </button>
-                          <input
-                            ref={backupInputRef}
-                            type="file"
-                            accept="application/json"
-                            onChange={handleBackupImport}
-                            className="hidden"
-                          />
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-600">
-                          <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <p className="font-bold text-slate-700">Last Backup</p>
-                            <p>{formatAuditTime(backupAudit.lastBackupAt)}</p>
-                            <p>Records: {Number(backupAudit.lastBackupRecordCount || 0)}</p>
-                          </div>
-                          <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <p className="font-bold text-slate-700">Last Validation</p>
-                            <p>{formatAuditTime(backupAudit.lastValidatedAt)}</p>
-                            <p>Records: {Number(backupAudit.lastValidatedRecordCount || 0)}</p>
-                          </div>
-                          <div className="rounded-md border border-slate-200 bg-white px-3 py-2">
-                            <p className="font-bold text-slate-700">Last Restore</p>
-                            <p>{formatAuditTime(backupAudit.lastRestoreAt)}</p>
-                            <p>Records: {Number(backupAudit.lastRestoreRecordCount || 0)}</p>
-                          </div>
-                        </div>
-                        {backupNotice && (
-                          <p className={`text-xs font-semibold ${backupNotice.type === 'success' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {backupNotice.text}
-                          </p>
-                        )}
                      </div>
                   </div>
                )}

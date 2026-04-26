@@ -67,6 +67,8 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     purchases,
     users,
     currentUser,
+    userPreferences,
+    updateCurrentUserPreferences,
     locations,
     settings,
     formatCurrency,
@@ -75,14 +77,56 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
 
   const suppliers = globalSuppliers;
+  const toRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const normalizeColumns = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
+    const cleaned = value
+      .map((column) => String(column || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(cleaned));
+  };
+  const readStoredCustomColumns = (preferences: Record<string, unknown>): string[] => {
+    const contactsPreferences = toRecord(preferences.contacts);
+    return normalizeColumns(contactsPreferences.supplierCustomColumns);
+  };
+  const areSameColumns = (left: string[], right: string[]): boolean =>
+    left.length === right.length && left.every((value, index) => value === right[index]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [customColumns, setCustomColumns] = useState<string[]>(() => {
-    try { const s = localStorage.getItem('app_supplier_custom_columns'); return s ? JSON.parse(s) : []; } catch { return []; }
-  });
-  useEffect(() => { localStorage.setItem('app_supplier_custom_columns', JSON.stringify(customColumns)); }, [customColumns]);
+  const [customColumns, setCustomColumns] = useState<string[]>(() => readStoredCustomColumns(userPreferences));
+  useEffect(() => {
+    const stored = readStoredCustomColumns(userPreferences);
+    setCustomColumns((previous) => (areSameColumns(previous, stored) ? previous : stored));
+  }, [userPreferences]);
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const normalizedColumns = normalizeColumns(customColumns);
+    const storedColumns = readStoredCustomColumns(userPreferences);
+    if (areSameColumns(normalizedColumns, storedColumns)) return;
+    let cancelled = false;
+    void (async () => {
+      const contactsPreferences = toRecord(userPreferences.contacts);
+      const result = await updateCurrentUserPreferences({
+        contacts: {
+          ...contactsPreferences,
+          supplierCustomColumns: normalizedColumns,
+        },
+      });
+      if (!result.ok && !cancelled) {
+        addNotification({
+          title: 'Preference Sync Failed',
+          message: result.error || 'Unable to save supplier custom columns to Postgres.',
+          type: 'error',
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customColumns, userPreferences, updateCurrentUserPreferences, addNotification, currentUser?.id]);
   const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [activeActionId, setActiveActionId] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<DropdownPosition>({ top: 0, left: 0, transformOrigin: 'origin-top-right' });
@@ -146,7 +190,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     assignedTo: currentUser?.name || 'Admin',
   });
 
-  // GlobalContext handles localStorage persistence — no need to duplicate here
+  // GlobalContext owns persistence and live sync
 
   const paymentMethodOptions = useMemo(() => {
     const methods = locations

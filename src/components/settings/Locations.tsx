@@ -440,19 +440,53 @@ const Locations: React.FC = () => {
 
     const selectedScheme = invoiceSchemes.find(scheme => normalizeText(scheme.name) === normalizeText(selectedSchemeName));
     if (selectedScheme) {
-      invoiceSchemes
-        .filter(scheme => scheme.id !== selectedScheme.id && scheme.isDefault)
-        .forEach(scheme => updateInvoiceScheme({ ...scheme, isDefault: false }));
-      updateInvoiceScheme({ ...selectedScheme, isDefault: true });
+      for (const scheme of invoiceSchemes) {
+        if (scheme.id === selectedScheme.id || !scheme.isDefault) continue;
+        const cleared = await updateInvoiceScheme({ ...scheme, isDefault: false });
+        if (!cleared.ok) {
+          addNotification({
+            title: 'Unable to Save Scheme Defaults',
+            message: cleared.error || 'Failed to clear old default invoice scheme in Postgres.',
+            type: 'error',
+          });
+          return;
+        }
+      }
+      const markedDefault = await updateInvoiceScheme({ ...selectedScheme, isDefault: true });
+      if (!markedDefault.ok) {
+        addNotification({
+          title: 'Unable to Save Scheme Defaults',
+          message: markedDefault.error || 'Failed to set default invoice scheme in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
     }
 
     const defaultLayoutName = selectedSaleLayoutName || selectedPosLayoutName;
     const selectedLayout = invoiceLayouts.find(layout => normalizeText(layout.name) === normalizeText(defaultLayoutName));
     if (selectedLayout) {
-      invoiceLayouts
-        .filter(layout => layout.id !== selectedLayout.id && layout.isDefault)
-        .forEach(layout => updateInvoiceLayout({ ...layout, isDefault: false }));
-      updateInvoiceLayout({ ...selectedLayout, isDefault: true });
+      for (const layout of invoiceLayouts) {
+        if (layout.id === selectedLayout.id || !layout.isDefault) continue;
+        const cleared = await updateInvoiceLayout({ ...layout, isDefault: false });
+        if (!cleared.ok) {
+          addNotification({
+            title: 'Unable to Save Layout Defaults',
+            message: cleared.error || 'Failed to clear old default invoice layout in Postgres.',
+            type: 'error',
+          });
+          return;
+        }
+      }
+      const markedDefault = await updateInvoiceLayout({ ...selectedLayout, isDefault: true });
+      if (!markedDefault.ok) {
+        addNotification({
+          title: 'Unable to Save Layout Defaults',
+          message: markedDefault.error || 'Failed to set default invoice layout in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
     }
 
     const result = await updateLocation({

@@ -143,12 +143,16 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
 
     if (editingId) {
       const existing = expenseCategories.find((category) => category.id === editingId);
-      updateExpenseCategory({
+      const updateResult = await updateExpenseCategory({
         id: editingId,
         name: trimmedName,
         code: trimmedCode,
         description: trimmedDescription,
       });
+      if (!updateResult.ok) {
+        setFormError(updateResult.error || 'Unable to update category in Postgres.');
+        return;
+      }
 
       const propagatedCount = existing
         ? await propagateExpenseCategoryName(existing.name, trimmedName)
@@ -161,12 +165,16 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
         type: 'success',
       });
     } else {
-      addExpenseCategory({
+      const createResult = await addExpenseCategory({
         id: generateId('ECAT'),
         name: trimmedName,
         code: trimmedCode,
         description: trimmedDescription,
       });
+      if (!createResult.ok) {
+        setFormError(createResult.error || 'Unable to add category in Postgres.');
+        return;
+      }
       addNotification({ title: 'Category Added', message: `"${trimmedName}" has been added.`, type: 'success' });
     }
 
@@ -204,7 +212,15 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
         });
         return;
       }
-      deleteExpenseCategory(id);
+      const deleteResult = await deleteExpenseCategory(id);
+      if (!deleteResult.ok) {
+        addNotification({
+          title: 'Delete Failed',
+          message: deleteResult.error || `Unable to delete "${category.name}".`,
+          type: 'error',
+        });
+        return;
+      }
       setConfirmDeleteId(null);
       setReassignCategoryId('');
       addNotification({
@@ -215,7 +231,15 @@ const ExpenseCategories: React.FC<ExpenseCategoriesProps> = ({
       return;
     }
 
-    deleteExpenseCategory(id);
+    const deleteResult = await deleteExpenseCategory(id);
+    if (!deleteResult.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: deleteResult.error || `Unable to delete "${category.name}".`,
+        type: 'error',
+      });
+      return;
+    }
     setConfirmDeleteId(null);
     setReassignCategoryId('');
     addNotification({ title: 'Category Deleted', message: `"${category.name}" has been deleted.`, type: 'success' });

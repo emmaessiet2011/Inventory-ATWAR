@@ -78,7 +78,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     }
   };
 
-  const handleToggleStatus = (user: AppUser) => {
+  const handleToggleStatus = async (user: AppUser) => {
     if (currentUser?.id === user.id) {
       addNotification({
         title: 'Action Blocked',
@@ -103,7 +103,16 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     }
 
     const updatedUser = { ...user, status: user.status === 'Active' ? 'Inactive' : 'Active' } as AppUser;
-    updateUser(updatedUser);
+    const result = await updateUser(updatedUser);
+    if (!result.ok) {
+      addNotification({
+        title: 'Update Failed',
+        message: result.error || `Unable to update status for ${user.name}.`,
+        type: 'error',
+      });
+      setModalState({ type: null, user: null });
+      return;
+    }
     addNotification({
         title: user.status === 'Active' ? 'User Deactivated' : 'User Activated',
         message: `The user ${user.name} has been successfully ${user.status === 'Active' ? 'deactivated' : 'activated'}.`,
@@ -112,7 +121,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     setModalState({ type: null, user: null });
   };
 
-  const handleDelete = (user: AppUser) => {
+  const handleDelete = async (user: AppUser) => {
     if (currentUser?.id === user.id) {
       addNotification({
         title: 'Action Blocked',
@@ -136,7 +145,16 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       }
     }
 
-    deleteUser(user.id);
+    const result = await deleteUser(user.id);
+    if (!result.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: result.error || `Unable to delete ${user.name}.`,
+        type: 'error',
+      });
+      setModalState({ type: null, user: null });
+      return;
+    }
     addNotification({
         title: 'User Deleted',
         message: `The user ${user.name} has been permanently removed from the system.`,
@@ -145,8 +163,17 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
     setModalState({ type: null, user: null });
   };
 
-  const handleChangePassword = (user: AppUser, newPassword: string) => {
-    updateUser({ ...user, password: newPassword });
+  const handleChangePassword = async (user: AppUser, newPassword: string) => {
+    const result = await updateUser({ ...user, password: newPassword });
+    if (!result.ok) {
+      addNotification({
+        title: 'Password Update Failed',
+        message: result.error || `Unable to change password for ${user.name}.`,
+        type: 'error',
+      });
+      setModalState({ type: null, user: null });
+      return;
+    }
     addNotification({
         title: 'Password Changed',
         message: `The password for ${user.name} has been successfully updated.`,

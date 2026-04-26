@@ -189,7 +189,7 @@ const SalesCommissionAgents: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: target.type === 'checkbox' ? target.checked : value }));
   };
 
-  const handleSaveAgent = (event: React.FormEvent) => {
+  const handleSaveAgent = async (event: React.FormEvent) => {
     event.preventDefault();
 
     const prefix = clean(formData.prefix);
@@ -235,10 +235,26 @@ const SalesCommissionAgents: React.FC = () => {
     };
 
     if (editingId !== null) {
-      updateCommissionAgent(payload);
+      const updated = await updateCommissionAgent(payload);
+      if (!updated.ok) {
+        addNotification({
+          title: 'Update Failed',
+          message: updated.error || 'Sales commission agent could not be updated in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Agent Updated', message: 'Sales commission agent updated.', type: 'success' });
     } else {
-      addCommissionAgent(payload);
+      const created = await addCommissionAgent(payload);
+      if (!created.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: created.error || 'Sales commission agent could not be created in Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       addNotification({ title: 'Agent Added', message: 'Sales commission agent added.', type: 'success' });
     }
 
@@ -246,9 +262,17 @@ const SalesCommissionAgents: React.FC = () => {
     resetForm();
   };
 
-  const toggleAgentStatus = (agent: CommissionAgent) => {
+  const toggleAgentStatus = async (agent: CommissionAgent) => {
     const normalized = normalizeAgent(agent);
-    updateCommissionAgent({ ...normalized, isActive: !(normalized.isActive !== false) });
+    const updated = await updateCommissionAgent({ ...normalized, isActive: !(normalized.isActive !== false) });
+    if (!updated.ok) {
+      addNotification({
+        title: 'Status Update Failed',
+        message: updated.error || `Unable to update ${normalized.name} status in Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     addNotification({
       title: normalized.isActive !== false ? 'Agent Deactivated' : 'Agent Activated',
       message: `${normalized.name} is now ${normalized.isActive !== false ? 'inactive' : 'active'}.`,
@@ -256,9 +280,17 @@ const SalesCommissionAgents: React.FC = () => {
     });
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!pendingDeleteAgent) return;
-    deleteCommissionAgent(pendingDeleteAgent.id);
+    const deleted = await deleteCommissionAgent(pendingDeleteAgent.id);
+    if (!deleted.ok) {
+      addNotification({
+        title: 'Delete Failed',
+        message: deleted.error || 'Sales commission agent could not be deleted from Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     addNotification({ title: 'Agent Deleted', message: 'Sales commission agent deleted.', type: 'info' });
     setPendingDeleteAgent(null);
   };

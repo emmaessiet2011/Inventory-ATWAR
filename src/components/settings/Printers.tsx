@@ -86,7 +86,7 @@ const Printers: React.FC = () => {
     setView('form');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const normalizedName = String(formData.name || '').trim();
     if (!normalizedName) {
       addNotification({
@@ -155,14 +155,30 @@ const Printers: React.FC = () => {
     };
 
     if (isEditing) {
-      updatePrinter(payload);
+      const result = await updatePrinter(payload);
+      if (!result.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: result.error || `Unable to update printer "${payload.name}".`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({
         title: 'Printer updated',
         message: `Printer "${payload.name}" has been updated.`,
         type: 'success',
       });
     } else {
-      addPrinter(payload);
+      const result = await addPrinter(payload);
+      if (!result.ok) {
+        addNotification({
+          title: 'Save Failed',
+          message: result.error || `Unable to add printer "${payload.name}".`,
+          type: 'error',
+        });
+        return;
+      }
       addNotification({
         title: 'Printer added',
         message: `Printer "${payload.name}" has been added.`,
@@ -397,9 +413,17 @@ const Printers: React.FC = () => {
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeletePrinter(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!pendingDeletePrinter) return;
-          deletePrinter(pendingDeletePrinter.id);
+          const result = await deletePrinter(pendingDeletePrinter.id);
+          if (!result.ok) {
+            addNotification({
+              title: 'Delete Failed',
+              message: result.error || `Unable to delete printer "${pendingDeletePrinter.name}".`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: 'Printer deleted',
             message: `Printer "${pendingDeletePrinter.name}" has been removed.`,

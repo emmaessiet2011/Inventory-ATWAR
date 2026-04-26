@@ -616,6 +616,92 @@ const requireCanDelete = async (req, res, next) => {
 //  DELETE /api/sync/record/:resource/:id → delete one record
 // ─────────────────────────────────────────────────────────────────────────────
 
+const canManageUserPreferences = async (req, targetUserId) => {
+  const normalizedTargetUserId = String(targetUserId || '').trim();
+  if (!normalizedTargetUserId) return false;
+
+  const actorUserId = String(req.user?.id || '').trim();
+  if (actorUserId && actorUserId === normalizedTargetUserId) return true;
+
+  const tokenEmail = String(req.user?.email || '').trim();
+  if (isCriticalAdminEmail(tokenEmail)) return true;
+
+  const tokenRoleName = normalizeRoleName(req.user?.role || req.user?.roleName || req.user?.userRole);
+  if (isDeleteRoleAllowed(tokenRoleName)) return true;
+
+  if (!actorUserId) return false;
+  const actorAccount = await prisma.appUser.findUnique({
+    where: { id: actorUserId },
+    select: {
+      email: true,
+      role: { select: { name: true, isSystem: true } },
+      meta: true,
+    },
+  });
+  if (!actorAccount) return false;
+  if (isCriticalAdminEmail(actorAccount.email)) return true;
+  if (isDeleteRoleAllowed(actorAccount.role?.name, actorAccount.role?.isSystem === true)) return true;
+  if (isDeleteRoleAllowed(roleNameFromMeta(actorAccount.meta))) return true;
+  return false;
+};
+
+app.get('/api/users/:id/preferences', requireAuth, requireActiveSessionUser, async (req, res) => {
+  try {
+    const targetUserId = String(req.params.id || '').trim();
+    if (!targetUserId) return res.status(400).json({ ok: false, error: 'User id is required' });
+
+    const allowed = await canManageUserPreferences(req, targetUserId);
+    if (!allowed) return res.status(403).json({ ok: false, error: 'Insufficient permissions to view user preferences' });
+
+    const account = await prisma.appUser.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, meta: true },
+    });
+    if (!account) return res.status(404).json({ ok: false, error: 'User not found' });
+
+    const meta = toObject(account.meta);
+    const preferences = toObject(meta.preferences);
+    return res.json({ ok: true, userId: targetUserId, preferences });
+  } catch (error) {
+    return sendPrismaError(res, error, 'Failed to fetch user preferences');
+  }
+});
+
+app.put('/api/users/:id/preferences', requireAuth, requireActiveSessionUser, async (req, res) => {
+  try {
+    const targetUserId = String(req.params.id || '').trim();
+    if (!targetUserId) return res.status(400).json({ ok: false, error: 'User id is required' });
+
+    const allowed = await canManageUserPreferences(req, targetUserId);
+    if (!allowed) return res.status(403).json({ ok: false, error: 'Insufficient permissions to update user preferences' });
+
+    const mode = String(req.body?.mode || 'merge').trim().toLowerCase();
+    const requestedPreferences = toObject(req.body?.preferences);
+
+    const account = await prisma.appUser.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, meta: true },
+    });
+    if (!account) return res.status(404).json({ ok: false, error: 'User not found' });
+
+    const currentMeta = toObject(account.meta);
+    const currentPreferences = toObject(currentMeta.preferences);
+    const nextPreferences = mode === 'replace'
+      ? requestedPreferences
+      : { ...currentPreferences, ...requestedPreferences };
+    const nextMeta = { ...currentMeta, preferences: nextPreferences };
+
+    await prisma.appUser.update({
+      where: { id: targetUserId },
+      data: { meta: nextMeta },
+    });
+
+    return res.json({ ok: true, userId: targetUserId, preferences: nextPreferences });
+  } catch (error) {
+    return sendPrismaError(res, error, 'Failed to update user preferences');
+  }
+});
+
 const normDate = (v) => { const d = new Date(String(v || '')); return Number.isNaN(d.getTime()) ? new Date() : d; };
 const normOptionalDate = (v) => {
   const raw = String(v || '').trim();

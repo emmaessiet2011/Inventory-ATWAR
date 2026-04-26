@@ -9,6 +9,7 @@ import {
   PurchaseReturn as GlobalPurchaseReturn,
   PurchaseReturnItem,
 } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
@@ -86,6 +87,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
     formatCurrency,
     generateId,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [locationFilter, setLocationFilter] = useState('All');
@@ -299,7 +301,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
     return { subTotal, purchaseTaxAmount, grandTotal };
   }, [form.items, form.purchaseTaxId, taxRates]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setFormError('');
     if (!form.supplierId.trim()) return setFormError('Supplier is required.');
     if (!form.location.trim()) return setFormError('Business location is required.');
@@ -382,8 +384,13 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
       addedBy: editingReturn?.addedBy || currentUser?.name || 'Admin',
     };
 
-    if (editingReturn) updatePurchaseReturn(payload);
-    else addPurchaseReturn(payload);
+    const result = editingReturn
+      ? await updatePurchaseReturn(payload)
+      : await addPurchaseReturn(payload);
+    if (!result.ok) {
+      setFormError(result.error || 'Unable to save purchase return to Postgres.');
+      return;
+    }
     setIsModalOpen(false);
   };
 
@@ -635,8 +642,18 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeleteReturnId(null)}
-        onConfirm={() => {
-          if (pendingDeleteReturnId) deletePurchaseReturn(pendingDeleteReturnId);
+        onConfirm={async () => {
+          if (pendingDeleteReturnId) {
+            const result = await deletePurchaseReturn(pendingDeleteReturnId);
+            if (!result.ok) {
+              addNotification({
+                title: 'Delete Failed',
+                message: result.error || 'Unable to delete purchase return.',
+                type: 'error',
+              });
+              return;
+            }
+          }
           setPendingDeleteReturnId(null);
         }}
       />

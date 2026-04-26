@@ -128,9 +128,7 @@ export const readStockTransfers = (): StockTransferRecord[] => {
 
 export const fetchStockTransfersFromDB = async (): Promise<StockTransferRecord[]> => {
   const remoteTransfers = await fetchDedicated<StockTransferRecord>('/api/sync/stock-transfers');
-  if (remoteTransfers) {
-    stockTransfersCache = normalizeTransferRows(remoteTransfers);
-  }
+  stockTransfersCache = remoteTransfers ? normalizeTransferRows(remoteTransfers) : [];
   return readStockTransfers();
 };
 
@@ -166,9 +164,7 @@ export const readStockLedger = (): StockLedgerEntry[] => {
 
 export const fetchStockLedgerFromDB = async (): Promise<StockLedgerEntry[]> => {
   const remoteLedger = await fetchDedicated<StockLedgerEntry>('/api/sync/stock-ledger');
-  if (remoteLedger) {
-    stockLedgerCache = normalizeLedgerRows(remoteLedger);
-  }
+  stockLedgerCache = remoteLedger ? normalizeLedgerRows(remoteLedger) : [];
   return readStockLedger();
 };
 

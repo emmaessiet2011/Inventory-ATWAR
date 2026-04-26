@@ -10,6 +10,8 @@ import {
   AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ME_STORAGE_KEY,
   AUTH_SESSION_STORAGE_KEY,
+  clearAuthToken,
+  writeAuthToken,
   writeHardenedState,
 } from '@/utils/hardenedStorage';
 
@@ -192,13 +194,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         if (result.ok) {
           persistRememberIdentifier();
           persistSessionLifecycle();
-          localStorage.setItem('atwar_auth_token', result.token);
+          writeAuthToken(result.token, rememberMe);
           persistAuthenticatedUser(result.user);
-          updateUser(result.user);
+          await updateUser(result.user);
           setCurrentUser(result.user);
           onLogin();
           return;
         }
+        clearAuthToken();
         setError(
           result.payload?.error
             || (result.shouldRetry
@@ -234,7 +237,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       persistSessionLifecycle();
       const updated = { ...match, lastLogin: new Date().toISOString() };
       persistAuthenticatedUser(updated);
-      updateUser(updated);
+      await updateUser(updated);
       setCurrentUser(updated);
       onLogin();
     } finally {

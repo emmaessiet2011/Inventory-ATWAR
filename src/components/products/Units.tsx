@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import type { ProductUnit } from '@/context/GlobalContext';
+import { useNotifications } from '@/context/NotificationContext';
 import { buildPaginationItems } from '@/utils/pagination';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { syncRecordStrict } from '@/utils/apiClient';
@@ -33,6 +34,7 @@ const Units: React.FC = () => {
     updateSettings,
     generateId,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [pageSize, setPageSize] = useState(25);
@@ -206,7 +208,11 @@ const Units: React.FC = () => {
         shortName: nextShortName,
         allowDecimal: formData.allowDecimal === 'Yes',
       };
-      updateProductUnit(updatedUnit);
+      const unitUpdateResult = await updateProductUnit(updatedUnit);
+      if (!unitUpdateResult.ok) {
+        setFormError(unitUpdateResult.error || `Unable to update "${nextName}".`);
+        return;
+      }
 
       // Keep product unit values aligned when unit label/short name changes.
       const affectedProducts = products.filter((product) => {
@@ -226,7 +232,7 @@ const Units: React.FC = () => {
 
       const defaultUnitKey = normalizeText(settings.defaultUnit || '').toLowerCase();
       if (defaultUnitKey === prevShortKey || defaultUnitKey === prevNameKey) {
-        updateSettings({ ...settings, defaultUnit: updatedUnit.shortName });
+        await updateSettings({ ...settings, defaultUnit: updatedUnit.shortName });
       }
     } else {
       const newUnit: ProductUnit = {
@@ -235,7 +241,11 @@ const Units: React.FC = () => {
         shortName: nextShortName,
         allowDecimal: formData.allowDecimal === 'Yes',
       };
-      addProductUnit(newUnit);
+      const createResult = await addProductUnit(newUnit);
+      if (!createResult.ok) {
+        setFormError(createResult.error || `Unable to create "${nextName}".`);
+        return;
+      }
     }
     setFormData({ name: '', shortName: '', allowDecimal: 'Yes' });
     setFormError('');
@@ -374,7 +384,16 @@ const Units: React.FC = () => {
                             normalizeText(u.name).toLowerCase() === normalizeText(settings.defaultUnit || '').toLowerCase();
                           return !isDefault ? (
                             <button
-                              onClick={() => updateSettings({ ...settings, defaultUnit: u.shortName })}
+                              onClick={async () => {
+                                const result = await updateSettings({ ...settings, defaultUnit: u.shortName });
+                                if (!result.ok) {
+                                  addNotification({
+                                    title: 'Update Failed',
+                                    message: result.error || 'Unable to set default unit.',
+                                    type: 'error',
+                                  });
+                                }
+                              }}
                               className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
                               title="Set as Default"
                             >
@@ -546,14 +565,22 @@ const Units: React.FC = () => {
             <div className="flex justify-end gap-3">
               <button onClick={() => setPendingDeleteId(null)} className="px-4 py-2 border border-slate-200 rounded-xl text-slate-600 font-bold text-sm hover:bg-slate-50 transition">Cancel</button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (!pendingDeleteInfo) {
                     setPendingDeleteId(null);
                     return;
                   }
                   const canDelete = !pendingDeleteInfo.isDefaultUnit && pendingDeleteInfo.usedByProducts.length === 0;
                   if (!canDelete) return;
-                  deleteProductUnit(pendingDeleteId);
+                  const result = await deleteProductUnit(pendingDeleteId);
+                  if (!result.ok) {
+                    addNotification({
+                      title: 'Delete Failed',
+                      message: result.error || 'Unable to delete unit.',
+                      type: 'error',
+                    });
+                    return;
+                  }
                   setPendingDeleteId(null);
                 }}
                 disabled={!!pendingDeleteInfo && (pendingDeleteInfo.isDefaultUnit || pendingDeleteInfo.usedByProducts.length > 0)}

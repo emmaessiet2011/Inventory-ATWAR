@@ -1,7 +1,7 @@
+import { clearAuthToken, readAuthToken } from './hardenedStorage';
 export type DropdownCollectionMap = Record<string, any[]>;
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000';
-const AUTH_TOKEN_KEY = 'atwar_auth_token';
 
 type ResourceRow = Record<string, unknown>;
 type DropdownStrategy = {
@@ -19,11 +19,7 @@ export const isDropdownSyncEnabled = (): boolean =>
   !['false', '0', 'off'].includes(String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase());
 
 const getToken = (): string => {
-  try {
-    return localStorage.getItem(AUTH_TOKEN_KEY) || '';
-  } catch {
-    return '';
-  }
+  return readAuthToken();
 };
 
 const buildHeaders = (includeJsonContentType = false): Record<string, string> => {
@@ -37,11 +33,7 @@ const buildHeaders = (includeJsonContentType = false): Record<string, string> =>
 };
 
 const handle401 = (): void => {
-  try {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-  } catch {
-    // ignore storage errors
-  }
+  clearAuthToken();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('atwar:auth:expired'));
   }
@@ -82,10 +74,6 @@ const numericIdFromUnknown = (value: unknown, fallback: number): number => {
   if (Number.isFinite(fromText) && fromText > 0) return Math.floor(fromText);
   return fallback;
 };
-const sanitizeIdSegment = (value: string): string => (
-  value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-);
-
 const request = async (url: string, init?: RequestInit): Promise<Response | null> => {
   try {
     const response = await fetch(url, init);
@@ -113,54 +101,11 @@ const fetchResourceRawRows = async (resource: string): Promise<ResourceRow[] | n
   }
 };
 
-const postBulkUpsert = async (resource: string, rows: ResourceRow[]): Promise<boolean> => {
-  const response = await request(
-    `${getApiBaseUrl()}/api/data/${encodeURIComponent(resource)}/bulk-upsert`,
-    {
-      method: 'POST',
-      headers: buildHeaders(true),
-      body: JSON.stringify({ rows }),
-    },
-  );
-  return !!(response && response.ok);
-};
-
-const deleteResourceRow = async (resource: string, id: string): Promise<boolean> => {
-  const response = await request(
-    `${getApiBaseUrl()}/api/data/${encodeURIComponent(resource)}/${encodeURIComponent(id)}`,
-    {
-      method: 'DELETE',
-      headers: buildHeaders(false),
-    },
-  );
-  return !!(response && response.ok);
-};
-
-const syncPreparedResourceCollection = async (
-  resource: string,
-  rows: ResourceRow[],
-): Promise<boolean> => {
-  const existingRows = await fetchResourceRawRows(resource);
-  if (existingRows === null) return false;
-
-  const existingIds = new Set(
-    existingRows
-      .map((row) => normalizeDropdownRowId(row.id))
-      .filter(Boolean),
-  );
-  const desiredIds = new Set(
-    rows
-      .map((row) => normalizeDropdownRowId(row.id))
-      .filter(Boolean),
-  );
-
-  const upserted = await postBulkUpsert(resource, rows);
-  if (!upserted) return false;
-
-  const idsToDelete = Array.from(existingIds).filter((id) => !desiredIds.has(id));
-  if (idsToDelete.length === 0) return true;
-  const deletionResults = await Promise.all(idsToDelete.map((id) => deleteResourceRow(resource, id)));
-  return deletionResults.every(Boolean);
+let dropdownWriteDisabledLogged = false;
+const logDropdownWriteDisabled = (): void => {
+  if (dropdownWriteDisabledLogged) return;
+  dropdownWriteDisabledLogged = true;
+  console.warn('[dropdownSync] Write/seed path is disabled. Use dedicated CRUD APIs or Prisma seed scripts.');
 };
 
 const fetchRolePermissions = async (roleId: string): Promise<string[]> => {
@@ -183,65 +128,6 @@ const fetchRolePermissions = async (roleId: string): Promise<string[]> => {
   } catch {
     return [];
   }
-};
-
-const buildPermissionRows = (codes: string[]): ResourceRow[] => {
-  return Array.from(new Set(codes))
-    .map((code) => {
-      const normalizedCode = String(code || '').trim();
-      if (!normalizedCode) return null;
-      const [moduleNameRaw, labelRaw] = normalizedCode.includes('::')
-        ? normalizedCode.split('::')
-        : ['', normalizedCode];
-      const moduleName = String(moduleNameRaw || '').trim() || null;
-      const label = String(labelRaw || normalizedCode).trim();
-      const id = `perm_${sanitizeIdSegment(normalizedCode).slice(0, 100) || 'auto'}`;
-      return {
-        id,
-        code: normalizedCode,
-        label,
-        module: moduleName,
-      } as ResourceRow;
-    })
-    .filter((row): row is ResourceRow => !!row);
-};
-
-const syncRolePermissionLinks = async (roleRows: ResourceRow[]): Promise<boolean> => {
-  const permissionCodes = roleRows.flatMap((row) => normalizePermissionCodes(toObject(row.meta).permissions));
-  const permissionRows = buildPermissionRows(permissionCodes);
-  if (permissionRows.length > 0) {
-    const upserted = await postBulkUpsert('permissions', permissionRows);
-    if (!upserted) return false;
-  }
-
-  const permissionIdByCode = new Map<string, string>();
-  permissionRows.forEach((row) => {
-    const code = String(row.code || '').trim();
-    const id = String(row.id || '').trim();
-    if (code && id) permissionIdByCode.set(code, id);
-  });
-
-  const linkResults = await Promise.all(roleRows.map(async (row) => {
-    const roleId = normalizeDropdownRowId(row.id);
-    if (!roleId) return false;
-    const permissions = normalizePermissionCodes(toObject(row.meta).permissions);
-    const permissionIds = Array.from(new Set(
-      permissions
-        .map((code) => permissionIdByCode.get(code))
-        .filter((id): id is string => !!id),
-    ));
-    const response = await request(
-      `${getApiBaseUrl()}/api/data/roles/${encodeURIComponent(roleId)}/permissions`,
-      {
-        method: 'PUT',
-        headers: buildHeaders(true),
-        body: JSON.stringify({ permissionIds }),
-      },
-    );
-    return !!(response && response.ok);
-  }));
-
-  return linkResults.every(Boolean);
 };
 
 const serializeRole = (row: any, fallbackIndex = 1): ResourceRow | null => {
@@ -293,12 +179,11 @@ const rolesStrategy: DropdownStrategy = {
     return normalized.filter((row) => String(row.name || '').trim().length > 0);
   },
   push: async (rows) => {
-    const serialized = toArray(rows)
+    void toArray(rows)
       .map((row, index) => serializeRole(row, index + 1))
       .filter((row): row is ResourceRow => !!row);
-    const syncedRoles = await syncPreparedResourceCollection('roles', serialized);
-    if (!syncedRoles) return false;
-    return syncRolePermissionLinks(serialized);
+    logDropdownWriteDisabled();
+    return false;
   },
 };
 
@@ -315,10 +200,11 @@ const createMetaBackedResourceStrategy = (config: {
       .filter((row): row is any => !!row);
   },
   push: async (rows) => {
-    const serialized = toArray(rows)
+    void toArray(rows)
       .map((row, index) => config.serialize(row, index))
       .filter((row): row is ResourceRow => !!row);
-    return syncPreparedResourceCollection(config.resource, serialized);
+    logDropdownWriteDisabled();
+    return false;
   },
 });
 
@@ -847,14 +733,15 @@ export const fetchDropdownCollections = async (keys: string[]): Promise<Dropdown
   if (!isDropdownSyncEnabled() || !getToken()) return {};
 
   const collections: DropdownCollectionMap = {};
-  normalizedKeys.forEach((key) => { collections[key] = []; });
 
   const strategyKeys = normalizedKeys.filter((key) => Boolean(RESOURCE_STRATEGIES[key]));
   if (strategyKeys.length > 0) {
     await Promise.all(strategyKeys.map(async (key) => {
       const strategy = RESOURCE_STRATEGIES[key];
       const fetched = await strategy.fetch();
-      collections[key] = toArray(fetched);
+      if (fetched !== null) {
+        collections[key] = toArray(fetched);
+      }
     }));
   }
 
@@ -862,23 +749,7 @@ export const fetchDropdownCollections = async (keys: string[]): Promise<Dropdown
 };
 
 export const pushDropdownCollections = async (collections: DropdownCollectionMap): Promise<boolean> => {
-  const payload: DropdownCollectionMap = {};
-  Object.entries(collections || {}).forEach(([key, value]) => {
-    const normalizedKey = String(key || '').trim();
-    if (!normalizedKey) return;
-    payload[normalizedKey] = Array.isArray(value) ? value : [];
-  });
-
-  if (Object.keys(payload).length === 0) return true;
-  if (!isDropdownSyncEnabled() || !getToken()) return false;
-
-  const strategyEntries = Object.entries(payload).filter(([key]) => Boolean(RESOURCE_STRATEGIES[key]));
-  if (strategyEntries.length > 0) {
-    const strategyResults = await Promise.all(
-      strategyEntries.map(([key, rows]) => RESOURCE_STRATEGIES[key].push(rows)),
-    );
-    if (!strategyResults.every(Boolean)) return false;
-  }
-
-  return true;
+  void collections;
+  logDropdownWriteDisabled();
+  return false;
 };

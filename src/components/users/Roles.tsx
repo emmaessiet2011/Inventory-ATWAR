@@ -167,7 +167,7 @@ const Roles: React.FC<{ onNavigate: (page: string) => void }> = () => {
         });
     };
 
-    const handleSaveRole = () => {
+    const handleSaveRole = async () => {
         if ((editingRole && !canEditRole) || (!editingRole && !canAddRole)) {
             addNotification({
                 title: 'Access Denied',
@@ -238,7 +238,7 @@ const Roles: React.FC<{ onNavigate: (page: string) => void }> = () => {
         const computedUserCount = roleUserCountMap[normalizedRoleName] || 0;
 
         if (editingRole) {
-            updateRole({
+            const result = await updateRole({
                 ...editingRole,
                 name: normalizedRoleName,
                 description: normalizedDescription,
@@ -246,6 +246,14 @@ const Roles: React.FC<{ onNavigate: (page: string) => void }> = () => {
                 permissionsCount: totalPermissions,
                 permissions: selectedPermissionKeys,
             });
+            if (!result.ok) {
+                addNotification({
+                    title: 'Save Failed',
+                    message: result.error || `Unable to update role "${normalizedRoleName}".`,
+                    type: 'error',
+                });
+                return;
+            }
             addNotification({
                 title: 'Role Updated',
                 message: `Role "${normalizedRoleName}" was updated successfully.`,
@@ -261,7 +269,15 @@ const Roles: React.FC<{ onNavigate: (page: string) => void }> = () => {
                 isSystem: false,
                 permissions: selectedPermissionKeys,
             };
-            addRole(newRole);
+            const result = await addRole(newRole);
+            if (!result.ok) {
+                addNotification({
+                    title: 'Save Failed',
+                    message: result.error || `Unable to create role "${normalizedRoleName}".`,
+                    type: 'error',
+                });
+                return;
+            }
             addNotification({
                 title: 'Role Created',
                 message: `Role "${normalizedRoleName}" was created successfully.`,
@@ -304,9 +320,17 @@ const Roles: React.FC<{ onNavigate: (page: string) => void }> = () => {
         setPendingDeleteRole(role);
     };
 
-    const handleConfirmDeleteRole = () => {
+    const handleConfirmDeleteRole = async () => {
         if (!pendingDeleteRole) return;
-        deleteRole(pendingDeleteRole.id);
+        const result = await deleteRole(pendingDeleteRole.id);
+        if (!result.ok) {
+            addNotification({
+                title: 'Delete Failed',
+                message: result.error || `Unable to delete role "${pendingDeleteRole.name}".`,
+                type: 'error',
+            });
+            return;
+        }
         addNotification({
             title: 'Role Deleted',
             message: `Role "${pendingDeleteRole.name}" was deleted successfully.`,
