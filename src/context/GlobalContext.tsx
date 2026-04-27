@@ -2799,6 +2799,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
   const fieldPaymentsCacheRef = useRef<any[]>([]);
   const customerGroupLinkMigrationAppliedRef = useRef(false);
+  const customerGroupBackfillInFlightRef = useRef(false);
+  const customerGroupSellingMirrorBackfillAppliedRef = useRef(false);
+  const customerGroupSellingMirrorBackfillInFlightRef = useRef(false);
   const saleCustomerGroupSnapshotMigrationAppliedRef = useRef(false);
   const productCategoryLinkMigrationAppliedRef = useRef(false);
   const productBrandLinkMigrationAppliedRef = useRef(false);
@@ -4703,6 +4706,148 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       setCustomers(normalizedCustomers);
     }
   }, [customerGroups, sellingPriceGroups, customers]);
+
+  // Auto-repair customer groups when customers already carry legacy group names
+  // in their payload/meta but the customerGroups table is empty or incomplete.
+  // This keeps Customer Groups module non-empty and restores relation integrity.
+  useEffect(() => {
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+    if (customerGroupBackfillInFlightRef.current) return;
+
+    const existingGroups = customerGroups.map((group) =>
+      normalizeCustomerGroupRecord(group, sellingPriceGroups),
+    );
+    const existingIds = new Set(
+      existingGroups
+        .map((group) => String(group.id || '').trim())
+        .filter(Boolean),
+    );
+    const existingNames = new Set(
+      existingGroups
+        .map((group) => normalizeText(group.name))
+        .filter(Boolean),
+    );
+    const candidateGroups = new Map<string, CustomerGroup>();
+
+    const toGroupIdFromName = (name: string): string => {
+      const normalizedName = String(name || '').trim();
+      const slug = normalizedName
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+      const base = `CG-${slug || 'CUSTOMER-GROUP'}`;
+      let candidate = base;
+      let counter = 2;
+      while (existingIds.has(candidate) || Array.from(candidateGroups.values()).some((row) => row.id === candidate)) {
+        candidate = `${base}-${counter}`;
+        counter += 1;
+      }
+      return candidate;
+    };
+
+    customers.forEach((customer) => {
+      const currentGroupId = String(customer.customerGroupId || '').trim();
+      let currentGroupName = String(customer.customerGroup || '').trim();
+
+      if (!currentGroupName && currentGroupId) {
+        currentGroupName = currentGroupId
+          .replace(/^CG-?/i, '')
+          .replace(/-/g, ' ')
+          .trim();
+      }
+      if (!currentGroupName && !currentGroupId) return;
+
+      const normalizedName = normalizeText(currentGroupName);
+      if (!normalizedName) return;
+      if (existingNames.has(normalizedName)) return;
+      if (candidateGroups.has(normalizedName)) return;
+
+      const nextId = currentGroupId || toGroupIdFromName(currentGroupName);
+      const nextGroup = normalizeCustomerGroupRecord({
+        id: nextId,
+        name: currentGroupName,
+        description: '',
+        discountPercent: 0,
+        calculationPercentage: 0,
+        sellingPriceGroupId: '',
+        sellingPriceGroup: '',
+        status: 'Active',
+      }, sellingPriceGroups);
+      candidateGroups.set(normalizedName, nextGroup);
+    });
+
+    const groupsToCreate = Array.from(candidateGroups.values());
+    const canRelinkCustomers = existingGroups.length > 0 || groupsToCreate.length > 0;
+    if (!canRelinkCustomers) return;
+
+    const executeBackfill = async () => {
+      customerGroupBackfillInFlightRef.current = true;
+      try {
+        const persistedGroups: CustomerGroup[] = [];
+        for (const group of groupsToCreate) {
+          const saved = await syncRecordStrict('customerGroups', group);
+          if (saved.ok) {
+            persistedGroups.push(group);
+          }
+        }
+
+        const mergedGroupsById = new Map<string, CustomerGroup>();
+        [...existingGroups, ...persistedGroups].forEach((group) => {
+          const id = String(group.id || '').trim();
+          if (!id) return;
+          mergedGroupsById.set(id, group);
+        });
+        const mergedGroups = Array.from(mergedGroupsById.values());
+
+        if (persistedGroups.length > 0) {
+          setCustomerGroups((prev) => {
+            const byId = new Map<string, CustomerGroup>();
+            prev.forEach((row) => {
+              const id = String(row.id || '').trim();
+              if (id) byId.set(id, row);
+            });
+            persistedGroups.forEach((row) => {
+              const id = String(row.id || '').trim();
+              if (id) byId.set(id, row);
+            });
+            return Array.from(byId.values());
+          });
+        }
+
+        const relinkedCustomers = customers.map((customer) =>
+          normalizeCustomerRecord(customer, mergedGroups),
+        );
+        const changedCustomers = relinkedCustomers.filter((customer, index) => {
+          const original = customers[index];
+          return (
+            String(customer.customerGroupId || '').trim() !== String(original.customerGroupId || '').trim()
+            || String(customer.customerGroup || '').trim() !== String(original.customerGroup || '').trim()
+          );
+        });
+        if (changedCustomers.length === 0) return;
+
+        const persistedCustomers = new Map<string, Customer>();
+        for (const customer of changedCustomers) {
+          const saved = await syncRecordStrict('customers', customer);
+          if (saved.ok) {
+            persistedCustomers.set(String(customer.id || '').trim(), customer);
+          }
+        }
+        if (persistedCustomers.size === 0) return;
+
+        setCustomers((prev) =>
+          prev.map((customer) => {
+            const id = String(customer.id || '').trim();
+            return persistedCustomers.get(id) || customer;
+          }),
+        );
+      } finally {
+        customerGroupBackfillInFlightRef.current = false;
+      }
+    };
+
+    void executeBackfill();
+  }, [customers, customerGroups, sellingPriceGroups, currentUser?.id]);
 
   // One-time safe migration for legacy sales without customer group snapshot:
   // - sales.customerGroup/customerGroupId <- customer master at migration time
@@ -8733,17 +8878,192 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   //  CRUD: CUSTOMER GROUPS
   // ============================================================
 
+  const deriveMirroredSellingPriceGroupId = (customerGroupId: string): string => {
+    const normalized = String(customerGroupId || '')
+      .trim()
+      .replace(/[^A-Za-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    return `SPG-${normalized || 'CUSTOMER-GROUP'}`;
+  };
+
+  const mergeSellingPriceGroupList = (
+    source: SellingPriceGroup[],
+    incoming: SellingPriceGroup,
+  ): SellingPriceGroup[] => {
+    const existingIndex = source.findIndex((row) => row.id === incoming.id);
+    if (existingIndex < 0) return [...source, incoming];
+    const next = [...source];
+    next[existingIndex] = incoming;
+    return next;
+  };
+
+  const buildMirroredSellingPriceGroup = (
+    group: CustomerGroup,
+    existing?: SellingPriceGroup,
+  ): SellingPriceGroup => {
+    const normalizedName = String(group.name || '').trim() || String(existing?.name || '').trim() || 'Customer Group';
+    const status = group.status === 'Inactive'
+      ? 'Inactive'
+      : existing?.status === 'Inactive'
+        ? 'Inactive'
+        : 'Active';
+    const parsedGroupDiscount = Number(group.discountPercent);
+    const parsedGroupCalculation = Number(group.calculationPercentage);
+    const discount = Number.isFinite(parsedGroupDiscount)
+      ? parsedGroupDiscount
+      : Number(existing?.discount || 0);
+    const priceCalcPercentage = Number.isFinite(parsedGroupCalculation)
+      ? parsedGroupCalculation
+      : Number.isFinite(Number(existing?.priceCalcPercentage))
+        ? Number(existing?.priceCalcPercentage)
+        : discount;
+    const parsedPayTermDays = Number(existing?.payTermDays);
+    const payTermDays = Number.isFinite(parsedPayTermDays) ? parsedPayTermDays : 0;
+    const parsedTaxRate = Number(existing?.taxRate);
+    const taxRate = Number.isFinite(parsedTaxRate) ? parsedTaxRate : 0;
+    const mirrorId = String(existing?.id || group.sellingPriceGroupId || '').trim() || deriveMirroredSellingPriceGroupId(group.id);
+    const applicableProducts = Array.isArray(existing?.applicableProducts)
+      ? existing.applicableProducts
+      : [];
+
+    return {
+      id: mirrorId,
+      name: normalizedName,
+      description: String(group.description || existing?.description || '').trim(),
+      payTermDays,
+      payTermUnit: existing?.payTermUnit === 'Months' ? 'Months' : 'Days',
+      taxRate,
+      discount,
+      priceCalcPercentage,
+      status,
+      applicableProducts,
+    };
+  };
+
+  const ensureMirroredSellingPriceGroup = async (
+    group: CustomerGroup,
+    sourceSellingGroups: SellingPriceGroup[],
+  ): Promise<{ result: CrudMutationResult; mirror?: SellingPriceGroup }> => {
+    const normalizedGroupName = normalizeText(group.name);
+    const derivedMirrorId = deriveMirroredSellingPriceGroupId(group.id);
+    const existing = (
+      sourceSellingGroups.find((row) => row.id === group.sellingPriceGroupId)
+      || sourceSellingGroups.find((row) => row.id === derivedMirrorId)
+      || sourceSellingGroups.find((row) => normalizeText(row.name) === normalizedGroupName)
+    );
+    const mirror = buildMirroredSellingPriceGroup(group, existing);
+    const saved = await syncRecordStrict('sellingPriceGroups', mirror);
+    const result = toCrudResult(saved);
+    if (!result.ok) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Selling Price Groups',
+        description: `Failed to sync mirrored selling price group for customer group ${group.name || group.id} (${saved.status || 0}).`,
+      });
+      return { result };
+    }
+    return { result, mirror };
+  };
+
+  // One-time backfill: enforce 1:1 mirror from every customer group to selling price group.
+  useEffect(() => {
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+    if (customerGroupSellingMirrorBackfillAppliedRef.current) return;
+    if (customerGroupSellingMirrorBackfillInFlightRef.current) return;
+    if (customerGroups.length === 0) return;
+
+    customerGroupSellingMirrorBackfillAppliedRef.current = true;
+    customerGroupSellingMirrorBackfillInFlightRef.current = true;
+
+    const run = async () => {
+      try {
+        let workingSellingPriceGroups = [...sellingPriceGroups];
+        const persistedMirrors = new Map<string, SellingPriceGroup>();
+        const persistedCustomerGroups = new Map<string, CustomerGroup>();
+
+        for (const rawGroup of customerGroups) {
+          const normalizedGroup = normalizeCustomerGroupRecord(rawGroup, workingSellingPriceGroups);
+          const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroup, workingSellingPriceGroups);
+          if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) continue;
+
+          const mirror = mirrorOutcome.mirror;
+          workingSellingPriceGroups = mergeSellingPriceGroupList(workingSellingPriceGroups, mirror);
+          persistedMirrors.set(mirror.id, mirror);
+
+          const needsLinkUpdate =
+            String(normalizedGroup.sellingPriceGroupId || '').trim() !== mirror.id
+            || normalizeText(normalizedGroup.sellingPriceGroup) !== normalizeText(mirror.name);
+
+          if (!needsLinkUpdate) continue;
+
+          const linkedGroup = normalizeCustomerGroupRecord({
+            ...normalizedGroup,
+            sellingPriceGroupId: mirror.id,
+            sellingPriceGroup: mirror.name,
+          }, workingSellingPriceGroups);
+          const groupSaved = await syncRecordStrict('customerGroups', linkedGroup);
+          if (!groupSaved.ok) {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Customer Groups',
+              description: `Failed to link customer group ${linkedGroup.name || linkedGroup.id} to mirrored selling price group (${groupSaved.status || 0}).`,
+            });
+            continue;
+          }
+          persistedCustomerGroups.set(linkedGroup.id, linkedGroup);
+        }
+
+        if (persistedMirrors.size > 0) {
+          setSellingPriceGroups((prev) => {
+            let next = [...prev];
+            persistedMirrors.forEach((row) => {
+              next = mergeSellingPriceGroupList(next, row);
+            });
+            return next;
+          });
+        }
+
+        if (persistedCustomerGroups.size > 0) {
+          setCustomerGroups((prev) => prev.map((row) => persistedCustomerGroups.get(row.id) || row));
+        }
+      } finally {
+        customerGroupSellingMirrorBackfillInFlightRef.current = false;
+      }
+    };
+
+    void run();
+  }, [customerGroups, sellingPriceGroups, currentUser?.id]);
+
   const addCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
-    const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
+    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
+    const mirror = mirrorOutcome.mirror;
+    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
+    const normalizedGroup = normalizeCustomerGroupRecord({
+      ...normalizedGroupBase,
+      sellingPriceGroupId: mirror.id,
+      sellingPriceGroup: mirror.name,
+    }, nextSellingPriceGroups);
     const saved = await syncRecordStrict('customerGroups', normalizedGroup);
     const result = toCrudResult(saved);
     if (!result.ok) return result;
+    setSellingPriceGroups((prev) => mergeSellingPriceGroupList(prev, mirror));
     setCustomerGroups(prev => [...prev, normalizedGroup]);
     return result;
   };
   const updateCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
     const existingGroup = customerGroups.find(g => g.id === group.id);
-    const normalizedGroup = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
+    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
+    const mirror = mirrorOutcome.mirror;
+    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
+    const normalizedGroup = normalizeCustomerGroupRecord({
+      ...normalizedGroupBase,
+      sellingPriceGroupId: mirror.id,
+      sellingPriceGroup: mirror.name,
+    }, nextSellingPriceGroups);
     const saved = await syncRecordStrict('customerGroups', normalizedGroup);
     const result = toCrudResult(saved);
     if (!result.ok) return result;
@@ -8772,6 +9092,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       persistedById.set(updatedCustomer.id, updatedCustomer);
     }
+    setSellingPriceGroups((prev) => mergeSellingPriceGroupList(prev, mirror));
     setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
     if (persistedById.size > 0) {
       setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
@@ -8782,6 +9103,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const existingGroup = customerGroups.find(g => g.id === id);
     const reassignGroup = reassignToGroupId
       ? customerGroups.find(g => g.id === reassignToGroupId)
+      : undefined;
+    const mirrorGroup = existingGroup
+      ? (
+          sellingPriceGroups.find((row) => row.id === existingGroup.sellingPriceGroupId)
+          || sellingPriceGroups.find((row) => normalizeText(row.name) === normalizeText(existingGroup.name))
+        )
       : undefined;
     return confirmDeleteFromPostgres('customerGroups', id, 'Customer Groups', existingGroup?.name || id, async () => {
       setCustomerGroups(prev => prev.filter(g => g.id !== id));
@@ -8818,6 +9145,28 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       if (persistedById.size > 0) {
         setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
+      }
+
+      if (mirrorGroup) {
+        const stillLinkedElsewhere = customerGroups.some((group) => (
+          group.id !== id && (
+            group.sellingPriceGroupId === mirrorGroup.id
+            || normalizeText(group.sellingPriceGroup) === normalizeText(mirrorGroup.name)
+            || normalizeText(group.name) === normalizeText(mirrorGroup.name)
+          )
+        ));
+        if (!stillLinkedElsewhere) {
+          const mirrorDeleted = await deleteRecordStrict('sellingPriceGroups', mirrorGroup.id);
+          if (mirrorDeleted.ok || mirrorDeleted.status === 404) {
+            setSellingPriceGroups((prev) => prev.filter((row) => row.id !== mirrorGroup.id));
+          } else {
+            recordActivity({
+              action: 'Blocked',
+              module: 'Selling Price Groups',
+              description: `Failed to delete mirrored selling price group ${mirrorGroup.name || mirrorGroup.id} after customer group delete (${mirrorDeleted.status || 0}).`,
+            });
+          }
+        }
       }
     });
   };
