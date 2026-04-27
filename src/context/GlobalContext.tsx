@@ -181,6 +181,9 @@ export interface Customer {
   contactCategory?: 'Individual' | 'Business';
   rewardPoints?: number;
   rebatePercent?: number;   // % rebate applied on payments (e.g. 5 = 5%)
+  sellingPriceGroupId?: string;
+  sellingPriceGroup?: string;
+  sellingPriceGroupMode?: 'auto' | 'manual';
 }
 
 // Rich Supplier record — used in Suppliers module + AddPurchase dropdown
@@ -4131,6 +4134,41 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalizedStatus = normalizeActiveState(customer.status, (customer as any).isActive);
     const customerGroupId = String(linked.id || '').trim();
     const customerGroup = String(linked.name || '').trim();
+    const resolvedCustomerGroupRecord = customerGroupId
+      ? availableGroups.find((group) => group.id === customerGroupId)
+      : availableGroups.find((group) => normalizeText(group.name) === normalizeText(customerGroup));
+    const linkedGroupSellingPrice = resolveSellingPriceGroupLink(
+      resolvedCustomerGroupRecord?.sellingPriceGroupId,
+      resolvedCustomerGroupRecord?.sellingPriceGroup,
+      sellingPriceGroups,
+    );
+    const customerPriceGroupLink = resolveSellingPriceGroupLink(
+      String((customer as { sellingPriceGroupId?: string }).sellingPriceGroupId || '').trim() || undefined,
+      String((customer as { sellingPriceGroup?: string }).sellingPriceGroup || '').trim() || undefined,
+      sellingPriceGroups,
+    );
+    const explicitModeRaw = String(
+      (customer as { sellingPriceGroupMode?: string }).sellingPriceGroupMode || '',
+    ).trim().toLowerCase();
+    const explicitMatchesCustomerGroup =
+      Boolean(customerPriceGroupLink.id) &&
+      Boolean(linkedGroupSellingPrice.id) &&
+      customerPriceGroupLink.id === linkedGroupSellingPrice.id;
+    const hasManualSelection = (
+      explicitModeRaw === 'manual'
+      || (
+        explicitModeRaw !== 'auto'
+        && Boolean(customerPriceGroupLink.id || customerPriceGroupLink.name)
+        && !explicitMatchesCustomerGroup
+      )
+    );
+    const sellingPriceGroupMode: 'auto' | 'manual' = hasManualSelection ? 'manual' : 'auto';
+    const sellingPriceGroupId = sellingPriceGroupMode === 'manual'
+      ? String(customerPriceGroupLink.id || '').trim()
+      : '';
+    const sellingPriceGroup = sellingPriceGroupMode === 'manual'
+      ? String(customerPriceGroupLink.name || '').trim()
+      : '';
     const customValues = customer.customValues && typeof customer.customValues === 'object' && !Array.isArray(customer.customValues)
       ? Object.fromEntries(
           Object.entries(customer.customValues).map(([key, value]) => [String(key), String(value ?? '')]),
@@ -4158,6 +4196,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       addedOn: String(customer.addedOn || '').trim() || new Date().toISOString().slice(0, 10),
       customerGroupId,
       customerGroup,
+      sellingPriceGroupId,
+      sellingPriceGroup,
+      sellingPriceGroupMode,
       address: String(customer.address || '').trim(),
       city: String(customer.city || '').trim() || undefined,
       state: String(customer.state || '').trim() || undefined,

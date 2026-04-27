@@ -197,6 +197,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
         phone: c.mobile,
         customerGroup: c.customerGroup,
         customerGroupId: c.customerGroupId,
+        sellingPriceGroupId: c.sellingPriceGroupId,
+        sellingPriceGroup: c.sellingPriceGroup,
+        sellingPriceGroupMode: c.sellingPriceGroupMode,
         type: c.customerGroup || 'Customer',
         payTerm: c.payTerm,
         creditLimit: c.creditLimit,
@@ -280,6 +283,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     if (selectedPriceGroupId) {
       const manual = byId(selectedPriceGroupId);
       if (manual) return { group: manual, source: 'Manual' };
+    }
+
+    const customerMode = String(selectedCustomerRecord?.sellingPriceGroupMode || '').trim().toLowerCase();
+    const customerOverride = byId(String(selectedCustomerRecord?.sellingPriceGroupId || '').trim()) ||
+      byName(selectedCustomerRecord?.sellingPriceGroup);
+    if (customerOverride && (customerMode === 'manual' || customerMode === '')) {
+      return {
+        group: customerOverride,
+        source: `Customer Override (${selectedCustomerRecord?.businessName || selectedCustomerRecord?.name || selectedCustomerRecord?.id || 'Customer'})`,
+      };
     }
 
     const customerGroupRecord = customerGroupById(selectedCustomerRecord?.customerGroupId) ||

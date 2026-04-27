@@ -42,6 +42,9 @@ interface Customer {
   contactCategory?: 'Individual' | 'Business';
   customValues?: Record<string, string>;
   rebatePercent?: number;
+  sellingPriceGroupId?: string;
+  sellingPriceGroup?: string;
+  sellingPriceGroupMode?: 'auto' | 'manual';
 }
 
 interface DropdownPosition {
@@ -68,6 +71,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     deleteCustomer: globalDeleteCustomer,
     sales,
     customerGroups,
+    sellingPriceGroups,
     locations,
     users,
     addPayment: globalAddPayment,
@@ -105,6 +109,10 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     () => customerGroups.filter(g => (g.status || 'Active') === 'Active'),
     [customerGroups]
   );
+  const activeSellingPriceGroupOptions = useMemo(
+    () => sellingPriceGroups.filter(g => (g.status || 'Active') === 'Active'),
+    [sellingPriceGroups]
+  );
   const customerGroupFilterOptions = useMemo(() => Array.from(new Set([
     ...customerGroupOptions.map(g => g.name),
     ...customers.map(c => c.customerGroup).filter(Boolean),
@@ -117,6 +125,18 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     }
     if (groupName) {
       const byName = customerGroupOptions.find(g => normalizeText(g.name) === normalizeText(groupName));
+      if (byName) return { id: byName.id, name: byName.name };
+      return { id: '', name: groupName };
+    }
+    return { id: '', name: '' };
+  };
+  const resolveSellingPriceGroupLink = (groupId?: string, groupName?: string) => {
+    if (groupId) {
+      const byId = sellingPriceGroups.find(g => g.id === groupId);
+      if (byId) return { id: byId.id, name: byId.name };
+    }
+    if (groupName) {
+      const byName = sellingPriceGroups.find(g => normalizeText(g.name) === normalizeText(groupName));
       if (byName) return { id: byName.id, name: byName.name };
       return { id: '', name: groupName };
     }
@@ -184,6 +204,34 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     const linkedInactive = customerGroupOptions.find(g => g.id === formData.customerGroupId);
     return linkedInactive ? [...activeCustomerGroupOptions, linkedInactive] : activeCustomerGroupOptions;
   }, [activeCustomerGroupOptions, customerGroupOptions, formData.customerGroupId]);
+  const selectableSellingPriceGroupOptions = useMemo(() => {
+    const active = activeSellingPriceGroupOptions;
+    const currentId = String(formData.sellingPriceGroupId || '').trim();
+    if (!currentId) return active;
+    const exists = active.some(group => group.id === currentId);
+    if (exists) return active;
+    const linkedInactive = sellingPriceGroups.find(group => group.id === currentId);
+    return linkedInactive ? [...active, linkedInactive] : active;
+  }, [activeSellingPriceGroupOptions, sellingPriceGroups, formData.sellingPriceGroupId]);
+  const autoSellingPriceGroupForForm = useMemo(() => {
+    const linkedCustomerGroup = resolveCustomerGroupLink(
+      String(formData.customerGroupId || '').trim() || undefined,
+      String(formData.customerGroup || '').trim() || undefined,
+    );
+    if (!linkedCustomerGroup.id && !linkedCustomerGroup.name) return { id: '', name: '' };
+    const sourceCustomerGroup = linkedCustomerGroup.id
+      ? customerGroupOptions.find(group => group.id === linkedCustomerGroup.id)
+      : customerGroupOptions.find(group => normalizeText(group.name) === normalizeText(linkedCustomerGroup.name));
+    return resolveSellingPriceGroupLink(
+      sourceCustomerGroup?.sellingPriceGroupId,
+      sourceCustomerGroup?.sellingPriceGroup,
+    );
+  }, [formData.customerGroupId, formData.customerGroup, customerGroupOptions]);
+  const sellingPriceGroupSelectValue = (
+    formData.sellingPriceGroupMode === 'manual' && String(formData.sellingPriceGroupId || '').trim()
+  )
+    ? String(formData.sellingPriceGroupId)
+    : '__AUTO__';
 
   // Pay Term fields for modal
   const [payTermDays, setPayTermDays] = useState<string>('');
@@ -297,6 +345,9 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       addedOn: new Date().toISOString().split('T')[0],
       customerGroupId: defaultGroup?.id || '',
       customerGroup: defaultGroup?.name || '',
+      sellingPriceGroupId: '',
+      sellingPriceGroup: '',
+      sellingPriceGroupMode: 'auto',
       address: '',
       mobile: '',
       totalSellDue: 0,
@@ -507,6 +558,38 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       formData.customerGroupId,
       formData.customerGroup
     );
+    if (!linkedCustomerGroup.id) {
+      addNotification({
+        title: 'Customer Group Required',
+        message: 'Please assign a customer group before saving this customer.',
+        type: 'error',
+      });
+      return;
+    }
+    const linkedCustomerGroupRecord = linkedCustomerGroup.id
+      ? customerGroupOptions.find((group) => group.id === linkedCustomerGroup.id)
+      : customerGroupOptions.find((group) => normalizeText(group.name) === normalizeText(linkedCustomerGroup.name));
+    const explicitSellingPriceGroup = resolveSellingPriceGroupLink(
+      String(formData.sellingPriceGroupId || '').trim() || undefined,
+      String(formData.sellingPriceGroup || '').trim() || undefined,
+    );
+    const sellingPriceGroupModeInput = String(formData.sellingPriceGroupMode || '').trim().toLowerCase();
+    const defaultSellingPriceGroup = resolveSellingPriceGroupLink(
+      linkedCustomerGroupRecord?.sellingPriceGroupId,
+      linkedCustomerGroupRecord?.sellingPriceGroup,
+    );
+    const explicitMatchesDefault =
+      Boolean(explicitSellingPriceGroup.id) &&
+      Boolean(defaultSellingPriceGroup.id) &&
+      explicitSellingPriceGroup.id === defaultSellingPriceGroup.id;
+    const shouldUseManualSellingPriceGroup = (
+      sellingPriceGroupModeInput === 'manual'
+      || (
+        sellingPriceGroupModeInput !== 'auto'
+        && Boolean(explicitSellingPriceGroup.id || explicitSellingPriceGroup.name)
+        && !explicitMatchesDefault
+      )
+    );
 
     const builtPayTerm = payTermDays
       ? `${Math.max(0, Number(payTermDays))} ${payTermUnit}`
@@ -533,6 +616,9 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       addedOn,
       customerGroupId: linkedCustomerGroup.id,
       customerGroup: linkedCustomerGroup.name,
+      sellingPriceGroupMode: shouldUseManualSellingPriceGroup ? 'manual' : 'auto',
+      sellingPriceGroupId: shouldUseManualSellingPriceGroup ? explicitSellingPriceGroup.id : '',
+      sellingPriceGroup: shouldUseManualSellingPriceGroup ? explicitSellingPriceGroup.name : '',
       address: formData.address || '',
       totalSellDue: isEdit ? (existing?.totalSellDue ?? 0) : 0,
       totalSellReturnDue: isEdit ? (existing?.totalSellReturnDue ?? 0) : 0,
@@ -679,11 +765,22 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       customer.customerGroupId,
       customer.customerGroup
     );
+    const linkedSellingPriceGroup = resolveSellingPriceGroupLink(
+      customer.sellingPriceGroupId,
+      customer.sellingPriceGroup,
+    );
+    const editingMode = customer.sellingPriceGroupMode === 'manual'
+      && Boolean(linkedSellingPriceGroup.id || linkedSellingPriceGroup.name)
+      ? 'manual'
+      : 'auto';
     setEditingCustomerId(customer.id);
     setFormData({
       ...customer,
       customerGroupId: linkedCustomerGroup.id,
       customerGroup: linkedCustomerGroup.name,
+      sellingPriceGroupId: editingMode === 'manual' ? linkedSellingPriceGroup.id : '',
+      sellingPriceGroup: editingMode === 'manual' ? linkedSellingPriceGroup.name : '',
+      sellingPriceGroupMode: editingMode,
       contactCategory: customer.contactCategory || 'Business',
       customValues: customer.customValues || {},
       addedOn: customer.addedOn || new Date().toISOString().split('T')[0],
@@ -1368,9 +1465,49 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                                         }));
                                     }}
                                 >
-                                    <option value="">None</option>
+                                    <option value="" disabled>Select customer group</option>
                                     {selectableCustomerGroupOptions.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                                 </select>
+                            </div>
+
+                            <div className="group">
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Selling Price Group</label>
+                                <select
+                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-700 cursor-pointer"
+                                    value={sellingPriceGroupSelectValue}
+                                    onChange={(e) => {
+                                        if (e.target.value === '__AUTO__') {
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                sellingPriceGroupMode: 'auto',
+                                                sellingPriceGroupId: '',
+                                                sellingPriceGroup: '',
+                                            }));
+                                            return;
+                                        }
+                                        const linkedSellingPriceGroup = resolveSellingPriceGroupLink(e.target.value, '');
+                                        setFormData((prev) => ({
+                                            ...prev,
+                                            sellingPriceGroupMode: 'manual',
+                                            sellingPriceGroupId: linkedSellingPriceGroup.id,
+                                            sellingPriceGroup: linkedSellingPriceGroup.name,
+                                        }));
+                                    }}
+                                >
+                                    <option value="__AUTO__">
+                                      {autoSellingPriceGroupForForm.name
+                                        ? `Auto (Customer Group default: ${autoSellingPriceGroupForForm.name})`
+                                        : 'Auto (Customer Group default)'}
+                                    </option>
+                                    {selectableSellingPriceGroupOptions.map((group) => (
+                                      <option key={group.id} value={group.id}>
+                                        {group.name}
+                                      </option>
+                                    ))}
+                                </select>
+                                <p className="mt-1 text-[11px] text-slate-500">
+                                  Use Auto to follow the customer group price policy. Choose a group only for this customer-specific override.
+                                </p>
                             </div>
 
                             <div className="group">
