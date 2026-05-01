@@ -555,7 +555,7 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
     printWindow.document.close();
   };
 
-  const handleSave = (andPrint = false) => {
+  const handleSave = async (andPrint = false) => {
     const isRowBlank = (row: OrderItem): boolean => {
       const rowKey = String(row.id);
       const searchValue = String(rowProductSearch[rowKey] || '').trim();
@@ -680,13 +680,24 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       cancelReason: existing?.cancelReason,
     };
 
-    if (isEdit) {
-      globalUpdateOrder(built);
-      addNotification({ title: 'Order Updated', message: `${built.orderNumber} updated successfully.`, type: 'success' });
-    } else {
-      globalAddOrder(built);
-      addNotification({ title: 'Order Created', message: `${built.orderNumber} created successfully.`, type: 'success' });
+    const result = isEdit
+      ? await globalUpdateOrder(built)
+      : await globalAddOrder(built);
+
+    if (!result.ok) {
+      addNotification({
+        title: isEdit ? 'Order Update Failed' : 'Order Save Failed',
+        message: result.error || `${built.orderNumber} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
     }
+
+    addNotification({
+      title: isEdit ? 'Order Updated' : 'Order Created',
+      message: `${built.orderNumber} ${isEdit ? 'updated' : 'created'} successfully.`,
+      type: 'success',
+    });
 
     if (andPrint) {
       printOrder(built);

@@ -9,13 +9,13 @@ This drill validates that production data can be recovered when needed.
 
 ## Backup Source
 
-- Primary: Neon/Postgres managed backup/snapshot
+- Primary: VPS PostgreSQL backup/snapshot
 - Optional supplemental: SQL export (`pg_dump`) for point-in-time evidence
 
 ## Drill Steps
 
 1. Record drill start timestamp and current production commit hash.
-2. Create fresh backup/snapshot in Neon.
+2. Create a fresh VPS PostgreSQL backup/snapshot.
 3. Restore backup into isolated target (staging or temporary branch DB).
 4. Point a test backend instance to restored DB.
 5. Run health checks:

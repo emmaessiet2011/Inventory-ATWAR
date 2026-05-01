@@ -1317,7 +1317,7 @@ interface GlobalContextType {
   // --- Activity Logs ---
   activityLogs: ActivityLogEntry[];
   setActivityLogs: React.Dispatch<React.SetStateAction<ActivityLogEntry[]>>;
-  addActivityLog: (entry: ActivityLogInput) => void;
+  addActivityLog: (entry: ActivityLogInput) => Promise<void>;
   clearActivityLogs: () => void;
 
   // --- Settings ---
@@ -2801,14 +2801,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const dropdownSyncApplyingRemoteRef = useRef(false);
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
   const fieldPaymentsCacheRef = useRef<any[]>([]);
-  const customerGroupLinkMigrationAppliedRef = useRef(false);
-  const customerGroupBackfillInFlightRef = useRef(false);
-  const customerGroupSellingMirrorBackfillAppliedRef = useRef(false);
-  const customerGroupSellingMirrorBackfillInFlightRef = useRef(false);
-  const saleCustomerGroupSnapshotMigrationAppliedRef = useRef(false);
-  const productCategoryLinkMigrationAppliedRef = useRef(false);
-  const productBrandLinkMigrationAppliedRef = useRef(false);
-  const productWarrantyLinkMigrationAppliedRef = useRef(false);
 
   useEffect(() => {
     const dueBySale: Record<string, number> = {};
@@ -2906,78 +2898,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return changed ? next : prev;
     });
   }, [sales, payments]);
-
-  useEffect(() => {
-    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
-
-    const paymentInvoiceSet = new Set(
-      payments
-        .filter((payment) => payment.contactType === 'Customer' && payment.type === 'received')
-        .flatMap((payment) => (payment.linkedInvoices || []).map((invoiceNo) => String(invoiceNo || '').trim()))
-        .filter(Boolean),
-    );
-    const paymentIdSet = new Set(
-      payments
-        .map((payment) => String(payment.id || '').trim())
-        .filter(Boolean),
-    );
-
-    const missingAutoPayments = sales
-      .filter((sale) => isFinalizedSale(sale))
-      .flatMap((sale) => {
-        const paidAmount = Number(sale.totalPaid || 0);
-        if (!Number.isFinite(paidAmount) || paidAmount <= 0) return [];
-        const saleId = String(sale.id || '').trim();
-        if (!saleId) return [];
-        const payId = `pay-${saleId}`;
-        const invoiceNo = String(sale.invoiceNo || '').trim();
-        if (paymentIdSet.has(payId)) return [];
-        if (invoiceNo && paymentInvoiceSet.has(invoiceNo)) return [];
-        const prefix = settings.sellPaymentPrefix || 'SP';
-        const payRef = `${prefix}-${invoiceNo || Date.now()}`;
-        return [{
-          id: payId,
-          date: sale.paymentDate || sale.date,
-          contactId: String(sale.customerId || 'WALK-IN'),
-          contactName: sale.customerName || 'Walk-in Customer',
-          contactType: 'Customer' as const,
-          amount: Number(Math.max(0, paidAmount).toFixed(3)),
-          method: sale.paymentMethod || 'Cash',
-          account: resolveDefaultAccountFromMethod(sale.paymentMethod || 'Cash'),
-          location: sale.location || '',
-          referenceNo: payRef,
-          note: sale.paymentNote || `Payment for invoice ${sale.invoiceNo}`,
-          type: 'received' as const,
-          linkedInvoices: invoiceNo ? [invoiceNo] : [],
-          addedBy: sale.addedBy || 'System',
-        }];
-      });
-
-    if (missingAutoPayments.length === 0) return;
-
-    let cancelled = false;
-    const persistMissingAutoPayments = async () => {
-      const persisted: Payment[] = [];
-      for (const payment of missingAutoPayments) {
-        const saved = await syncRecordStrict('payments', payment);
-        if (!saved.ok || cancelled) continue;
-        persisted.push(payment);
-      }
-      if (cancelled || persisted.length === 0) return;
-      setPayments((prev) => {
-        const seen = new Set(prev.map((payment) => String(payment.id || '').trim()).filter(Boolean));
-        const additions = persisted.filter((payment) => !seen.has(payment.id));
-        if (additions.length === 0) return prev;
-        return [...prev, ...additions];
-      });
-    };
-    persistMissingAutoPayments().catch(() => {
-      // ignore non-critical bootstrap sync failures
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [sales, payments, settings.sellPaymentPrefix]);
 
   // ─── ATOMIC BOOTSTRAP ────────────────────────────────────────────────────
   // On startup, load each core resource individually from the DB.
@@ -3171,7 +3091,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => { cancelled = true; };
   }, [currentUser?.id]);
 
-  // Keep Render free-tier server warm — ping every 4 minutes so it stays awake while app is open.
+  // Keep the backend health connection warm while the app is open.
   useEffect(() => {
     if (!isCoreSyncEnabled()) return;
     void pingBackend();
@@ -3662,15 +3582,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       date: timestamp,
       ipAddress: entry.ipAddress || '',
     };
-    setActivityLogs(prev => [next, ...prev].slice(0, 5000));
     try {
       const saved = await syncRecordStrict('activityLogs', next);
-      if (!saved.ok) {
-        setActivityLogs(prev => prev.filter(entry => entry.id !== next.id));
-      }
+      if (!saved.ok) return;
     } catch {
-      setActivityLogs(prev => prev.filter(entry => entry.id !== next.id));
+      return;
     }
+    setActivityLogs(prev => [next, ...prev].slice(0, 5000));
 
     // Broadcast bell notifications for key business activities
     const module = next.module;
@@ -3735,9 +3653,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
   };
 
-  const addActivityLog = (entry: ActivityLogInput) => {
-    recordActivity(entry);
-  };
+  const addActivityLog = (entry: ActivityLogInput): Promise<void> => recordActivity(entry);
 
   const clearActivityLogs = () => setActivityLogs([]);
 
@@ -4707,284 +4623,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           : 'Draft',
     addedBy: asString(record.addedBy),
   });
-
-  // One-time safe migration for legacy name-only links:
-  // - customers.customerGroup -> customers.customerGroupId
-  // - customerGroups.sellingPriceGroup -> customerGroups.sellingPriceGroupId
-  useEffect(() => {
-    if (customerGroupLinkMigrationAppliedRef.current) return;
-    customerGroupLinkMigrationAppliedRef.current = true;
-
-    const normalizedGroups = customerGroups.map(group =>
-      normalizeCustomerGroupRecord(group, sellingPriceGroups)
-    );
-    const groupsChanged = normalizedGroups.some((group, idx) => {
-      const original = customerGroups[idx];
-      return (
-        group.sellingPriceGroupId !== original.sellingPriceGroupId ||
-        group.sellingPriceGroup !== original.sellingPriceGroup ||
-        group.status !== original.status ||
-        group.calculationPercentage !== original.calculationPercentage ||
-        group.discountPercent !== original.discountPercent
-      );
-    });
-    if (groupsChanged) {
-      setCustomerGroups(normalizedGroups);
-    }
-
-    const sourceGroups = groupsChanged ? normalizedGroups : customerGroups;
-    const normalizedCustomers = customers.map(customer =>
-      normalizeCustomerRecord(customer, sourceGroups)
-    );
-    const customersChanged = normalizedCustomers.some((customer, idx) => {
-      const original = customers[idx];
-      return (
-        customer.customerGroupId !== original.customerGroupId ||
-        customer.customerGroup !== original.customerGroup
-      );
-    });
-    if (customersChanged) {
-      setCustomers(normalizedCustomers);
-    }
-  }, [customerGroups, sellingPriceGroups, customers]);
-
-  // Auto-repair customer groups when customers already carry legacy group names
-  // in their payload/meta but the customerGroups table is empty or incomplete.
-  // This keeps Customer Groups module non-empty and restores relation integrity.
-  useEffect(() => {
-    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
-    if (customerGroupBackfillInFlightRef.current) return;
-
-    const existingGroups = customerGroups.map((group) =>
-      normalizeCustomerGroupRecord(group, sellingPriceGroups),
-    );
-    const existingIds = new Set(
-      existingGroups
-        .map((group) => String(group.id || '').trim())
-        .filter(Boolean),
-    );
-    const existingNames = new Set(
-      existingGroups
-        .map((group) => normalizeText(group.name))
-        .filter(Boolean),
-    );
-    const candidateGroups = new Map<string, CustomerGroup>();
-
-    const toGroupIdFromName = (name: string): string => {
-      const normalizedName = String(name || '').trim();
-      const slug = normalizedName
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
-      const base = `CG-${slug || 'CUSTOMER-GROUP'}`;
-      let candidate = base;
-      let counter = 2;
-      while (existingIds.has(candidate) || Array.from(candidateGroups.values()).some((row) => row.id === candidate)) {
-        candidate = `${base}-${counter}`;
-        counter += 1;
-      }
-      return candidate;
-    };
-
-    customers.forEach((customer) => {
-      const currentGroupId = String(customer.customerGroupId || '').trim();
-      let currentGroupName = String(customer.customerGroup || '').trim();
-
-      if (!currentGroupName && currentGroupId) {
-        currentGroupName = currentGroupId
-          .replace(/^CG-?/i, '')
-          .replace(/-/g, ' ')
-          .trim();
-      }
-      if (!currentGroupName && !currentGroupId) return;
-
-      const normalizedName = normalizeText(currentGroupName);
-      if (!normalizedName) return;
-      if (existingNames.has(normalizedName)) return;
-      if (candidateGroups.has(normalizedName)) return;
-
-      const nextId = currentGroupId || toGroupIdFromName(currentGroupName);
-      const nextGroup = normalizeCustomerGroupRecord({
-        id: nextId,
-        name: currentGroupName,
-        description: '',
-        discountPercent: 0,
-        calculationPercentage: 0,
-        sellingPriceGroupId: '',
-        sellingPriceGroup: '',
-        status: 'Active',
-      }, sellingPriceGroups);
-      candidateGroups.set(normalizedName, nextGroup);
-    });
-
-    const groupsToCreate = Array.from(candidateGroups.values());
-    const canRelinkCustomers = existingGroups.length > 0 || groupsToCreate.length > 0;
-    if (!canRelinkCustomers) return;
-
-    const executeBackfill = async () => {
-      customerGroupBackfillInFlightRef.current = true;
-      try {
-        const persistedGroups: CustomerGroup[] = [];
-        for (const group of groupsToCreate) {
-          const saved = await syncRecordStrict('customerGroups', group);
-          if (saved.ok) {
-            persistedGroups.push(group);
-          }
-        }
-
-        const mergedGroupsById = new Map<string, CustomerGroup>();
-        [...existingGroups, ...persistedGroups].forEach((group) => {
-          const id = String(group.id || '').trim();
-          if (!id) return;
-          mergedGroupsById.set(id, group);
-        });
-        const mergedGroups = Array.from(mergedGroupsById.values());
-
-        if (persistedGroups.length > 0) {
-          setCustomerGroups((prev) => {
-            const byId = new Map<string, CustomerGroup>();
-            prev.forEach((row) => {
-              const id = String(row.id || '').trim();
-              if (id) byId.set(id, row);
-            });
-            persistedGroups.forEach((row) => {
-              const id = String(row.id || '').trim();
-              if (id) byId.set(id, row);
-            });
-            return Array.from(byId.values());
-          });
-        }
-
-        const relinkedCustomers = customers.map((customer) =>
-          normalizeCustomerRecord(customer, mergedGroups),
-        );
-        const changedCustomers = relinkedCustomers.filter((customer, index) => {
-          const original = customers[index];
-          return (
-            String(customer.customerGroupId || '').trim() !== String(original.customerGroupId || '').trim()
-            || String(customer.customerGroup || '').trim() !== String(original.customerGroup || '').trim()
-          );
-        });
-        if (changedCustomers.length === 0) return;
-
-        const persistedCustomers = new Map<string, Customer>();
-        for (const customer of changedCustomers) {
-          const saved = await syncRecordStrict('customers', customer);
-          if (saved.ok) {
-            persistedCustomers.set(String(customer.id || '').trim(), customer);
-          }
-        }
-        if (persistedCustomers.size === 0) return;
-
-        setCustomers((prev) =>
-          prev.map((customer) => {
-            const id = String(customer.id || '').trim();
-            return persistedCustomers.get(id) || customer;
-          }),
-        );
-      } finally {
-        customerGroupBackfillInFlightRef.current = false;
-      }
-    };
-
-    void executeBackfill();
-  }, [customers, customerGroups, sellingPriceGroups, currentUser?.id]);
-
-  // One-time safe migration for legacy sales without customer group snapshot:
-  // - sales.customerGroup/customerGroupId <- customer master at migration time
-  useEffect(() => {
-    if (saleCustomerGroupSnapshotMigrationAppliedRef.current) return;
-    saleCustomerGroupSnapshotMigrationAppliedRef.current = true;
-
-    setSales(prev => {
-      const normalized = prev.map(sale => {
-        const existingGroupId = String(sale.customerGroupId || '').trim();
-        const existingGroupName = String(sale.customerGroup || '').trim();
-        if (existingGroupId || existingGroupName) return sale;
-
-        const saleCustomerId = String(sale.customerId || '').trim();
-        const saleCustomerNameNorm = normalizeText(sale.customerName);
-        const matchedCustomer = customers.find(customer => (
-          String(customer.id || '').trim() === saleCustomerId
-          || normalizeText(customer.businessName) === saleCustomerNameNorm
-          || normalizeText(customer.name) === saleCustomerNameNorm
-        ));
-        if (!matchedCustomer) return sale;
-
-        const linkedGroup = resolveCustomerGroupLink(
-          matchedCustomer.customerGroupId,
-          matchedCustomer.customerGroup,
-          customerGroups,
-        );
-        const snapshotGroupId = String(linkedGroup.id || '').trim();
-        const snapshotGroupName = String(linkedGroup.name || '').trim();
-        if (!snapshotGroupId && !snapshotGroupName) return sale;
-
-        return {
-          ...sale,
-          customerGroupId: snapshotGroupId,
-          customerGroup: snapshotGroupName,
-        };
-      });
-
-      const changed = normalized.some((sale, index) => sale !== prev[index]);
-      return changed ? normalized : prev;
-    });
-  }, [customers, customerGroups]);
-
-  // One-time safe migration for legacy name-only product category links:
-  // - products.category -> products.categoryId
-  useEffect(() => {
-    if (productCategoryLinkMigrationAppliedRef.current) return;
-    productCategoryLinkMigrationAppliedRef.current = true;
-
-    setProducts(prev => {
-      const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
-      const changed = normalized.some((product, idx) => {
-        const original = prev[idx];
-        return (
-          product.categoryId !== original.categoryId ||
-          product.category !== original.category
-        );
-      });
-      return changed ? normalized : prev;
-    });
-  }, [productCategories, productBrands]);
-
-  // One-time safe migration for legacy name-only product brand links:
-  // - products.brand -> products.brandId
-  useEffect(() => {
-    if (productBrandLinkMigrationAppliedRef.current) return;
-    productBrandLinkMigrationAppliedRef.current = true;
-
-    setProducts(prev => {
-      const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
-      const changed = normalized.some((product, idx) => {
-        const original = prev[idx];
-        return (
-          product.brandId !== original.brandId ||
-          product.brand !== original.brand
-        );
-      });
-      return changed ? normalized : prev;
-    });
-  }, [productCategories, productBrands, warranties]);
-
-  // One-time safe migration for legacy name-only product warranty links:
-  // - products.warranty (name) -> products.warranty (id)
-  useEffect(() => {
-    if (productWarrantyLinkMigrationAppliedRef.current) return;
-    productWarrantyLinkMigrationAppliedRef.current = true;
-
-    setProducts(prev => {
-      const normalized = prev.map(product => normalizeProductRecord(product, productCategories, productBrands, warranties));
-      const changed = normalized.some((product, idx) => {
-        const original = prev[idx];
-        return product.warranty !== original.warranty;
-      });
-      return changed ? normalized : prev;
-    });
-  }, [productCategories, productBrands, warranties]);
 
   // ============================================================
   //  CRUD: PRODUCTS
@@ -9005,75 +8643,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     return { result, mirror };
   };
-
-  // One-time backfill: enforce 1:1 mirror from every customer group to selling price group.
-  useEffect(() => {
-    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
-    if (customerGroupSellingMirrorBackfillAppliedRef.current) return;
-    if (customerGroupSellingMirrorBackfillInFlightRef.current) return;
-    if (customerGroups.length === 0) return;
-
-    customerGroupSellingMirrorBackfillAppliedRef.current = true;
-    customerGroupSellingMirrorBackfillInFlightRef.current = true;
-
-    const run = async () => {
-      try {
-        let workingSellingPriceGroups = [...sellingPriceGroups];
-        const persistedMirrors = new Map<string, SellingPriceGroup>();
-        const persistedCustomerGroups = new Map<string, CustomerGroup>();
-
-        for (const rawGroup of customerGroups) {
-          const normalizedGroup = normalizeCustomerGroupRecord(rawGroup, workingSellingPriceGroups);
-          const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroup, workingSellingPriceGroups);
-          if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) continue;
-
-          const mirror = mirrorOutcome.mirror;
-          workingSellingPriceGroups = mergeSellingPriceGroupList(workingSellingPriceGroups, mirror);
-          persistedMirrors.set(mirror.id, mirror);
-
-          const needsLinkUpdate =
-            String(normalizedGroup.sellingPriceGroupId || '').trim() !== mirror.id
-            || normalizeText(normalizedGroup.sellingPriceGroup) !== normalizeText(mirror.name);
-
-          if (!needsLinkUpdate) continue;
-
-          const linkedGroup = normalizeCustomerGroupRecord({
-            ...normalizedGroup,
-            sellingPriceGroupId: mirror.id,
-            sellingPriceGroup: mirror.name,
-          }, workingSellingPriceGroups);
-          const groupSaved = await syncRecordStrict('customerGroups', linkedGroup);
-          if (!groupSaved.ok) {
-            recordActivity({
-              action: 'Blocked',
-              module: 'Customer Groups',
-              description: `Failed to link customer group ${linkedGroup.name || linkedGroup.id} to mirrored selling price group (${groupSaved.status || 0}).`,
-            });
-            continue;
-          }
-          persistedCustomerGroups.set(linkedGroup.id, linkedGroup);
-        }
-
-        if (persistedMirrors.size > 0) {
-          setSellingPriceGroups((prev) => {
-            let next = [...prev];
-            persistedMirrors.forEach((row) => {
-              next = mergeSellingPriceGroupList(next, row);
-            });
-            return next;
-          });
-        }
-
-        if (persistedCustomerGroups.size > 0) {
-          setCustomerGroups((prev) => prev.map((row) => persistedCustomerGroups.get(row.id) || row));
-        }
-      } finally {
-        customerGroupSellingMirrorBackfillInFlightRef.current = false;
-      }
-    };
-
-    void run();
-  }, [customerGroups, sellingPriceGroups, currentUser?.id]);
 
   const addCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
     const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);

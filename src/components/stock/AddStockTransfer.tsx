@@ -341,7 +341,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         message: `${nextRecord.refNo} has been ${editingRecord ? 'updated' : 'created'} successfully.`,
         type: 'success',
       });
-      addActivityLog({
+      await addActivityLog({
         action: editingRecord ? 'Updated' : 'Created',
         module: 'Stock Transfers',
         description: `${nextRecord.refNo} ${editingRecord ? 'updated' : 'created'}`,

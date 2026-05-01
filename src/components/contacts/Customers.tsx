@@ -65,7 +65,6 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
   // Pull ALL customers from GlobalContext — single source of truth
   const {
     customers: globalCustomers,
-    setCustomers: globalSetCustomers,
     addCustomer: globalAddCustomer,
     updateCustomer: globalUpdateCustomer,
     deleteCustomer: globalDeleteCustomer,
@@ -443,7 +442,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     });
   };
 
-  const handleSaveCustomer = () => {
+  const handleSaveCustomer = async () => {
     const businessName = String(formData.businessName || '').trim();
     const contactName = String(formData.name || '').trim();
     const effectiveBusinessName = businessName || contactName;
@@ -630,13 +629,24 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
       rebatePercent: formData.rebatePercent ?? undefined,
     };
 
-    if (isEdit) {
-      globalUpdateCustomer(newCustomer);
-      addNotification({ title: 'Customer Updated', message: `"${effectiveBusinessName}" was updated successfully.`, type: 'success' });
-    } else {
-      globalAddCustomer(newCustomer);
-      addNotification({ title: 'Customer Added', message: `"${effectiveBusinessName}" was added successfully.`, type: 'success' });
+    const result = isEdit
+      ? await globalUpdateCustomer(newCustomer)
+      : await globalAddCustomer(newCustomer);
+
+    if (!result.ok) {
+      addNotification({
+        title: isEdit ? 'Update Failed' : 'Save Failed',
+        message: result.error || `"${effectiveBusinessName}" could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
     }
+
+    addNotification({
+      title: isEdit ? 'Customer Updated' : 'Customer Added',
+      message: `"${effectiveBusinessName}" was ${isEdit ? 'updated' : 'added'} successfully.`,
+      type: 'success',
+    });
 
     closeAddModal();
   };
@@ -668,7 +678,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     setPayChequeDate(''); setPayChequeNo(''); setPayChequeBankName(''); setPayChequeDrawerName('');
   };
 
-  const processPayment = () => {
+  const processPayment = async () => {
     if (!paymentCustomer) return;
     if (!paymentDate) {
       addNotification({ title: 'Missing Date', message: 'Please select a payment date.', type: 'error' });
@@ -725,7 +735,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     const payRebateAmount = (payRebateEnabled && payRebatePercent > 0)
       ? Number((roundedAmount * payRebatePercent / 100).toFixed(currencyPrecision))
       : 0;
-    globalAddPayment({
+    const result = await globalAddPayment({
       id: `PAY-${Date.now()}`,
       date: dateValue,
       contactId: paymentCustomer.id,
@@ -751,6 +761,15 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
         drawerName: payChequeDrawerName || undefined,
       } : {}),
     });
+
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Failed',
+        message: result.error || `Payment for ${paymentCustomer.businessName} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
 
     closePaymentModal();
     addNotification({
@@ -821,21 +840,36 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
     setActiveActionId(null);
   }
 
-  const executeConfirmation = () => {
+  const executeConfirmation = async () => {
       if (confirmationModal.type === 'removeCustomField') {
         if (confirmationModal.customFieldName) {
           const fieldName = confirmationModal.customFieldName;
+          const customersNeedingUpdate = customers
+            .filter(c => Object.prototype.hasOwnProperty.call(c.customValues || {}, fieldName))
+            .map(c => {
+              const newValues = { ...(c.customValues || {}) };
+              delete newValues[fieldName];
+              return { ...c, customValues: newValues };
+            });
+
+          for (const customer of customersNeedingUpdate) {
+            const result = await globalUpdateCustomer(customer);
+            if (!result.ok) {
+              addNotification({
+                title: 'Custom Field Remove Failed',
+                message: result.error || `Could not update "${customer.businessName}" in Postgres.`,
+                type: 'error',
+              });
+              return;
+            }
+          }
+
           setCustomColumns(prev => prev.filter(col => col !== fieldName));
           setFormData(prev => {
             const newValues = { ...(prev.customValues || {}) };
             delete newValues[fieldName];
             return { ...prev, customValues: newValues };
           });
-          globalSetCustomers(prev => prev.map(c => {
-            const newValues = { ...(c.customValues || {}) };
-            delete newValues[fieldName];
-            return { ...c, customValues: newValues };
-          }));
           addNotification({
             title: 'Custom Field Removed',
             message: `Custom field "${fieldName}" was removed.`,
@@ -844,7 +878,15 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
         }
       } else if (confirmationModal.type === 'deleteCustomer') {
         if (confirmationModal.customerId) {
-          globalDeleteCustomer(confirmationModal.customerId);
+          const result = await globalDeleteCustomer(confirmationModal.customerId);
+          if (!result.ok) {
+            addNotification({
+              title: 'Delete Failed',
+              message: result.error || `"${confirmationModal.customerName}" could not be deleted from Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: 'Customer Deleted',
             message: `"${confirmationModal.customerName}" was removed.`,
@@ -855,7 +897,15 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
         const customer = customers.find(c => c.id === confirmationModal.customerId);
         if (customer) {
           const nextStatus = confirmationModal.type === 'deactivate' ? 'Inactive' : 'Active';
-          globalUpdateCustomer({ ...customer, status: nextStatus });
+          const result = await globalUpdateCustomer({ ...customer, status: nextStatus });
+          if (!result.ok) {
+            addNotification({
+              title: 'Status Update Failed',
+              message: result.error || `"${customer.businessName}" could not be updated in Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: `Customer ${nextStatus === 'Active' ? 'Activated' : 'Deactivated'}`,
             message: `"${customer.businessName}" is now ${nextStatus}.`,
@@ -1471,7 +1521,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                             </div>
 
                             <div className="group">
-                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Selling Price Group</label>
+                                <label className="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Override Price Group (Optional)</label>
                                 <select
                                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-700 cursor-pointer"
                                     value={sellingPriceGroupSelectValue}
@@ -1506,7 +1556,7 @@ const Customers: React.FC<CustomersProps> = ({ onNavigate }) => {
                                     ))}
                                 </select>
                                 <p className="mt-1 text-[11px] text-slate-500">
-                                  Use Auto to follow the customer group price policy. Choose a group only for this customer-specific override.
+                                  Auto uses customer-group pricing. Selecting a group applies product-level override for this customer; products not defined in the override still use the customer-group price.
                                 </p>
                             </div>
 

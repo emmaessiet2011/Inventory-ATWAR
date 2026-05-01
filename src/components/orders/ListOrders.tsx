@@ -116,7 +116,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
   const [entriesPerPage, setEntriesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [range, setRange] = useState<DateRangeValue>(getCurrentYearRange);
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void | Promise<void>} | null>(null);
   const [cancelModal, setCancelModal] = useState<{ isOpen: boolean; order: GlobalOrder | null }>({ isOpen: false, order: null });
   const [cancelReason, setCancelReason] = useState('');
   const [filters, setFilters] = useState({
@@ -412,7 +412,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
     setCancelModal({ isOpen: true, order });
   };
 
-  const confirmCancelOrder = () => {
+  const confirmCancelOrder = async () => {
     const order = cancelModal.order;
     if (!order) return;
 
@@ -441,7 +441,7 @@ const ListOrders: React.FC<ListOrdersProps> = ({
     }
 
     const hasStaleConvertedReference = !!order.convertedSaleId && !linkedSale;
-    globalUpdateOrder({
+    const result = await globalUpdateOrder({
       ...order,
       status: 'Cancelled',
       cancelledBy: currentUser?.name || 'Admin',
@@ -451,6 +451,14 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       convertedInvoiceNo: undefined,
       convertedAt: undefined,
     });
+    if (!result.ok) {
+      addNotification({
+        title: 'Cancel Failed',
+        message: result.error || `${order.orderNumber} could not be cancelled in Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     addNotification({
       title: 'Order Cancelled',
       message: hasStaleConvertedReference
@@ -481,10 +489,9 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       message: linkedSale
         ? `Delete order ${order.orderNumber}? Linked invoice ${linkedSale.invoiceNo || linkedSale.id} will remain in Sales.`
         : `Are you sure you want to permanently delete order ${order.orderNumber}?`,
-      onConfirm: () => {
-        void (async () => {
+      onConfirm: async () => {
           const deleted = await globalDeleteOrder(order.id);
-          if (deleted) {
+          if (deleted.ok) {
             addNotification({
               title: 'Order Deleted',
               message: `${order.orderNumber} has been deleted.`,
@@ -493,12 +500,12 @@ const ListOrders: React.FC<ListOrdersProps> = ({
           } else {
             addNotification({
               title: 'Delete Failed',
-              message: `${order.orderNumber} could not be deleted from database.`,
+              message: deleted.error || `${order.orderNumber} could not be deleted from database.`,
               type: 'error',
             });
+            return;
           }
           setConfirmModal(null);
-        })();
       },
     });
   };
@@ -518,8 +525,16 @@ const ListOrders: React.FC<ListOrdersProps> = ({
       isOpen: true,
       title: 'Approve Order',
       message: `Approve order ${order.orderNumber} for invoicing?`,
-      onConfirm: () => {
-        globalUpdateOrder({ ...order, isApproved: true, approvedBy: currentUser?.name || 'Admin', approvedAt: new Date().toISOString() });
+      onConfirm: async () => {
+        const result = await globalUpdateOrder({ ...order, isApproved: true, approvedBy: currentUser?.name || 'Admin', approvedAt: new Date().toISOString() });
+        if (!result.ok) {
+          addNotification({
+            title: 'Approval Failed',
+            message: result.error || `${order.orderNumber} could not be approved in Postgres.`,
+            type: 'error',
+          });
+          return;
+        }
         addNotification({ title: 'Order Approved', message: `${order.orderNumber} approved and ready for invoicing.`, type: 'success' });
         setConfirmModal(null);
       },

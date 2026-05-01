@@ -59,7 +59,6 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   // Pull ALL suppliers from GlobalContext — single source of truth
   const {
     suppliers: globalSuppliers,
-    setSuppliers: globalSetSuppliers,
     addSupplier: globalAddSupplier,
     updateSupplier: globalUpdateSupplier,
     deleteSupplier: globalDeleteSupplier,
@@ -294,7 +293,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     }));
   };
 
-  const handleSaveSupplier = () => {
+  const handleSaveSupplier = async () => {
     const businessName = String(formData.businessName || '').trim();
     const contactPerson = String(formData.name || '').trim();
     const effectiveBusinessName = businessName || contactPerson;
@@ -424,13 +423,24 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       contactCategory: formData.contactCategory || 'Supplier',
     };
 
-    if (isEdit) {
-      globalUpdateSupplier(supplierData);
-      addNotification({ title: 'Supplier Updated', message: `"${effectiveBusinessName}" was updated successfully.`, type: 'success' });
-    } else {
-      globalAddSupplier(supplierData);
-      addNotification({ title: 'Supplier Added', message: `"${effectiveBusinessName}" was added successfully.`, type: 'success' });
+    const result = isEdit
+      ? await globalUpdateSupplier(supplierData)
+      : await globalAddSupplier(supplierData);
+
+    if (!result.ok) {
+      addNotification({
+        title: isEdit ? 'Update Failed' : 'Save Failed',
+        message: result.error || `"${effectiveBusinessName}" could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
     }
+
+    addNotification({
+      title: isEdit ? 'Supplier Updated' : 'Supplier Added',
+      message: `"${effectiveBusinessName}" was ${isEdit ? 'updated' : 'added'} successfully.`,
+      type: 'success',
+    });
 
     setIsAddModalOpen(false);
     resetSupplierForm();
@@ -513,7 +523,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     setPayFileName('');
   };
 
-  const processSupplierPayment = () => {
+  const processSupplierPayment = async () => {
     if (!paymentSupplier) return;
     if (!paymentDate) {
       addNotification({ title: 'Missing Date', message: 'Please select a payment date.', type: 'error' });
@@ -536,7 +546,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         purchase.supplier === paymentSupplier.businessName
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-    globalAddPayment({
+    const result = await globalAddPayment({
       id: `PAY-SUP-${Date.now()}`,
       date: paymentDate || new Date().toISOString().slice(0, 16),
       contactId: paymentSupplier.id,
@@ -552,6 +562,14 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       addedBy: currentUser?.name || 'Admin',
       attachmentName: payFileName || undefined,
     });
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Failed',
+        message: result.error || `Payment for ${paymentSupplier.businessName} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     closePaymentModal();
     addNotification({
       title: 'Payment Recorded',
@@ -560,21 +578,36 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     });
   };
 
-  const executeConfirmation = () => {
+  const executeConfirmation = async () => {
       if (confirmationModal.type === 'removeCustomField') {
         if (confirmationModal.customFieldName) {
           const fieldName = confirmationModal.customFieldName;
+          const suppliersNeedingUpdate = suppliers
+            .filter(s => Object.prototype.hasOwnProperty.call(s.customValues || {}, fieldName))
+            .map(s => {
+              const newValues = { ...(s.customValues || {}) };
+              delete newValues[fieldName];
+              return { ...s, customValues: newValues };
+            });
+
+          for (const supplier of suppliersNeedingUpdate) {
+            const result = await globalUpdateSupplier(supplier);
+            if (!result.ok) {
+              addNotification({
+                title: 'Custom Field Remove Failed',
+                message: result.error || `Could not update "${supplier.businessName}" in Postgres.`,
+                type: 'error',
+              });
+              return;
+            }
+          }
+
           setCustomColumns(prev => prev.filter(col => col !== fieldName));
           setFormData(prev => {
             const newValues = { ...(prev.customValues || {}) };
             delete newValues[fieldName];
             return { ...prev, customValues: newValues };
           });
-          globalSetSuppliers(prev => prev.map(s => {
-            const newValues = { ...(s.customValues || {}) };
-            delete newValues[fieldName];
-            return { ...s, customValues: newValues };
-          }));
           addNotification({
             title: 'Custom Field Removed',
             message: `Custom field "${fieldName}" was removed.`,
@@ -583,7 +616,15 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         }
       } else if (confirmationModal.type === 'deleteSupplier') {
         if (confirmationModal.supplierId) {
-          globalDeleteSupplier(confirmationModal.supplierId);
+          const result = await globalDeleteSupplier(confirmationModal.supplierId);
+          if (!result.ok) {
+            addNotification({
+              title: 'Delete Failed',
+              message: result.error || `"${confirmationModal.supplierName}" could not be deleted from Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: 'Supplier Deleted',
             message: `"${confirmationModal.supplierName}" was removed.`,
@@ -594,7 +635,15 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         const supplier = suppliers.find(s => s.id === confirmationModal.supplierId);
         if (supplier) {
           const nextStatus = confirmationModal.type === 'deactivate' ? 'Inactive' : 'Active';
-          globalUpdateSupplier({ ...supplier, status: nextStatus });
+          const result = await globalUpdateSupplier({ ...supplier, status: nextStatus });
+          if (!result.ok) {
+            addNotification({
+              title: 'Status Update Failed',
+              message: result.error || `"${supplier.businessName}" could not be updated in Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: `Supplier ${nextStatus === 'Active' ? 'Activated' : 'Deactivated'}`,
             message: `"${supplier.businessName}" is now ${nextStatus}.`,

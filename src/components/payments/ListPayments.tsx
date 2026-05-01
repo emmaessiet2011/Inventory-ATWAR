@@ -315,9 +315,9 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
     newWindow.print();
   };
 
-  const handleSaveEditedPayment = (updatedPayment: any) => {
+  const handleSaveEditedPayment = async (updatedPayment: any) => {
     const original = globalPayments.find(payment => payment.id === updatedPayment.id);
-    if (!original) return;
+    if (!original) return false;
     const dateValue = String(updatedPayment.paidOn || updatedPayment.date || original.date);
     const resolvedAccount = String(
       updatedPayment.account
@@ -327,7 +327,7 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
     ).trim();
     const { paymentAccount: _legacyPaymentAccount, ...normalizedUpdatedPayment } = updatedPayment;
     const { paymentAccount: _legacyOriginalPaymentAccount, ...normalizedOriginal } = original;
-    globalUpdatePayment({
+    const result = await globalUpdatePayment({
       ...normalizedOriginal,
       ...normalizedUpdatedPayment,
       amount: Number(updatedPayment.amount || original.amount),
@@ -338,16 +338,33 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
       location: updatedPayment.location || original.location || '',
       attachmentName: updatedPayment.attachmentName || original.attachmentName,
     });
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Update Failed',
+        message: result.error || `${updatedPayment.referenceNo || updatedPayment.refNo || original.referenceNo} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return false;
+    }
     addNotification({
       title: 'Payment Updated',
       message: `${updatedPayment.referenceNo || updatedPayment.refNo || original.referenceNo} was updated successfully.`,
       type: 'success',
     });
+    return true;
   };
 
-  const handleDeleteConfirmed = () => {
+  const handleDeleteConfirmed = async () => {
     if (!deletingPayment) return;
-    globalDeletePayment(deletingPayment.id);
+    const result = await globalDeletePayment(deletingPayment.id);
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Delete Failed',
+        message: result.error || `${deletingPayment.referenceNo} could not be deleted from Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
     addNotification({
       title: 'Payment Deleted',
       message: `${deletingPayment.referenceNo} was deleted successfully.`,
@@ -660,8 +677,16 @@ const ListPayments: React.FC<ListPaymentsProps> = ({ onNavigate, onContactSelect
                         )}
                         {payment.raw.method === 'Cheque' && !payment.raw.chequeCleared && (
                           <button
-                            onClick={() => {
-                              globalUpdatePayment({ ...payment.raw, chequeCleared: true });
+                            onClick={async () => {
+                              const result = await globalUpdatePayment({ ...payment.raw, chequeCleared: true });
+                              if (!result.ok) {
+                                addNotification({
+                                  title: 'Cheque Update Failed',
+                                  message: result.error || 'Payment could not be marked as cleared in Postgres.',
+                                  type: 'error',
+                                });
+                                return;
+                              }
                               setActiveActionId(null);
                               addNotification({ title: 'Cheque Cleared', message: `Payment marked as deposited/cleared.`, type: 'success' });
                             }}

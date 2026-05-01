@@ -169,10 +169,18 @@ const ViewPaymentsModal: React.FC<ViewPaymentsModalProps> = ({ isOpen, onClose, 
       <ConfirmationModal
         isOpen={!!pendingDeletePaymentId}
         onClose={() => setPendingDeletePaymentId(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!pendingDeletePaymentId) return;
           const target = invoicePayments.find(payment => payment.id === pendingDeletePaymentId);
-          globalDeletePayment(pendingDeletePaymentId);
+          const result = await globalDeletePayment(pendingDeletePaymentId);
+          if (!result.ok) {
+            addNotification({
+              title: 'Payment Delete Failed',
+              message: result.error || `${target?.referenceNo || 'Payment'} could not be deleted from Postgres.`,
+              type: 'error',
+            });
+            return false;
+          }
           setPendingDeletePaymentId(null);
           addNotification({
             title: 'Payment Deleted',

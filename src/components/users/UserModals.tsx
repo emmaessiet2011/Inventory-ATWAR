@@ -13,13 +13,14 @@ interface ConfirmationModalProps extends ModalProps {
     message: string;
     confirmLabel: string;
     confirmVariant?: 'danger' | 'warning' | 'primary';
-    onConfirm: () => void;
+    onConfirm: () => void | boolean | Promise<void | boolean>;
     icon?: React.ReactNode;
 }
 
 export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ 
     isOpen, onClose, onConfirm, title, message, confirmLabel, confirmVariant = 'primary', icon 
 }) => {
+    const [isConfirming, setIsConfirming] = useState(false);
     if (!isOpen) return null;
 
     const variantClasses = {
@@ -32,6 +33,17 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         danger: 'bg-rose-50 text-rose-600',
         warning: 'bg-amber-50 text-amber-600',
         primary: 'bg-indigo-50 text-indigo-600'
+    };
+
+    const handleConfirm = async () => {
+        if (isConfirming) return;
+        setIsConfirming(true);
+        try {
+            const shouldClose = await onConfirm();
+            if (shouldClose !== false) onClose();
+        } finally {
+            setIsConfirming(false);
+        }
     };
 
     return createPortal(
@@ -47,15 +59,17 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
                 <div className="p-6 bg-slate-50 flex gap-3">
                     <button 
                         onClick={onClose}
+                        disabled={isConfirming}
                         className="flex-1 px-4 py-3 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-100 transition-colors"
                     >
                         Cancel
                     </button>
                     <button 
-                        onClick={() => { onConfirm(); onClose(); }}
-                        className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold text-white transition-all shadow-lg ${variantClasses[confirmVariant]}`}
+                        onClick={handleConfirm}
+                        disabled={isConfirming}
+                        className={`flex-1 px-4 py-3 rounded-xl text-sm font-bold text-white transition-all shadow-lg disabled:opacity-60 disabled:cursor-not-allowed ${variantClasses[confirmVariant]}`}
                     >
-                        {confirmLabel}
+                        {isConfirming ? 'Working...' : confirmLabel}
                     </button>
                 </div>
             </div>

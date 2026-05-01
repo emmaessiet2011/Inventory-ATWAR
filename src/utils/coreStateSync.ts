@@ -9,7 +9,7 @@ const getApiBaseUrl = (): string => {
 export const isCoreSyncEnabled = (): boolean =>
   String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase() === 'true';
 
-/** Lightweight ping to keep the Render server awake while users are active. */
+/** Lightweight health ping while users are active. */
 export const pingBackend = async (): Promise<void> => {
   try {
     await fetch(`${getApiBaseUrl()}/api/health`, {

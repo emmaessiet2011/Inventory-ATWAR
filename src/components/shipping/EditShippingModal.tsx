@@ -9,16 +9,18 @@ import {
   useGlobalContext,
 } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
+import { useNotifications } from '@/context/NotificationContext';
 
 interface EditShippingModalProps {
   isOpen: boolean;
   onClose: () => void;
   sale: GlobalSale | null;
-  onSave?: (updatedSale: GlobalSale) => void;
+  onSave?: (updatedSale: GlobalSale) => void | boolean | { ok: boolean; error?: string } | Promise<void | boolean | { ok: boolean; error?: string }>;
 }
 
 const EditShippingModal: React.FC<EditShippingModalProps> = ({ isOpen, onClose, sale, onSave }) => {
   const { users, currentUser, settings } = useGlobalContext();
+  const { addNotification } = useNotifications();
 
   const [shippingDetails, setShippingDetails] = useState('');
   const [shippingAddress, setShippingAddress] = useState('');
@@ -279,7 +281,7 @@ const EditShippingModal: React.FC<EditShippingModalProps> = ({ isOpen, onClose, 
                 Cancel
             </button>
              <button
-                onClick={() => {
+                onClick={async () => {
                   if (onSave && sale) {
                     // Append to shippingActivities log so history is preserved
                     const newActivity: ShippingActivity = {
@@ -293,7 +295,7 @@ const EditShippingModal: React.FC<EditShippingModalProps> = ({ isOpen, onClose, 
                       ? [...existingActivities, newActivity]
                       : existingActivities;
 
-                    onSave({
+                    const saved = await onSave({
                       ...sale,
                       shippingStatus,
                       shippingAddress,
@@ -304,6 +306,21 @@ const EditShippingModal: React.FC<EditShippingModalProps> = ({ isOpen, onClose, 
                       shippingDocName: shippingDocName || sale.shippingDocName || '',
                       shippingDocument: shippingDocument || sale.shippingDocument || undefined,
                       shippingActivities: updatedActivities,
+                    });
+                    if (saved === false || (saved && typeof saved === 'object' && 'ok' in saved && !saved.ok)) {
+                      addNotification({
+                        title: 'Shipping Update Failed',
+                        message: (saved && typeof saved === 'object' && 'error' in saved && saved.error)
+                          ? String(saved.error)
+                          : 'Shipping update could not be saved to Postgres.',
+                        type: 'error',
+                      });
+                      return;
+                    }
+                    addNotification({
+                      title: 'Shipping Updated',
+                      message: `Shipping details for ${sale.invoiceNo || sale.id} were saved successfully.`,
+                      type: 'success',
                     });
                   }
                   onClose();

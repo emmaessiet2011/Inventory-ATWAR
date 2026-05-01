@@ -647,7 +647,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
         return;
       }
       addNotification({ title: 'Field Payment Updated', message: `${current.referenceNo} was updated.`, type: 'success' });
-      addActivityLog({
+      await addActivityLog({
         action: 'Updated',
         module: 'Field Payments',
         description: `Updated field payment: ${current.referenceNo}`,
@@ -685,7 +685,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       return;
     }
     addNotification({ title: 'Field Payment Added', message: `${referenceNo} created and pending approval.`, type: 'success' });
-    addActivityLog({
+    await addActivityLog({
       action: 'Created',
       module: 'Field Payments',
       description: `Created field payment: ${referenceNo}`,
@@ -779,7 +779,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       return;
     }
     addNotification({ title: 'Field Payment Approved', message: `${record.referenceNo} posted to payment ledger.`, type: 'success' });
-    addActivityLog({
+    await addActivityLog({
       action: 'Approved',
       module: 'Field Payments',
       description: `Approved field payment: ${record.referenceNo}`,
@@ -808,7 +808,7 @@ const FieldPayments: React.FC<FieldPaymentsProps> = ({ onNavigate }) => {
       return;
     }
     addNotification({ title: 'Field Payment Deleted', message: `${deletingRecord.referenceNo} was deleted.`, type: 'success' });
-    addActivityLog({
+    await addActivityLog({
       action: 'Deleted',
       module: 'Field Payments',
       description: `Deleted field payment: ${deletingRecord.referenceNo}`,

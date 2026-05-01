@@ -207,10 +207,11 @@ const Discounts: React.FC<DiscountsProps> = ({ onNavigate: _onNavigate }) => {
         message: result.error || 'Unable to save discount.',
         type: 'error',
       });
-      return;
+      return false;
     }
     setEditingDiscount(null);
     setIsDiscountModalOpen(false);
+    return true;
   };
 
   const handleToggleStatus = (discount: Discount) => {

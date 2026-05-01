@@ -19,12 +19,15 @@ interface AddPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   sale: any;
-  onSave?: (payment: any) => void | Promise<boolean>;
+  onSave?: (payment: any) => void | boolean | { ok: boolean; error?: string } | Promise<void | boolean | { ok: boolean; error?: string }>;
   paymentType?: 'received' | 'sent';
   documentLabel?: string;
 }
 
 const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
+const isSaveResult = (value: unknown): value is { ok: boolean; error?: string } => (
+  Boolean(value) && typeof value === 'object' && 'ok' in (value as Record<string, unknown>)
+);
 
 const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   isOpen,
@@ -185,10 +188,13 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
         drawerName: chequeDrawerName || undefined,
       } : {}),
     }));
-    if (saved === false) {
+    const failedSave = isSaveResult(saved) && saved.ok === false ? saved : undefined;
+    if (saved === false || failedSave) {
       addNotification({
         title: 'Payment Failed',
-        message: 'Unable to save payment in Postgres.',
+        message: failedSave?.error
+          ? String(failedSave.error)
+          : 'Unable to save payment in Postgres.',
         type: 'error',
       });
       return;

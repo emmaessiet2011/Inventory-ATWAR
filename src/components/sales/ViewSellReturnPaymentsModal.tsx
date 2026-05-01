@@ -4,6 +4,7 @@ import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { printDocument } from '@/utils/printUtils';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
+import { useNotifications } from '@/context/NotificationContext';
 
 interface ViewSellReturnPaymentsModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ const ViewSellReturnPaymentsModal: React.FC<ViewSellReturnPaymentsModalProps> = 
   sellReturnId,
 }) => {
   const { sellReturns, payments, settings, formatCurrency, deletePayment: globalDeletePayment } = useGlobalContext();
+  const { addNotification } = useNotifications();
   const [pendingDeletePayment, setPendingDeletePayment] = useState<{ id: string; ref: string } | null>(null);
 
   const sellReturn = useMemo(
@@ -162,8 +164,22 @@ const ViewSellReturnPaymentsModal: React.FC<ViewSellReturnPaymentsModalProps> = 
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeletePayment(null)}
-        onConfirm={() => {
-          if (pendingDeletePayment) globalDeletePayment(pendingDeletePayment.id);
+        onConfirm={async () => {
+          if (!pendingDeletePayment) return;
+          const result = await globalDeletePayment(pendingDeletePayment.id);
+          if (!result.ok) {
+            addNotification({
+              title: 'Payment Delete Failed',
+              message: result.error || `${pendingDeletePayment.ref} could not be deleted from Postgres.`,
+              type: 'error',
+            });
+            return false;
+          }
+          addNotification({
+            title: 'Payment Deleted',
+            message: `${pendingDeletePayment.ref} was deleted successfully.`,
+            type: 'success',
+          });
           setPendingDeletePayment(null);
         }}
       />

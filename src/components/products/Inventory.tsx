@@ -130,7 +130,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isBulkActionOpen, setIsBulkActionOpen] = useState(false);
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void} | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void | Promise<void>} | null>(null);
   const [stockLedgerVersion, setStockLedgerVersion] = useState(0);
 
   useEffect(() => {
@@ -339,11 +339,11 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       isOpen: true,
       title: 'Delete Products',
       message: `Are you sure you want to delete ${selectedProducts.length} product${selectedProducts.length > 1 ? 's' : ''}? This cannot be undone.`,
-      onConfirm: () => { setConfirmModal(null); executeBulkDelete(); },
+      onConfirm: async () => { await executeBulkDelete(); setConfirmModal(null); },
     });
   };
 
-  const executeBulkDelete = () => {
+  const executeBulkDelete = async () => {
     const blockedIds = selectedProducts.filter(id => {
       const pid = String(id);
       return (
@@ -360,9 +360,25 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       });
     }
     const deletableIds = selectedProducts.filter(id => !blockedIds.includes(id));
-    deletableIds.forEach(id => globalDeleteProduct(id));
-    if (deletableIds.length > 0) {
-      addNotification({ title: 'Deleted', message: `${deletableIds.length} product(s) deleted successfully.`, type: 'success' });
+    let deletedCount = 0;
+    const failedNames: string[] = [];
+    for (const id of deletableIds) {
+      const result = await globalDeleteProduct(id);
+      if (result.ok) {
+        deletedCount += 1;
+      } else {
+        failedNames.push(products.find(p => String(p.id) === id)?.name || id);
+      }
+    }
+    if (deletedCount > 0) {
+      addNotification({ title: 'Deleted', message: `${deletedCount} product(s) deleted successfully.`, type: 'success' });
+    }
+    if (failedNames.length > 0) {
+      addNotification({
+        title: 'Delete Failed',
+        message: `${failedNames.length} product(s) could not be deleted from Postgres: ${failedNames.join(', ')}`,
+        type: 'error',
+      });
     }
     setSelectedProducts([]);
     setIsBulkActionOpen(false);

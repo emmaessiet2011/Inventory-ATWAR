@@ -33,7 +33,7 @@ interface ConfirmModalState {
   message: string;
   confirmLabel: string;
   confirmClassName: string;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 const normalizePoolKey = (value: unknown): string =>
@@ -518,14 +518,24 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
     };
   };
 
-  const persistSellReturn = (returnRecord: SellReturn) => {
-    if (editingReturn) globalUpdateSellReturn(returnRecord);
-    else globalAddSellReturn(returnRecord);
+  const persistSellReturn = async (returnRecord: SellReturn): Promise<boolean> => {
+    const result = editingReturn
+      ? await globalUpdateSellReturn(returnRecord)
+      : await globalAddSellReturn(returnRecord);
+    if (!result.ok) {
+      addNotification({
+        title: editingReturn ? 'Sell Return Update Failed' : 'Sell Return Save Failed',
+        message: result.error || `Credit note ${returnRecord.referenceNo} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return false;
+    }
     addNotification({
       title: editingReturn ? 'Sell Return Updated' : 'Sell Return Saved',
       message: `Credit note ${returnRecord.referenceNo} was ${editingReturn ? 'updated' : 'recorded'}.`,
       type: 'success',
     });
+    return true;
   };
 
   const handleSubmit = () => {
@@ -536,8 +546,9 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
       message: `This will save credit note ${returnRecord.referenceNo} with total ${formatCurrency(returnRecord.total)}.`,
       confirmLabel: editingReturn ? 'Yes, Update' : 'Yes, Submit',
       confirmClassName: 'bg-blue-600 hover:bg-blue-700',
-      onConfirm: () => {
-        persistSellReturn(returnRecord);
+      onConfirm: async () => {
+        const saved = await persistSellReturn(returnRecord);
+        if (!saved) return;
         setConfirmModal(null);
         onNavigate('returns');
       },
@@ -552,8 +563,9 @@ const AddSellReturn: React.FC<AddSellReturnProps> = ({ onNavigate, prefillSaleId
       message: `This will save credit note ${returnRecord.referenceNo} and open the print preview.`,
       confirmLabel: 'Yes, Save & Print',
       confirmClassName: 'bg-slate-700 hover:bg-slate-800',
-      onConfirm: () => {
-        persistSellReturn(returnRecord);
+      onConfirm: async () => {
+        const saved = await persistSellReturn(returnRecord);
+        if (!saved) return;
         setConfirmModal(null);
     // Print credit note in new window
     const businessName = settings.businessName || 'ATWAR AL MUSTAQBAL';

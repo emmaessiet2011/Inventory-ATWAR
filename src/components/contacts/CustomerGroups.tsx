@@ -235,14 +235,22 @@ const CustomerGroups: React.FC = () => {
       setActiveActionId(null);
   };
 
-  const executeConfirmation = () => {
+  const executeConfirmation = async () => {
       if (!confirmationModal.groupId || !confirmationModal.type) return;
 
       if (confirmationModal.type === 'delete') {
-          ctxDelete(
+          const result = await ctxDelete(
             confirmationModal.groupId,
             confirmationModal.reassignToGroupId || undefined
           );
+          if (!result.ok) {
+            addNotification({
+              title: 'Delete Failed',
+              message: result.error || `"${confirmationModal.groupName}" could not be deleted from Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({
             title: 'Group Deleted',
             message: confirmationModal.memberCount > 0 && confirmationModal.reassignToGroupId
@@ -254,7 +262,15 @@ const CustomerGroups: React.FC = () => {
           const newStatus = confirmationModal.type === 'activate' ? 'Active' : 'Inactive';
           const group = contextGroups.find(g => g.id === confirmationModal.groupId);
           if (group) {
-            ctxUpdate({ ...group, status: newStatus });
+            const result = await ctxUpdate({ ...group, status: newStatus });
+            if (!result.ok) {
+              addNotification({
+                title: 'Status Update Failed',
+                message: result.error || `"${group.name}" could not be updated in Postgres.`,
+                type: 'error',
+              });
+              return;
+            }
             addNotification({
               title: `Group ${newStatus}`,
               message: `"${group.name}" is now ${newStatus}.`,
@@ -279,7 +295,7 @@ const CustomerGroups: React.FC = () => {
       setActiveActionId(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
       const trimmedName = formData.name.trim();
       const trimmedDescription = formData.description.trim();
       if (!trimmedName) {
@@ -319,7 +335,7 @@ const CustomerGroups: React.FC = () => {
           const existing = contextGroups.find(g => g.id === formData.id);
           const selectedPriceGroup = contextSellingPriceGroups.find(pg => pg.id === formData.sellingPriceGroupId);
           if (!existing) return;
-          ctxUpdate({
+          const result = await ctxUpdate({
               ...existing,
               id: formData.id,
               name: trimmedName,
@@ -330,11 +346,19 @@ const CustomerGroups: React.FC = () => {
               calculationPercentage,
               status: formData.status || existing.status || 'Active',
           });
+          if (!result.ok) {
+            addNotification({
+              title: 'Update Failed',
+              message: result.error || `"${trimmedName}" could not be saved to Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({ title: 'Group Updated', message: `"${trimmedName}" updated successfully.`, type: 'success' });
       } else {
           // Add new
           const selectedPriceGroup = contextSellingPriceGroups.find(pg => pg.id === formData.sellingPriceGroupId);
-          ctxAdd({
+          const result = await ctxAdd({
               id: generateId('GRP-'),
               name: trimmedName,
               description: trimmedDescription,
@@ -344,6 +368,14 @@ const CustomerGroups: React.FC = () => {
               calculationPercentage,
               status: formData.status || 'Active',
           });
+          if (!result.ok) {
+            addNotification({
+              title: 'Save Failed',
+              message: result.error || `"${trimmedName}" could not be saved to Postgres.`,
+              type: 'error',
+            });
+            return;
+          }
           addNotification({ title: 'Group Created', message: `"${trimmedName}" created successfully.`, type: 'success' });
       }
       handleCloseModal();

@@ -282,76 +282,126 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
     if (selectedPriceGroupId) {
       const manual = byId(selectedPriceGroupId);
-      if (manual) return { group: manual, source: 'Manual' };
-    }
-
-    const customerMode = String(selectedCustomerRecord?.sellingPriceGroupMode || '').trim().toLowerCase();
-    const customerOverride = byId(String(selectedCustomerRecord?.sellingPriceGroupId || '').trim()) ||
-      byName(selectedCustomerRecord?.sellingPriceGroup);
-    if (customerOverride && (customerMode === 'manual' || customerMode === '')) {
-      return {
-        group: customerOverride,
-        source: `Customer Override (${selectedCustomerRecord?.businessName || selectedCustomerRecord?.name || selectedCustomerRecord?.id || 'Customer'})`,
-      };
+      if (manual) {
+        return {
+          group: manual,
+          source: 'Manual',
+          overlayGroup: null as typeof manual,
+          overlaySource: '',
+        };
+      }
     }
 
     const customerGroupRecord = customerGroupById(selectedCustomerRecord?.customerGroupId) ||
       customerGroupByName(selectedCustomerRecord?.customerGroup);
+    const customerMode = String(selectedCustomerRecord?.sellingPriceGroupMode || '').trim().toLowerCase();
+    const customerOverrideCandidate = byId(String(selectedCustomerRecord?.sellingPriceGroupId || '').trim()) ||
+      byName(selectedCustomerRecord?.sellingPriceGroup);
+    const hasExplicitCustomerOverride = Boolean(
+      customerOverrideCandidate
+      && (
+        customerMode === 'manual'
+        || (
+          customerMode === ''
+          && (
+            String(selectedCustomerRecord?.sellingPriceGroupId || '').trim()
+            || String(selectedCustomerRecord?.sellingPriceGroup || '').trim()
+          )
+        )
+      )
+    );
+
+    let resolvedBaseGroup = null as ReturnType<typeof byId>;
+    let resolvedSource = 'Default';
     if (customerGroupRecord) {
       const linkedGroup = byId(customerGroupRecord.sellingPriceGroupId || '') ||
         byName(customerGroupRecord.sellingPriceGroup);
       const fromCustomerGroup = linkedGroup;
       if (fromCustomerGroup) {
-        return { group: fromCustomerGroup, source: `Customer Group (${customerGroupRecord.name})` };
+        resolvedBaseGroup = fromCustomerGroup;
+        resolvedSource = `Customer Group (${customerGroupRecord.name})`;
       }
     }
-
-    const locationGroupName = location
-      ? locations.find(l => l.name === location)?.priceGroup
-      : '';
-    const fromLocation = byName(locationGroupName);
-    if (fromLocation) {
-      return { group: fromLocation, source: `Location (${location})` };
+    if (!resolvedBaseGroup) {
+      const locationGroupName = location
+        ? locations.find(l => l.name === location)?.priceGroup
+        : '';
+      const fromLocation = byName(locationGroupName);
+      if (fromLocation) {
+        resolvedBaseGroup = fromLocation;
+        resolvedSource = `Location (${location})`;
+      }
+    }
+    if (!resolvedBaseGroup) {
+      resolvedBaseGroup = byName('Default Selling Price') || activeSellingPriceGroups[0] || null;
+      resolvedSource = 'Default';
     }
 
-    const defaultGroup = byName('Default Selling Price') || activeSellingPriceGroups[0] || null;
-    return { group: defaultGroup, source: 'Default' };
+    const overlayGroup = (
+      hasExplicitCustomerOverride
+      && customerOverrideCandidate
+      && (!resolvedBaseGroup || customerOverrideCandidate.id !== resolvedBaseGroup.id)
+    )
+      ? customerOverrideCandidate
+      : null;
+
+    return {
+      group: resolvedBaseGroup,
+      source: resolvedSource,
+      overlayGroup,
+      overlaySource: overlayGroup
+        ? `Customer Override (${selectedCustomerRecord?.name || selectedCustomerRecord?.id || 'Customer'})`
+        : '',
+    };
   }, [selectedPriceGroupId, selectedCustomerRecord, location, locations, activeSellingPriceGroups, activeCustomerGroups]);
 
   const resolvedSellingPriceGroup = sellingPriceGroupResolution.group;
   const resolvedSellingPriceGroupSource = sellingPriceGroupResolution.source;
+  const resolvedSellingPriceOverlayGroup = sellingPriceGroupResolution.overlayGroup;
+  const resolvedSellingPriceOverlaySource = sellingPriceGroupResolution.overlaySource;
 
   const getGroupedProductPrice = (product: any) => {
     const basePrice = Number(product?.sellingPrice || 0);
     const group = resolvedSellingPriceGroup;
     const applyCustomerGroupCalc = (price: number) =>
       Math.max(0, price * (1 + (customerGroupCalculationPercentage / 100)));
-    if (!group) return Number(applyCustomerGroupCalc(basePrice).toFixed(3));
+    const evaluateGroupPrice = (targetGroup: typeof group): { price: number; applies: boolean } => {
+      if (!targetGroup) return { price: basePrice, applies: false };
+      const adjustedBase = basePrice * (1 + (Number(targetGroup.priceCalcPercentage || 0) / 100));
+      const applicable = targetGroup.applicableProducts || [];
 
-    const adjustedBase = basePrice * (1 + (Number(group.priceCalcPercentage || 0) / 100));
-    const applicable = group.applicableProducts || [];
+      if (applicable.length === 0) {
+        const groupedPrice = Math.max(0, adjustedBase * (1 - (Number(targetGroup.discount || 0) / 100)));
+        return { price: groupedPrice, applies: true };
+      }
 
-    if (applicable.length === 0) {
-      const groupedPrice = Math.max(0, adjustedBase * (1 - (Number(group.discount || 0) / 100)));
-      return Number(applyCustomerGroupCalc(groupedPrice).toFixed(3));
+      const productRule = applicable.find((p) =>
+        p.id === product?.id ||
+        (p.sku && normalizeSku(p.sku) === normalizeSku(product?.sku))
+      );
+      if (!productRule) return { price: basePrice, applies: false };
+
+      const productDiscountRaw = Number(productRule.discount);
+      const productDiscount = Number.isFinite(productDiscountRaw)
+        ? productDiscountRaw
+        : Number(targetGroup.discount || 0);
+      const rulePriceRaw = Number(productRule.price);
+      const hasRulePrice = Number.isFinite(rulePriceRaw) && rulePriceRaw >= 0;
+      const hasFixedOverride = hasRulePrice && Math.abs(rulePriceRaw - basePrice) > 0.0005;
+      const priceBase = hasFixedOverride ? rulePriceRaw : adjustedBase;
+      const groupedPrice = Math.max(0, priceBase * (1 - (productDiscount / 100)));
+      return { price: groupedPrice, applies: true };
+    };
+
+    const baseGroupResult = evaluateGroupPrice(group);
+    const shouldApplyOverlay = !selectedPriceGroupId && resolvedSellingPriceOverlayGroup;
+    if (shouldApplyOverlay) {
+      const overlayResult = evaluateGroupPrice(resolvedSellingPriceOverlayGroup);
+      if (overlayResult.applies) {
+        return Number(applyCustomerGroupCalc(overlayResult.price).toFixed(3));
+      }
     }
-
-    const productRule = applicable.find(p =>
-      p.id === product?.id ||
-      (p.sku && normalizeSku(p.sku) === normalizeSku(product?.sku))
-    );
-    if (!productRule) return Number(applyCustomerGroupCalc(basePrice).toFixed(3));
-
-    const productDiscountRaw = Number(productRule.discount);
-    const productDiscount = Number.isFinite(productDiscountRaw)
-      ? productDiscountRaw
-      : Number(group.discount || 0);
-    const rulePriceRaw = Number(productRule.price);
-    const hasRulePrice = Number.isFinite(rulePriceRaw) && rulePriceRaw >= 0;
-    const hasFixedOverride = hasRulePrice && Math.abs(rulePriceRaw - basePrice) > 0.0005;
-    const priceBase = hasFixedOverride ? rulePriceRaw : adjustedBase;
-    const groupedPrice = Math.max(0, priceBase * (1 - (productDiscount / 100)));
-    return Number(applyCustomerGroupCalc(groupedPrice).toFixed(3));
+    return Number(applyCustomerGroupCalc(baseGroupResult.price).toFixed(3));
   };
 
   const round3 = (value: number): number => Number((Number(value) || 0).toFixed(3));
@@ -1115,7 +1165,14 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       const groupedPrice = getGroupedProductPrice(product);
       return recalcRowWithProduct(row, product, groupedPrice);
     }));
-  }, [resolvedSellingPriceGroup?.id, customerGroupCalculationPercentage, isEdit, products]);
+  }, [
+    resolvedSellingPriceGroup?.id,
+    resolvedSellingPriceOverlayGroup?.id,
+    selectedPriceGroupId,
+    customerGroupCalculationPercentage,
+    isEdit,
+    products,
+  ]);
 
   // Auto-update payment fields: payment applies only for Final sales
   useEffect(() => {
@@ -2239,7 +2296,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                 </div>
 
                 <div className="group">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Selling Price Group</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Selling Price Group (Sale)</label>
                     <select
                         className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-bold text-slate-700 cursor-pointer"
                         value={selectedPriceGroupId}
@@ -2254,6 +2311,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                     </select>
                     <p className="text-[10px] text-slate-400 mt-1">
                       Source: {resolvedSellingPriceGroupSource}
+                      {!selectedPriceGroupId && resolvedSellingPriceOverlayGroup && (
+                        <> | Overlay: {resolvedSellingPriceOverlaySource || resolvedSellingPriceOverlayGroup.name}</>
+                      )}
                       {customerGroupCalculationPercentage !== 0 && (
                         <> | Customer Group Adj: {customerGroupCalculationPercentage > 0 ? '+' : ''}{customerGroupCalculationPercentage}%</>
                       )}

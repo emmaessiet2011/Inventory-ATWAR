@@ -656,7 +656,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
         }`,
         type: 'success',
       });
-      addActivityLog({
+      await addActivityLog({
         action: editingRecord ? 'Updated' : 'Created',
         module: 'Stock Adjustments',
         description: `${nextRecord.referenceNo} ${editingRecord ? 'updated' : 'created'} as pending`,

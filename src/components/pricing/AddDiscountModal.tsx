@@ -23,7 +23,7 @@ export interface DiscountFormData {
 interface AddDiscountModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave?: (data: DiscountFormData) => void;
+  onSave?: (data: DiscountFormData) => void | boolean | Promise<void | boolean>;
   initialData?: Partial<Discount> | null;
 }
 
@@ -95,11 +95,13 @@ const AddDiscountModal: React.FC<AddDiscountModalProps> = ({
 
   const [formData, setFormData] = useState<DiscountFormData>(() => buildInitialFormData(initialData));
   const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setFormData(buildInitialFormData(initialData));
     setError('');
+    setIsSaving(false);
   }, [isOpen, initialData]);
 
   if (!isOpen) return null;
@@ -175,10 +177,19 @@ const AddDiscountModal: React.FC<AddDiscountModalProps> = ({
     };
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const payload = validateAndBuildPayload();
     if (!payload) return;
-    onSave?.(payload);
+    setIsSaving(true);
+    try {
+      const shouldClose = await onSave?.(payload);
+      if (shouldClose === false) return;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not save discount.');
+      return;
+    } finally {
+      setIsSaving(false);
+    }
     onClose();
   };
 
@@ -186,7 +197,8 @@ const AddDiscountModal: React.FC<AddDiscountModalProps> = ({
     !formData.name.trim() ||
     !formData.discountType ||
     !formData.discountAmount ||
-    (formData.applyInCustomerGroups && formData.selectedGroups.length === 0);
+    (formData.applyInCustomerGroups && formData.selectedGroups.length === 0) ||
+    isSaving;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
@@ -410,7 +422,7 @@ const AddDiscountModal: React.FC<AddDiscountModalProps> = ({
             disabled={saveDisabled}
             className="px-6 py-2.5 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-700 transition shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {initialData?.id ? 'Update' : 'Save Discount'}
+            {isSaving ? 'Saving...' : initialData?.id ? 'Update' : 'Save Discount'}
           </button>
         </div>
       </div>

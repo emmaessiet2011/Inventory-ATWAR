@@ -20,7 +20,7 @@ interface EditPaymentModalProps {
   onClose: () => void;
   payment: any;
   customer: any;
-  onSave: (updatedPayment: any) => void;
+  onSave: (updatedPayment: any) => void | boolean | Promise<void | boolean>;
 }
 
 const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, payment, customer, onSave }) => {
@@ -117,7 +117,7 @@ const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, pa
   const referenceNo = payment.referenceNo || payment.refNo || '--';
   const businessName = customer?.businessName || payment.contactName || '--';
 
-  const save = () => {
+  const save = async () => {
     const parsedAmount = parseFloat(toFixedPrecision(paymentAmount, currencyPrecision));
     if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
       addNotification({ title: 'Invalid Amount', message: 'Enter a payment amount greater than 0.', type: 'error' });
@@ -126,7 +126,7 @@ const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, pa
     const resolvedAccount = resolvePaymentAccount();
     if (!resolvedAccount) return;
     const { paymentAccount: _legacyPaymentAccount, ...normalizedPayment } = payment;
-    onSave({
+    const shouldClose = await onSave({
       ...normalizedPayment,
       method: paymentMethod,
       date: paymentDate || payment.date,
@@ -136,6 +136,7 @@ const EditPaymentModal: React.FC<EditPaymentModalProps> = ({ isOpen, onClose, pa
       note: paymentNote,
       attachmentName: attachmentName || undefined,
     });
+    if (shouldClose === false) return;
     onClose();
   };
 

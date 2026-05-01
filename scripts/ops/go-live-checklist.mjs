@@ -11,7 +11,7 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const defaultSteps = [
   {
     id: 'health-alerts',
-    label: 'Infra health checks (Render + Neon)',
+    label: 'Infra health checks (VPS API + PostgreSQL)',
     cmd: npmCommand,
     args: ['run', 'ops:health:alerts'],
   },

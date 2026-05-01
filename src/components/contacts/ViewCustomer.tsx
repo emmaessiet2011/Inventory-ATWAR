@@ -391,7 +391,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const documentsData = customer?.documents || [];
 
   // Document handlers
-  const handleSaveDoc = () => {
+  const handleSaveDoc = async () => {
       if (!newDocHeading.trim() || !customer) return;
       const now = formatLedgerDate(new Date().toISOString());
       let updatedDocs;
@@ -400,7 +400,15 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       } else {
           updatedDocs = [...documentsData, { id: `DOC-${Date.now()}`, heading: newDocHeading.trim(), addedBy: currentUser?.name || 'Admin', createdAt: now, updatedAt: now }];
       }
-      globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      const result = await globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      if (!result.ok) {
+        addNotification({
+          title: 'Document Save Failed',
+          message: result.error || 'Customer document could not be saved to Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       setIsDocModalOpen(false);
       setNewDocHeading('');
       setEditingDoc(null);
@@ -412,10 +420,18 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       setDeleteDocModalOpen(true);
   };
 
-  const confirmDeleteDoc = () => {
+  const confirmDeleteDoc = async () => {
       if (!customer || !pendingDeleteDocId) return;
       const updatedDocs = documentsData.filter(d => d.id !== pendingDeleteDocId);
-      globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      const result = await globalUpdateCustomer({ ...(customer as any), documents: updatedDocs });
+      if (!result.ok) {
+        addNotification({
+          title: 'Document Delete Failed',
+          message: result.error || 'Customer document could not be deleted from Postgres.',
+          type: 'error',
+        });
+        return;
+      }
       setDeleteDocModalOpen(false);
       setPendingDeleteDocId(null);
   };
@@ -515,10 +531,10 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
   const handleDeleteSaleConfirm = async () => {
     if (!selectedSaleId) return;
     const deleted = await globalDeleteSale(selectedSaleId); // restores stock + updates customer balance via GlobalContext
-    if (!deleted) {
+    if (!deleted.ok) {
       addNotification({
         title: 'Delete failed',
-        message: 'Could not delete this sale from Postgres.',
+        message: deleted.error || 'Could not delete this sale from Postgres.',
         type: 'error',
       });
       return;
@@ -647,21 +663,43 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       setActiveActionId(null);
   };
 
-  const handleDeletePaymentConfirm = () => {
+  const handleDeletePaymentConfirm = async () => {
       if (selectedPayment) {
-          globalDeletePayment(selectedPayment.id); // removes payment from GlobalContext
+          const result = await globalDeletePayment(selectedPayment.id);
+          if (!result.ok) {
+            addNotification({
+              title: 'Payment Delete Failed',
+              message: result.error || 'Payment could not be deleted from Postgres.',
+              type: 'error',
+            });
+            return;
+          }
       }
       setDeletePaymentModalOpen(false);
       setSelectedPayment(null);
   };
 
-  const handleSaveEditedPayment = (updatedPayment: any) => {
+  const handleSaveEditedPayment = async (updatedPayment: any) => {
       const normalized = {
           ...updatedPayment,
           referenceNo: updatedPayment.referenceNo || updatedPayment.refNo,
           date: String(updatedPayment.paidOn || updatedPayment.date || ''),
       };
-      globalUpdatePayment(normalized);
+      const result = await globalUpdatePayment(normalized);
+      if (!result.ok) {
+        addNotification({
+          title: 'Payment Update Failed',
+          message: result.error || 'Payment could not be saved to Postgres.',
+          type: 'error',
+        });
+        return false;
+      }
+      addNotification({
+        title: 'Payment Updated',
+        message: `${normalized.referenceNo || 'Payment'} was updated successfully.`,
+        type: 'success',
+      });
+      return true;
   };
 
   const handlePayClick = () => {
@@ -680,7 +718,7 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
     }
   }, [paymentMethod]);
 
-  const processPayment = () => {
+  const processPayment = async () => {
     if (!customer) return;
 
     const amountPaid = parseFloat(paymentAmount || '0');
@@ -717,13 +755,13 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
       return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
     })[0];
 
-    // GlobalContext addPayment handles: FIFO invoice distribution,
-    // customer balance update, and localStorage persistence automatically
+    // GlobalContext addPayment handles FIFO invoice distribution,
+    // customer balance update, and Postgres persistence automatically.
     const customerRebatePercent = Number(customer.rebatePercent || 0);
     const payRebateAmount = (payRebateEnabled && customerRebatePercent > 0)
       ? Number((roundedAmount * customerRebatePercent / 100).toFixed(currencyPrecision))
       : 0;
-    globalAddPayment({
+    const result = await globalAddPayment({
         id: `PAY-${Date.now()}`,
         date: paymentDate || new Date().toISOString().slice(0, 16),
         contactId: customer.id,
@@ -749,6 +787,15 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
           drawerName: payChequeDrawerName || undefined,
         } : {}),
     });
+
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Failed',
+        message: result.error || `Payment for ${customer.businessName} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
 
     setIsPaymentModalOpen(false);
     setPaymentAmount('');
@@ -2250,8 +2297,20 @@ const ViewCustomer: React.FC<ViewCustomerProps> = ({ onNavigate, contactId, init
              <AddDiscountModal
                 isOpen={isDiscountModalOpen}
                 onClose={() => setIsDiscountModalOpen(false)}
-                onSave={(formData) => globalAddDiscount({ ...formData, id: generateId('DISC') })}
-            />
+                onSave={async (formData) => {
+                  const result = await globalAddDiscount({ ...formData, id: generateId('DISC') });
+                  if (!result.ok) {
+                    addNotification({
+                      title: 'Discount Save Failed',
+                      message: result.error || 'Discount could not be saved to Postgres.',
+                      type: 'error',
+                    });
+                    return false;
+                  }
+                  addNotification({ title: 'Discount Saved', message: 'Discount was saved successfully.', type: 'success' });
+                  return true;
+                }}
+             />
         )}
 
        {/* Action Menu Portal for Sales Tab Table Rows */}

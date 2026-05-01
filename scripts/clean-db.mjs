@@ -1,8 +1,8 @@
 /**
  * clean-db.mjs
- * Wipes all business/transaction data from the production Neon database.
+ * Wipes all business/transaction data from the production PostgreSQL database.
  * Preserves: AppUser (users) and Location (+ LocationPaymentMethod).
- * Writes a clean snapshot so the frontend clears localStorage on next load.
+ * Uses the server database connection only; business data is not cleared from browser storage.
  *
  * Run from project root: node scripts/clean-db.mjs
  */

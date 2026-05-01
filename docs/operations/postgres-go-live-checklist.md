@@ -5,11 +5,11 @@ Business sign-off is managed separately by operations/process owners.
 
 ## 1. Environment Readiness
 
-- [ ] `DATABASE_URL` points to production Neon project.
+- [ ] `DATABASE_URL` points to the production PostgreSQL database on the VPS.
 - [ ] `JWT_SECRET` is set and non-default.
 - [ ] `VITE_API_BASE_URL` points to production backend.
-- [ ] Render service health endpoint returns `status: up` and `db: connected`.
-- [ ] Namecheap build artifact is from latest approved commit.
+- [ ] VPS service health endpoint returns `status: up` and `db: connected`.
+- [ ] Namecheap/VPS frontend build artifact is from latest approved commit.
 
 ## 2. Data Integrity Gate
 
@@ -38,5 +38,5 @@ Business sign-off is managed separately by operations/process owners.
 ## 5. Launch Control
 
 - [ ] Release tag created.
-- [ ] Rollback path documented (previous Render deploy + prior dist package).
+- [ ] Rollback path documented (previous VPS release + prior dist package).
 - [ ] Hypercare owner assigned for first 72 hours post go-live.

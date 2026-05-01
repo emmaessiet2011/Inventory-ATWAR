@@ -685,7 +685,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             : `${approvedRecord.referenceNo} approved and stock updated successfully.`,
         type: 'success',
       });
-      addActivityLog({
+      await addActivityLog({
         action: 'Approved',
         module: 'Stock Adjustments',
         description: `${approvedRecord.referenceNo} approved`,
@@ -821,7 +821,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         message: `${adjustment.referenceNo} deleted successfully.`,
         type: 'success',
       });
-      addActivityLog({
+      await addActivityLog({
         action: 'Deleted',
         module: 'Stock Adjustments',
         description: `${adjustment.referenceNo} deleted (${status.toLowerCase()})`,

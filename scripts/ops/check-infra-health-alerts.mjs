@@ -12,7 +12,9 @@ const warnLatencyMs = Number(process.env.HEALTH_WARN_LATENCY_MS || 1200);
 const failLatencyMs = Number(process.env.HEALTH_FAIL_LATENCY_MS || 3500);
 const failOnDegraded = String(process.env.HEALTH_FAIL_ON_DEGRADED || 'false').trim().toLowerCase() === 'true';
 const alertWebhookUrl = String(process.env.HEALTH_ALERT_WEBHOOK_URL || '').trim();
-const enableNeonDirectCheck = String(process.env.HEALTH_ENABLE_NEON_DIRECT_CHECK || 'true')
+const enableDatabaseDirectCheck = String(
+  process.env.HEALTH_ENABLE_DATABASE_DIRECT_CHECK || process.env.HEALTH_ENABLE_NEON_DIRECT_CHECK || 'true',
+)
   .trim()
   .toLowerCase() !== 'false';
 
@@ -119,8 +121,8 @@ const runEndpointProbes = async () => {
   };
 };
 
-const runNeonDirectProbe = async () => {
-  if (!enableNeonDirectCheck) {
+const runDatabaseDirectProbe = async () => {
+  if (!enableDatabaseDirectCheck) {
     return {
       enabled: false,
       level: 'skipped',
@@ -145,16 +147,16 @@ const runNeonDirectProbe = async () => {
       enabled: true,
       level: 'down',
       latencyMs: Date.now() - started,
-      error: error instanceof Error ? error.message : 'Neon probe failed',
+      error: error instanceof Error ? error.message : 'Database probe failed',
     };
   } finally {
     await prisma.$disconnect();
   }
 };
 
-const computeOverallLevel = (endpointResult, neonResult) => {
+const computeOverallLevel = (endpointResult, databaseResult) => {
   const endpointLevels = [endpointResult.endpoints.healthz.level, endpointResult.endpoints.apiHealth.level];
-  const levels = neonResult.enabled ? [...endpointLevels, neonResult.level] : endpointLevels;
+  const levels = databaseResult.enabled ? [...endpointLevels, databaseResult.level] : endpointLevels;
   if (levels.includes('down')) return 'down';
   if (levels.includes('degraded')) return 'degraded';
   return 'up';
@@ -186,8 +188,8 @@ const sendAlert = async (report) => {
 
 async function main() {
   const endpointResult = await runEndpointProbes();
-  const neonResult = await runNeonDirectProbe();
-  const overallLevel = computeOverallLevel(endpointResult, neonResult);
+  const databaseResult = await runDatabaseDirectProbe();
+  const overallLevel = computeOverallLevel(endpointResult, databaseResult);
   const report = {
     checkedAt: new Date().toISOString(),
     base,
@@ -199,7 +201,7 @@ async function main() {
       failOnDegraded,
     },
     endpoints: endpointResult.endpoints,
-    neonDirect: neonResult,
+    databaseDirect: databaseResult,
     overall: {
       level: overallLevel,
       shouldFail: overallLevel === 'down' || (failOnDegraded && overallLevel === 'degraded'),

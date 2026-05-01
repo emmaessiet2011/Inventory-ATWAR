@@ -17,9 +17,11 @@ npm install
 Copy `server/.env.example` to `server/.env` and verify values:
 
 ```env
-DATABASE_URL="postgresql://postgres:admin@localhost:5432/atwar_bss?schema=public"
+DATABASE_URL="postgresql://atwar_app:<password>@127.0.0.1:5432/atwar_erp?schema=public"
 PORT=4000
-FRONTEND_ORIGIN="http://localhost:5173"
+HOST="0.0.0.0"
+FRONTEND_ORIGIN="https://erp.atwarbss.com"
+JWT_SECRET="<generate-a-long-random-secret>"
 ```
 
 ## 3) Create Prisma client and DB table
@@ -71,7 +73,7 @@ Notes:
 Use these before go-live and after major backend/deployment changes.
 
 ```bash
-# 1) Render + Neon health with latency thresholds and optional alert webhook
+# 1) VPS API + PostgreSQL health with latency thresholds and optional alert webhook
 npm run ops:health:alerts
 
 # 2) PostgreSQL reconciliation summary (writes qa/reports/ops-reconciliation-summary.json)

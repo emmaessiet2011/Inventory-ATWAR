@@ -16,6 +16,7 @@ import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { printDocument } from '@/utils/printUtils';
 import { formatDateBySettings } from '@/utils/dateTime';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
+import { useNotifications } from '@/context/NotificationContext';
 
 interface ViewSupplierProps {
   onNavigate: (page: string) => void;
@@ -50,6 +51,7 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
     addDiscount: globalAddDiscount,
     generateId,
   } = useGlobalContext();
+  const { addNotification } = useNotifications();
   const currencyPrecision = clampPrecision(Number(settings.currencyPrecision ?? 3));
 
   const year = new Date().getFullYear();
@@ -273,13 +275,13 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
     });
   };
 
-  const handleSaveSupplierPayment = () => {
+  const handleSaveSupplierPayment = async () => {
     if (!supplier) return;
     const amount = parseFloat(paymentForm.amount);
     if (Number.isNaN(amount) || amount <= 0) return;
     const roundedAmount = Number(toFixedPrecision(amount, currencyPrecision));
     const paymentPrefix = normalizePrefix(settings.purchasePaymentPrefix || settings.paymentPrefix, 'PP');
-    globalAddPayment({
+    const result = await globalAddPayment({
       id: `PAY-SUP-${Date.now()}`,
       date: paymentForm.date || new Date().toISOString().slice(0, 16),
       contactId: supplier.id,
@@ -294,6 +296,19 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
       type: 'sent',
       addedBy: currentUser?.name || 'Admin',
       attachmentName: paymentForm.attachmentName || undefined,
+    });
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Save Failed',
+        message: result.error || `Payment for ${supplier.businessName} could not be saved to Postgres.`,
+        type: 'error',
+      });
+      return;
+    }
+    addNotification({
+      title: 'Payment Recorded',
+      message: `Payment of ${formatCurrency(roundedAmount)} recorded for ${supplier.businessName}.`,
+      type: 'success',
     });
     setIsPaymentModalOpen(false);
     resetPaymentForm();
@@ -312,18 +327,31 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
     setEditPaymentId(paymentId);
   };
 
-  const handleUpdatePayment = () => {
+  const handleUpdatePayment = async () => {
     if (!selectedEditPayment) return;
     const amount = parseFloat(paymentForm.amount);
     if (Number.isNaN(amount) || amount <= 0) return;
     const roundedAmount = Number(toFixedPrecision(amount, currencyPrecision));
-    globalUpdatePayment({
+    const result = await globalUpdatePayment({
       ...selectedEditPayment,
       amount: roundedAmount,
       method: paymentForm.method,
       account: String(paymentForm.account || '').trim() || resolveDefaultAccountFromMethod(paymentForm.method || 'Cash'),
       date: paymentForm.date || selectedEditPayment.date,
       note: paymentForm.note,
+    });
+    if (!result.ok) {
+      addNotification({
+        title: 'Payment Update Failed',
+        message: result.error || 'Supplier payment could not be saved to Postgres.',
+        type: 'error',
+      });
+      return;
+    }
+    addNotification({
+      title: 'Payment Updated',
+      message: `${selectedEditPayment.referenceNo || 'Payment'} was updated successfully.`,
+      type: 'success',
     });
     setEditPaymentId(null);
     resetPaymentForm();
@@ -370,7 +398,7 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
     });
   };
 
-  const handleSaveDoc = () => {
+  const handleSaveDoc = async () => {
     if (!supplier || !newDocHeading.trim()) return;
     const docs = supplier.documents ? [...supplier.documents] : [];
     if (editingDocId) {
@@ -379,7 +407,15 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
     } else {
       docs.push({ id: `doc_${Date.now()}`, heading: newDocHeading.trim(), addedBy: currentUser?.name || 'Admin', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
     }
-    globalUpdateSupplier({ ...supplier, documents: docs });
+    const result = await globalUpdateSupplier({ ...supplier, documents: docs });
+    if (!result.ok) {
+      addNotification({
+        title: 'Document Save Failed',
+        message: result.error || 'Supplier document could not be saved to Postgres.',
+        type: 'error',
+      });
+      return;
+    }
     setIsDocModalOpen(false);
     setEditingDocId(null);
     setNewDocHeading('');
@@ -1246,7 +1282,19 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
         <AddDiscountModal
           isOpen={isDiscountModalOpen}
           onClose={() => setIsDiscountModalOpen(false)}
-          onSave={(formData) => globalAddDiscount({ ...formData, id: generateId('DISC') })}
+          onSave={async (formData) => {
+            const result = await globalAddDiscount({ ...formData, id: generateId('DISC') });
+            if (!result.ok) {
+              addNotification({
+                title: 'Discount Save Failed',
+                message: result.error || 'Discount could not be saved to Postgres.',
+                type: 'error',
+              });
+              return false;
+            }
+            addNotification({ title: 'Discount Saved', message: 'Discount was saved successfully.', type: 'success' });
+            return true;
+          }}
         />
       )}
 
@@ -1284,8 +1332,22 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeletePaymentId(null)}
-        onConfirm={() => {
-          if (pendingDeletePaymentId) globalDeletePayment(pendingDeletePaymentId);
+        onConfirm={async () => {
+          if (!pendingDeletePaymentId) return;
+          const result = await globalDeletePayment(pendingDeletePaymentId);
+          if (!result.ok) {
+            addNotification({
+              title: 'Payment Delete Failed',
+              message: result.error || 'Supplier payment could not be deleted from Postgres.',
+              type: 'error',
+            });
+            return false;
+          }
+          addNotification({
+            title: 'Payment Deleted',
+            message: 'Supplier payment was deleted successfully.',
+            type: 'success',
+          });
           setPendingDeletePaymentId(null);
         }}
       />
@@ -1296,10 +1358,23 @@ const ViewSupplier: React.FC<ViewSupplierProps> = ({ onNavigate, contactId, init
         confirmLabel="Delete"
         tone="danger"
         onCancel={() => setPendingDeleteDocId(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!supplier || !pendingDeleteDocId) return;
           const docs = (supplier.documents || []).filter(d => d.id !== pendingDeleteDocId);
-          globalUpdateSupplier({ ...supplier, documents: docs });
+          const result = await globalUpdateSupplier({ ...supplier, documents: docs });
+          if (!result.ok) {
+            addNotification({
+              title: 'Document Delete Failed',
+              message: result.error || 'Supplier document could not be deleted from Postgres.',
+              type: 'error',
+            });
+            return false;
+          }
+          addNotification({
+            title: 'Document Deleted',
+            message: 'Supplier document was deleted successfully.',
+            type: 'success',
+          });
           setPendingDeleteDocId(null);
         }}
       />

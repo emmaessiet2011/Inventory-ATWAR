@@ -286,7 +286,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         message: `${transfer.refNo} deleted successfully.`,
         type: 'success',
       });
-      addActivityLog({
+      await addActivityLog({
         action: 'Deleted',
         module: 'Stock Transfers',
         description: `${transfer.refNo} deleted`,

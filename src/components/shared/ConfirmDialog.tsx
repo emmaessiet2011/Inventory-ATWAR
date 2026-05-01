@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 
 interface ConfirmDialogProps {
@@ -9,7 +9,7 @@ interface ConfirmDialogProps {
   cancelLabel?: string;
   tone?: 'danger' | 'warning' | 'primary';
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | boolean | Promise<void | boolean>;
 }
 
 const toneStyles: Record<NonNullable<ConfirmDialogProps['tone']>, { iconBg: string; iconText: string; confirmBtn: string }> = {
@@ -40,8 +40,19 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onCancel,
   onConfirm,
 }) => {
+  const [isConfirming, setIsConfirming] = useState(false);
   if (!isOpen) return null;
   const style = toneStyles[tone];
+  const handleConfirm = async () => {
+    if (isConfirming) return;
+    setIsConfirming(true);
+    try {
+      const shouldClose = await onConfirm();
+      if (shouldClose !== false) onCancel();
+    } finally {
+      setIsConfirming(false);
+    }
+  };
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
       <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-slate-100">
@@ -54,15 +65,17 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <div className="flex gap-3 w-full">
             <button
               onClick={onCancel}
-              className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors"
+              disabled={isConfirming}
+              className="flex-1 px-4 py-2.5 border border-slate-300 rounded-lg text-slate-700 font-bold hover:bg-slate-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {cancelLabel}
             </button>
             <button
-              onClick={onConfirm}
-              className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold transition-colors ${style.confirmBtn}`}
+              onClick={handleConfirm}
+              disabled={isConfirming}
+              className={`flex-1 px-4 py-2.5 rounded-lg text-white font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${style.confirmBtn}`}
             >
-              {confirmLabel}
+              {isConfirming ? 'Working...' : confirmLabel}
             </button>
           </div>
         </div>
