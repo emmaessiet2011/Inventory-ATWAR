@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
@@ -115,9 +115,22 @@ const warmUpBackend = async (apiBase: string): Promise<void> => {
   }
 };
 
+const requestBrowserPasswordSave = async (form: HTMLFormElement | null): Promise<void> => {
+  const credentialApi = (window as any).PasswordCredential;
+  const credentials = (navigator as any).credentials;
+  if (!form || !credentialApi || !credentials?.store) return;
+
+  try {
+    await credentials.store(new credentialApi(form));
+  } catch {
+    // Browser password saving is optional and browser-controlled.
+  }
+};
+
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const REMEMBER_IDENTIFIER_KEY = 'atwar_login_identifier';
   const { users, setCurrentUser, updateUser, settings } = useGlobalContext();
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [email, setEmail] = useState(() => {
     try {
       return localStorage.getItem(REMEMBER_IDENTIFIER_KEY) || '';
@@ -198,6 +211,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           persistAuthenticatedUser(result.user);
           await updateUser(result.user);
           setCurrentUser(result.user);
+          void requestBrowserPasswordSave(formRef.current);
           onLogin();
           return;
         }
@@ -239,6 +253,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       persistAuthenticatedUser(updated);
       await updateUser(updated);
       setCurrentUser(updated);
+      void requestBrowserPasswordSave(formRef.current);
       onLogin();
     } finally {
       setIsSubmitting(false);
@@ -288,7 +303,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="mt-2 text-slate-500">Please enter your details to sign in.</p>
           </div>
 
-          <form className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on" name="login-form">
+          <form ref={formRef} className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on" name="login-form">
             {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
                     {error}
@@ -304,7 +319,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   <input
                     type="text"
                     id="login-identifier"
-                    name="email"
+                    name="username"
                     autoComplete="username"
                     autoCapitalize="off"
                     autoCorrect="off"
