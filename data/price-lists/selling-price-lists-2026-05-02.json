@@ -1,0 +1,1571 @@
+[
+  {
+    "fileName": "AL Maya (AL Quram & Al khuwair).xlsx",
+    "sheetName": "AL Maya (AL Quram & Al khuwair)",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3,
+        "rawPrice": "3.000"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.238,
+        "rawPrice": "3.238"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      }
+    ]
+  },
+  {
+    "fileName": "Careem & Mokhtar.xlsx",
+    "sheetName": "Careem & Mokhtar",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.238,
+        "rawPrice": "3.238"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": 2.62,
+        "rawPrice": "2.620"
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": 2.62,
+        "rawPrice": "2.620"
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      }
+    ]
+  },
+  {
+    "fileName": "Dubai Market (Al Hail & Lawami).xlsx",
+    "sheetName": "Dubai Market (Al Hail & Lawami)",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 3.4,
+        "rawPrice": "3.400"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      }
+    ]
+  },
+  {
+    "fileName": "Hala International (AL Quram).xlsx",
+    "sheetName": "Hala International (AL Quram)",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.238,
+        "rawPrice": "3.238"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      }
+    ]
+  },
+  {
+    "fileName": "highest group supermarket.xlsx",
+    "sheetName": "highest group supermarket",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.238,
+        "rawPrice": "3.238"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 3.57,
+        "rawPrice": "3.570"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.52,
+        "rawPrice": "1.520"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": 3.9,
+        "rawPrice": "3.900"
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      }
+    ]
+  },
+  {
+    "fileName": "Lulu Wat Sohar L.L.C.xlsx",
+    "sheetName": "Lulu Wat Sohar L.L.C",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": 2.75,
+        "rawPrice": "2.750"
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": 2.75,
+        "rawPrice": "2.750"
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      }
+    ]
+  },
+  {
+    "fileName": "Macro (Mowalah & Al khoud).xlsx",
+    "sheetName": "Macro (Mowalah & Al khoud)",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.4,
+        "rawPrice": "3.400"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 3.75,
+        "rawPrice": "3.750"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.596,
+        "rawPrice": "1.596"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.693,
+        "rawPrice": "2.693"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": 4.1,
+        "rawPrice": "4.100"
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.375,
+        "rawPrice": "0.375"
+      }
+    ]
+  },
+  {
+    "fileName": "NUJOOM (2 3 4 5 6).xlsx",
+    "sheetName": "NUJOOM (2 3 4 5 6)",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 5
+    },
+    "rowCount": 25,
+    "rows": [
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 3.57,
+        "rawPrice": "3.57"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 3.238,
+        "rawPrice": "3.238"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.52,
+        "rawPrice": "1.52"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.565,
+        "rawPrice": "2.565"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 0.357,
+        "rawPrice": "0.357"
+      }
+    ]
+  },
+  {
+    "fileName": "Pet Shop & Veterinary Clinic.xlsx",
+    "sheetName": "Pet Shop & Veterinary Clinic",
+    "headerRow": 8,
+    "columns": {
+      "barcode": 2,
+      "description": 3,
+      "price": 6
+    },
+    "rowCount": 42,
+    "rows": [
+      {
+        "barcode": "6074000225033",
+        "description": "Xpet Lamb Pate - Dog",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "6074000225019",
+        "description": "Xpet Chunk in Gravy - Dog",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "6074000225040",
+        "description": "Xpet Duck Pate - Cat",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "6074000225002",
+        "description": "Xpet Chunk in Gravy - Cat",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "6074000225057",
+        "description": "Xpet Milk in Chicken - Cat",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "6074000225026",
+        "description": "Xpet Salmon Pate - Cat",
+        "price": 4.284,
+        "rawPrice": "4.284"
+      },
+      {
+        "barcode": "8436611140163",
+        "description": "Cebican Cat Mix_3kg",
+        "price": 9,
+        "rawPrice": "9.000"
+      },
+      {
+        "barcode": "8436611140187",
+        "description": "Cebican Tuna_3kg",
+        "price": 9,
+        "rawPrice": "9.000"
+      },
+      {
+        "barcode": "8436036369316",
+        "description": "Cebican Kitten_3kg",
+        "price": 10.5,
+        "rawPrice": "10.500"
+      },
+      {
+        "barcode": "8436036368548",
+        "description": "Cebican Daily care 3kg",
+        "price": 9,
+        "rawPrice": "9.000"
+      },
+      {
+        "barcode": "8436611140392",
+        "description": "Cebican Adult Mini_3kg",
+        "price": 9,
+        "rawPrice": "9.000"
+      },
+      {
+        "barcode": "8684221368228",
+        "description": "Clear Cat (Baby Powder) 5L",
+        "price": 1.5,
+        "rawPrice": "1.500"
+      },
+      {
+        "barcode": "8684221368242",
+        "description": "Clear Cat (Ale Vera) 5L",
+        "price": 1.5,
+        "rawPrice": "1.500"
+      },
+      {
+        "barcode": "8684221368204",
+        "description": "Clear Cat (Lavender) 5L",
+        "price": 1.5,
+        "rawPrice": "1.500"
+      },
+      {
+        "barcode": "8684521244208",
+        "description": "Clear Cat (Carbon) 5L",
+        "price": 1.5,
+        "rawPrice": "1.500"
+      },
+      {
+        "barcode": "8684221368235",
+        "description": "Clear Cat (Baby Powder) 10L",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8684221368259",
+        "description": "Clear Cat (Ale Vera) 10L",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8684221368211",
+        "description": "Clear Cat (Lavender) 10L",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8684521244215",
+        "description": "Clear Cat (Carbon) 10L",
+        "price": 2.5,
+        "rawPrice": "2.500"
+      },
+      {
+        "barcode": "8684521244253",
+        "description": "Clear Cat (Baby Powder) 20L",
+        "price": 4,
+        "rawPrice": "4.000"
+      },
+      {
+        "barcode": "8684521244246",
+        "description": "Clear Cat (Ale Vera) 20L",
+        "price": 4,
+        "rawPrice": "4.000"
+      },
+      {
+        "barcode": "8684521244260",
+        "description": "Clear Cat (Lavender) 20L",
+        "price": 4,
+        "rawPrice": "4.000"
+      },
+      {
+        "barcode": "8436036367831",
+        "description": "Danna Complete 20kg",
+        "price": 23,
+        "rawPrice": "23.000"
+      },
+      {
+        "barcode": "8436036367879",
+        "description": "Danna Cat 10kg",
+        "price": 14,
+        "rawPrice": "14.000"
+      },
+      {
+        "barcode": "8436036367862",
+        "description": "Danna Puppy 10kg",
+        "price": 12,
+        "rawPrice": "12.000"
+      },
+      {
+        "barcode": "8436036367855",
+        "description": "Danna Elite 10kg",
+        "price": 12,
+        "rawPrice": "12.000"
+      },
+      {
+        "barcode": "8436611140910",
+        "description": "Dousti Sterilized_3kg",
+        "price": 10.5,
+        "rawPrice": "10.500"
+      },
+      {
+        "barcode": "8436611140903",
+        "description": "Dousti Cat Tuna_3kg",
+        "price": 10.5,
+        "rawPrice": "10.500"
+      },
+      {
+        "barcode": "8436611140873",
+        "description": "Dousti Kitten_3kg",
+        "price": 10.5,
+        "rawPrice": "10.500"
+      },
+      {
+        "barcode": "8436611140897",
+        "description": "Dousti Cat Mix_3kg",
+        "price": 10.5,
+        "rawPrice": "10.500"
+      },
+      {
+        "barcode": "8436611140859",
+        "description": "Dousti Puppy_12kg",
+        "price": 14,
+        "rawPrice": "14.000"
+      },
+      {
+        "barcode": "8436611140880",
+        "description": "Dousti Cat Mix_20kg",
+        "price": 16,
+        "rawPrice": "16.000"
+      },
+      {
+        "barcode": "8436611140705",
+        "description": "Cebican Cosmo Lamb _ 1.5kg",
+        "price": 15,
+        "rawPrice": "15.000"
+      },
+      {
+        "barcode": "8436611140729",
+        "description": "Cebican Cosmo Tuna_ 1.5kg",
+        "price": 15,
+        "rawPrice": "15.000"
+      },
+      {
+        "barcode": "8436611140699",
+        "description": "Cebican Cosmo Lamb _ 7.5kg",
+        "price": 9,
+        "rawPrice": "9.000"
+      },
+      {
+        "barcode": "8436611140583",
+        "description": "Cebican Cosmo Daily Care_20kg",
+        "price": 16,
+        "rawPrice": "16.000"
+      },
+      {
+        "barcode": "8436611140798",
+        "description": "Dousti Actif_ 20kg",
+        "price": 13,
+        "rawPrice": "13.000"
+      },
+      {
+        "barcode": "8436611140828",
+        "description": "Dousti Energy_20kg",
+        "price": 16,
+        "rawPrice": "16.000"
+      },
+      {
+        "barcode": "Note: All the cost prices are mentioned without 5% vat.",
+        "description": "",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "Contact Number:",
+        "description": "",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "9286-8585 (Shafikul)",
+        "description": "",
+        "price": null,
+        "rawPrice": ""
+      },
+      {
+        "barcode": "7947-9986 (Zuheb)",
+        "description": "",
+        "price": null,
+        "rawPrice": ""
+      }
+    ]
+  }
+]

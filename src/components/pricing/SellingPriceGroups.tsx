@@ -44,6 +44,7 @@ const SellingPriceGroups: React.FC = () => {
   // Product search within modal
   const [productSearch, setProductSearch] = useState('');
   const [selectedProducts, setSelectedProducts] = useState<SellingPriceGroupProduct[]>([]);
+  const [showOnlyOverrides, setShowOnlyOverrides] = useState(false);
 
   const normalizeText = (value?: string) => String(value || '').trim().toLowerCase();
   const normalizeSku = (value?: string) => normalizeText(value).replace(/\s+/g, '');
@@ -108,6 +109,7 @@ const SellingPriceGroups: React.FC = () => {
     setFormData({ name: '', description: '', payTermDays: '', payTermUnit: 'Days', taxRate: '5', discount: '0', priceCalcPercentage: '0', status: 'Active' });
     setSelectedProducts([]);
     setProductSearch('');
+    setShowOnlyOverrides(false);
     setFormError('');
     setIsModalOpen(true);
   };
@@ -127,6 +129,7 @@ const SellingPriceGroups: React.FC = () => {
     // Restore previously saved applicable products, refreshing names/SKUs/prices from latest products.
     setSelectedProducts((group.applicableProducts || []).map(mapRuleWithLiveProduct));
     setProductSearch('');
+    setShowOnlyOverrides(false);
     setFormError('');
     setIsModalOpen(true);
   };
@@ -183,7 +186,19 @@ const SellingPriceGroups: React.FC = () => {
       return;
     }
 
-    const normalizedSelectedProducts = selectedProducts.map(normalizeRuleForSave);
+    const normalizedGroupDiscount = Number(clampDiscount(parsedDiscount).toFixed(3));
+    const normalizedSelectedProducts = selectedProducts
+      .map(normalizeRuleForSave)
+      .filter((rule) => {
+        const liveProduct = resolveLiveProduct(rule);
+        if (!liveProduct) return true;
+        const basePrice = Number(liveProduct.sellingPrice || 0);
+        const rulePrice = Number(rule.price);
+        const ruleDiscount = Number(rule.discount);
+        const hasFixedOverride = Number.isFinite(rulePrice) && Math.abs(rulePrice - basePrice) > 0.0005;
+        const hasDiscountOverride = Number.isFinite(ruleDiscount) && Math.abs(ruleDiscount - normalizedGroupDiscount) > 0.0005;
+        return hasFixedOverride || hasDiscountOverride;
+      });
     const invalidProductDiscount = normalizedSelectedProducts.some(rule => rule.discount < 0 || rule.discount > 100);
     if (invalidProductDiscount) {
       const message = 'Per-product discount must be between 0 and 100.';
@@ -232,47 +247,106 @@ const SellingPriceGroups: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // Product search results (filtered from GlobalContext products)
-  const productSearchResults = productSearch.trim()
-    ? products.filter(p =>
-        (String(p.name).toLowerCase().includes(productSearch.toLowerCase()) ||
-        String(p.sku).toLowerCase().includes(productSearch.toLowerCase())) &&
-        !selectedProducts.find(sp => sp.id === p.id)
-      ).slice(0, 8)
-    : [];
+  const normalizedProductSearch = normalizeText(productSearch);
+  const parsedGroupDiscount = Number(formData.discount);
+  const currentGroupDiscount = Number.isFinite(parsedGroupDiscount) ? clampDiscount(parsedGroupDiscount) : 0;
+  const parsedGroupPriceAdjustment = Number(formData.priceCalcPercentage);
+  const currentGroupPriceAdjustment = Number.isFinite(parsedGroupPriceAdjustment) ? parsedGroupPriceAdjustment : 0;
 
-  const addProductToGroup = (product: Product) => {
+  const selectedProductRuleMap = useMemo(() => {
+    const byId = new Map<string, SellingPriceGroupProduct>();
+    const bySku = new Map<string, SellingPriceGroupProduct>();
+    selectedProducts.forEach((rule) => {
+      byId.set(rule.id, rule);
+      const skuKey = normalizeSku(rule.sku);
+      if (skuKey) bySku.set(skuKey, rule);
+    });
+    return { byId, bySku };
+  }, [selectedProducts]);
+
+  const isRuleForProduct = (rule: SellingPriceGroupProduct, product: Product): boolean =>
+    rule.id === product.id ||
+    (rule.sku && normalizeSku(rule.sku) === normalizeSku(product.sku));
+
+  const getRuleForProduct = (product: Product): SellingPriceGroupProduct | undefined =>
+    selectedProductRuleMap.byId.get(product.id) ||
+    selectedProductRuleMap.bySku.get(normalizeSku(product.sku));
+
+  const buildDefaultRule = (product: Product): SellingPriceGroupProduct => {
     const basePrice = Number(product.sellingPrice);
     const safePrice = Number.isFinite(basePrice) ? basePrice : 0;
-    setSelectedProducts(prev => [
-      ...prev,
-      {
+    return {
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      price: Number(safePrice.toFixed(3)),
+      discount: Number(currentGroupDiscount.toFixed(3)),
+    };
+  };
+
+  const upsertRuleForProduct = (
+    product: Product,
+    resolver: (existing: SellingPriceGroupProduct | undefined) => SellingPriceGroupProduct
+  ) => {
+    setSelectedProducts((prev) => {
+      const index = prev.findIndex((rule) => isRuleForProduct(rule, product));
+      const current = index >= 0 ? prev[index] : undefined;
+      const nextRule = resolver(current);
+      if (index < 0) return [...prev, nextRule];
+      const next = [...prev];
+      next[index] = nextRule;
+      return next;
+    });
+    setFormError('');
+  };
+
+  const clearRuleForProduct = (product: Product) => {
+    setSelectedProducts((prev) => prev.filter((rule) => !isRuleForProduct(rule, product)));
+    setFormError('');
+  };
+
+  const updateProductDiscount = (product: Product, discount: number) => {
+    const safeDiscount = Number(clampDiscount(discount).toFixed(3));
+    upsertRuleForProduct(product, (existing) => {
+      const base = existing ? mapRuleWithLiveProduct(existing) : buildDefaultRule(product);
+      return {
+        ...base,
         id: product.id,
         name: product.name,
         sku: product.sku,
-        price: Number(safePrice.toFixed(3)),
-        discount: 0,
-      }
-    ]);
-    setFormError('');
-    setProductSearch('');
+        discount: safeDiscount,
+      };
+    });
   };
 
-  const removeProduct = (id: string) => {
-    setSelectedProducts(prev => prev.filter(p => p.id !== id));
-  };
-
-  const updateProductDiscount = (id: string, discount: number) => {
-    const safeDiscount = Number(clampDiscount(discount).toFixed(3));
-    setSelectedProducts(prev => prev.map(p => p.id === id ? { ...p, discount: safeDiscount } : p));
-    setFormError('');
-  };
-
-  const updateProductPrice = (id: string, price: number) => {
+  const updateProductPrice = (product: Product, price: number) => {
     const safePrice = Number(clampPrice(price).toFixed(3));
-    setSelectedProducts(prev => prev.map(p => p.id === id ? { ...p, price: safePrice } : p));
-    setFormError('');
+    upsertRuleForProduct(product, (existing) => {
+      const base = existing ? mapRuleWithLiveProduct(existing) : buildDefaultRule(product);
+      return {
+        ...base,
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        price: safePrice,
+      };
+    });
   };
+
+  const productsForEditor = useMemo(() => {
+    const rows = products
+      .filter((product) => {
+        if (!normalizedProductSearch) return true;
+        return normalizeText(product.name).includes(normalizedProductSearch) ||
+          normalizeSku(product.sku).includes(normalizeSku(normalizedProductSearch));
+      })
+      .filter((product) => {
+        if (!showOnlyOverrides) return true;
+        const skuKey = normalizeSku(product.sku);
+        return selectedProductRuleMap.byId.has(product.id) || (skuKey ? selectedProductRuleMap.bySku.has(skuKey) : false);
+      });
+    return [...rows].sort((a, b) => a.name.localeCompare(b.name));
+  }, [products, normalizedProductSearch, showOnlyOverrides, selectedProductRuleMap]);
 
   const filtered = useMemo(() => {
     const term = searchTerm.toLowerCase();
@@ -711,76 +785,96 @@ const SellingPriceGroups: React.FC = () => {
                 </div>
               </div>
 
-              {/* Section 3: Applicable Products */}
+              {/* Section 3: Product Pricing Matrix */}
               <div className="mt-8 pt-6 border-t border-slate-200">
                 <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-2 flex items-center gap-2">
-                  <Package size={16} /> Applicable Products
+                  <Package size={16} /> Product Pricing Matrix
                 </h4>
-                <p className="text-xs text-slate-500 mb-4">Select specific products. If left empty, this group applies to all products.</p>
+                <p className="text-xs text-slate-500 mb-4">
+                  All products are listed here. Update only the rows you need; unchanged rows continue using group-level rules.
+                </p>
 
-                {/* Product search */}
-                <div className="relative mb-4">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                  <input
-                    type="text"
-                    className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-800"
-                    placeholder="Type product name or SKU..."
-                    value={productSearch}
-                    onChange={(e) => {
-                      setProductSearch(e.target.value);
-                      setFormError('');
-                    }}
-                  />
-                  {productSearchResults.length > 0 && (
-                    <div className="absolute top-full mt-1 left-0 w-full bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                      {productSearchResults.map(p => (
-                        <button
-                          key={p.id}
-                          className="w-full text-left px-4 py-2.5 hover:bg-blue-50 text-sm flex justify-between items-center transition-colors"
-                          onClick={() => addProductToGroup(p)}
-                        >
-                          <span className="font-medium text-slate-800">{p.name}</span>
-                          <span className="text-xs text-slate-400 font-mono">{p.sku} - {formatCurrency(p.sellingPrice)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="relative w-full lg:max-w-md">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                    <input
+                      type="text"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-800"
+                      placeholder="Search product name or SKU..."
+                      value={productSearch}
+                      onChange={(e) => {
+                        setProductSearch(e.target.value);
+                        setFormError('');
+                      }}
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        checked={showOnlyOverrides}
+                        onChange={(e) => setShowOnlyOverrides(e.target.checked)}
+                      />
+                      Show only edited rows
+                    </label>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-xs font-bold text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={selectedProducts.length === 0}
+                      onClick={() => {
+                        setSelectedProducts([]);
+                        setFormError('');
+                      }}
+                    >
+                      Clear All Edited Rows
+                    </button>
+                    <span className="text-xs font-semibold text-slate-500">
+                      Edited: {selectedProducts.length}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Selected products table */}
-                <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+                <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm max-h-[30rem] overflow-y-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold text-xs uppercase tracking-wider">
                       <tr>
                         <th className="px-4 py-3">Product Name</th>
-                        <th className="px-4 py-3 w-32">SKU</th>
-                        <th className="px-4 py-3 w-32 text-right">Price</th>
-                        <th className="px-4 py-3 w-32 text-center">Discount (%)</th>
+                        <th className="px-4 py-3 w-36">SKU</th>
+                        <th className="px-4 py-3 w-32 text-right">Base Price</th>
+                        <th className="px-4 py-3 w-32 text-right">Group Price</th>
+                        <th className="px-4 py-3 w-32 text-right">Override Price</th>
+                        <th className="px-4 py-3 w-32 text-center">Override Discount (%)</th>
                         <th className="px-4 py-3 w-32 text-right">Final Price</th>
-                        <th className="px-4 py-3 w-16 text-center">Del</th>
+                        <th className="px-4 py-3 w-20 text-center">Reset</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {selectedProducts.map(p => {
-                        const livePrice = resolveLivePrice(p);
-                        const configuredPrice = resolveRulePrice(p);
-                        const final = configuredPrice * (1 - p.discount / 100);
+                      {productsForEditor.map((product) => {
+                        const rule = getRuleForProduct(product);
+                        const basePriceRaw = Number(product.sellingPrice);
+                        const basePrice = Number.isFinite(basePriceRaw) ? basePriceRaw : 0;
+                        const groupPrice = Math.max(0, basePrice * (1 + (currentGroupPriceAdjustment / 100)));
+                        const configuredPrice = rule ? resolveRulePrice(rule) : groupPrice;
+                        const configuredDiscount = rule
+                          ? clampDiscount(Number(rule.discount))
+                          : currentGroupDiscount;
+                        const final = Math.max(0, configuredPrice * (1 - configuredDiscount / 100));
                         return (
-                          <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                            <td className="px-4 py-3 text-slate-800 font-medium">{p.name}</td>
-                            <td className="px-4 py-3 text-slate-500 font-mono text-xs">{p.sku}</td>
+                          <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-4 py-3 text-slate-800 font-medium">{product.name}</td>
+                            <td className="px-4 py-3 text-slate-500 font-mono text-xs">{product.sku}</td>
+                            <td className="px-4 py-3 text-right text-slate-700 font-semibold">{formatCurrency(basePrice)}</td>
+                            <td className="px-4 py-3 text-right text-slate-700 font-semibold">{formatCurrency(groupPrice)}</td>
                             <td className="px-4 py-3 text-right">
                               <input
                                 type="number"
                                 min={0}
                                 step={0.001}
                                 className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-800 text-right"
-                                value={configuredPrice}
-                                onChange={(e) => updateProductPrice(p.id, parseFloat(e.target.value) || 0)}
+                                value={Number(configuredPrice.toFixed(3))}
+                                onChange={(e) => updateProductPrice(product, parseFloat(e.target.value) || 0)}
                               />
-                              <div className="mt-1 text-[10px] text-slate-400 text-right">
-                                Base: {formatCurrency(livePrice)}
-                              </div>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <input
@@ -789,23 +883,32 @@ const SellingPriceGroups: React.FC = () => {
                                 max={100}
                                 step={0.001}
                                 className="w-full px-2 py-1.5 rounded-lg bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 text-xs font-bold text-slate-800 text-center"
-                                value={p.discount}
-                                onChange={(e) => updateProductDiscount(p.id, parseFloat(e.target.value) || 0)}
+                                value={Number(configuredDiscount.toFixed(3))}
+                                onChange={(e) => updateProductDiscount(product, parseFloat(e.target.value) || 0)}
                               />
                             </td>
                             <td className="px-4 py-3 text-right font-bold text-emerald-600">{formatCurrency(final)}</td>
                             <td className="px-4 py-3 text-center">
-                              <button onClick={() => removeProduct(p.id)} className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors">
-                                <X size={16} />
-                              </button>
+                              {rule ? (
+                                <button
+                                  type="button"
+                                  onClick={() => clearRuleForProduct(product)}
+                                  className="text-red-500 hover:text-red-700 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                                  title="Clear product-specific override"
+                                >
+                                  <X size={16} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs">--</span>
+                              )}
                             </td>
                           </tr>
                         );
                       })}
-                      {selectedProducts.length === 0 && (
+                      {productsForEditor.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm italic">
-                            No products selected - this group will apply to all products.
+                          <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm italic">
+                            No products match this filter.
                           </td>
                         </tr>
                       )}

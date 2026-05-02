@@ -68,6 +68,10 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
     () => findLocationByIdOrName(locations, sale?.location),
     [locations, sale?.location]
   );
+  const saleBusinessLogo = useMemo(
+    () => String(locationRecord?.businessLogo || settings.businessLogo || '').trim(),
+    [locationRecord?.businessLogo, settings.businessLogo],
+  );
   const documentLabel = useMemo(() => {
     const normalizedStatus = String(sale?.status || sale?.saleStatus || '').trim();
     if (normalizedStatus === 'Quotation') return 'Quotation';
@@ -524,9 +528,9 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
               <div className="border-b border-slate-400 pb-2">
                 <div className="grid grid-cols-[84px_1fr_170px] items-start gap-2">
                   <div className="pt-1">
-                    {settings.businessLogo ? (
+                    {saleBusinessLogo ? (
                       <img
-                        src={settings.businessLogo}
+                        src={saleBusinessLogo}
                         alt="Business logo"
                         className="h-14 w-auto object-contain"
                       />

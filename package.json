@@ -32,6 +32,8 @@
     "ops:smoke:concurrency": "node scripts/ops/smoke-multi-user-concurrency.mjs",
     "ops:go-live:checklist": "node scripts/ops/go-live-checklist.mjs",
     "ops:go-live": "npm run ops:go-live:checklist",
+    "ops:move:products-location": "node scripts/ops/move-products-to-location.mjs",
+    "ops:import:price-lists": "node scripts/ops/import-selling-price-lists.mjs",
     "test:unit": "vitest run",
     "test:context": "vitest run tests/context/global-context.integration.test.tsx",
     "test:e2e": "playwright test",

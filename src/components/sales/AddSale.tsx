@@ -37,6 +37,8 @@ interface AddSaleProps {
     strictInitialStatus?: boolean;
 }
 
+const normalizeLocationKey = (value: unknown): string => String(value || '').trim().toLowerCase();
+
 const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId: sourceOrderIdParam, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
   const { addNotification } = useNotifications();
   const {
@@ -180,6 +182,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     }
     return active;
   }, [activeLocations, location, locations]);
+  const previewBusinessLogo = useMemo(() => {
+    const activeLocationKey = normalizeLocationKey(location);
+    const locationLogo = locations.find((loc) =>
+      normalizeLocationKey(loc.name) === activeLocationKey || normalizeLocationKey(loc.id) === activeLocationKey,
+    )?.businessLogo;
+    return String(locationLogo || settings.businessLogo || '').trim();
+  }, [location, locations, settings.businessLogo]);
 
   // --- Customer Search State ---
   const [customerSearch, setCustomerSearch] = useState('');
@@ -3123,9 +3132,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                         <div className="border-b border-slate-400 pb-2">
                           <div className="grid grid-cols-[84px_1fr_170px] items-start gap-2">
                             <div className="pt-1">
-                              {settings.businessLogo ? (
+                              {previewBusinessLogo ? (
                                 <img
-                                  src={settings.businessLogo}
+                                  src={previewBusinessLogo}
                                   alt="Business logo"
                                   className="h-14 w-auto object-contain"
                                 />

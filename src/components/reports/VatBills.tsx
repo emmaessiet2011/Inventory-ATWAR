@@ -146,6 +146,23 @@ const VatBills: React.FC = () => {
     settings,
     currentUser,
   } = useGlobalContext();
+  const locationLogoMap = useMemo(() => {
+    const map = new Map<string, string>();
+    locations.forEach((location) => {
+      const logo = String(location.businessLogo || '').trim();
+      if (!logo) return;
+      const idKey = normalizeText(location.id);
+      const nameKey = normalizeText(location.name);
+      if (idKey) map.set(idKey, logo);
+      if (nameKey) map.set(nameKey, logo);
+    });
+    return map;
+  }, [locations]);
+  const resolveBusinessLogoForLocation = (locationValue?: string): string => {
+    const key = normalizeText(locationValue);
+    if (key && locationLogoMap.has(key)) return String(locationLogoMap.get(key) || '').trim();
+    return String(settings.businessLogo || '').trim();
+  };
 
   const [showFilters, setShowFilters] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -350,6 +367,10 @@ const VatBills: React.FC = () => {
       subtitle: dateRange.label ? `Range: ${dateRange.label}` : undefined,
       businessName: settings?.businessName || 'Business',
       businessAddress: settings?.address || '',
+      businessLogo:
+        filters.location.length === 1
+          ? resolveBusinessLogoForLocation(filters.location[0])
+          : String(settings.businessLogo || '').trim() || undefined,
       printedBy: currentUser?.name || '',
       columns: [
         { label: 'Invoice', width: '80px' },
@@ -410,9 +431,7 @@ const VatBills: React.FC = () => {
       const pageRight = 203;
       const pageWidth = pageRight - pageLeft;
 
-      const logoSource = String(settings.businessLogo || '').trim();
-      const logoImage = await loadImageForPdf(logoSource);
-      const logoFormat = resolvePdfImageFormat(logoSource);
+      const logoCache = new Map<string, HTMLImageElement | null>();
       const businessName = String(settings.businessName || 'Business').trim() || 'Business';
       const businessAddress = String(settings.businessAddress || settings.address || '').trim() || 'Address not set';
       const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || '--';
@@ -424,11 +443,20 @@ const VatBills: React.FC = () => {
         settings.timeZone,
       );
 
-      filteredInvoices.forEach((invoice, index) => {
+      for (let index = 0; index < filteredInvoices.length; index += 1) {
+        const invoice = filteredInvoices[index];
         if (index > 0) doc.addPage();
 
         const sale = invoice.sale;
+        const logoSource = resolveBusinessLogoForLocation(invoice.location || sale.location);
+        let logoImage = logoCache.get(logoSource);
+        if (logoImage === undefined) {
+          logoImage = await loadImageForPdf(logoSource);
+          logoCache.set(logoSource, logoImage);
+        }
         let y = 8;
+
+        const logoFormat = resolvePdfImageFormat(logoSource);
 
         const logoBox = { x: pageLeft, y, w: 26, h: 18 };
         if (logoImage) {
@@ -640,7 +668,7 @@ const VatBills: React.FC = () => {
         doc.text(String(invoice.id || '--'), pageLeft + 35, footerY);
         doc.text(truncate(invoicePublicUrl, 64), pageLeft + 62, footerY);
         doc.text(`${index + 1}/${filteredInvoices.length}`, pageRight, footerY, { align: 'right' });
-      });
+      }
 
       const fileDate = new Date().toISOString().slice(0, 10);
       doc.save(`vat-invoices-${fileDate}.pdf`);

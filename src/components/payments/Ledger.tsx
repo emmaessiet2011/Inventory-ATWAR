@@ -58,7 +58,7 @@ const toEndOfDayMs = (dateStr: string): number => {
 };
 
 const Ledger: React.FC<LedgerProps> = ({ onNavigate }) => {
-  const { customers, sales, payments, settings, currentUser, formatCurrency } = useGlobalContext();
+  const { customers, sales, payments, settings, currentUser, locations, formatCurrency } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [dueOnly, setDueOnly] = useState(true);
   const [groupFilter, setGroupFilter] = useState<string[]>([]);
@@ -68,6 +68,13 @@ const Ledger: React.FC<LedgerProps> = ({ onNavigate }) => {
   const [activityTo, setActivityTo] = useState('');
   const [minOutstanding, setMinOutstanding] = useState('');
   const [maxOutstanding, setMaxOutstanding] = useState('');
+  const ledgerBusinessLogo = useMemo(() => {
+    const userLocationKey = normalizeText(currentUser?.businessLocation || '');
+    const locationLogo = locations.find((location) =>
+      normalizeText(location.name) === userLocationKey || normalizeText(location.id) === userLocationKey,
+    )?.businessLogo;
+    return String(locationLogo || settings.businessLogo || '').trim();
+  }, [currentUser?.businessLocation, locations, settings.businessLogo]);
 
   const isFinalizedSale = (sale: any): boolean => {
     const status = normalizeText(sale?.status || sale?.saleStatus);
@@ -317,7 +324,7 @@ const Ledger: React.FC<LedgerProps> = ({ onNavigate }) => {
       subtitle,
       businessName: businessName || 'ATWAR BSS',
       businessAddress: businessAddress || undefined,
-      businessLogo: settings.businessLogo || undefined,
+      businessLogo: ledgerBusinessLogo || undefined,
       printedBy: currentUser?.name || currentUser?.username || 'System',
       columns: [
         { label: 'Customer', width: '18%' },

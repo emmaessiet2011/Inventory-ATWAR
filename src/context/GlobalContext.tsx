@@ -778,6 +778,7 @@ export interface Location {
   invoiceLayoutPos: string;
   invoiceLayoutSale: string;
   posFeaturedProducts?: string;
+  businessLogo?: string;
   autoPrintInvoiceAfterFinalizing?: boolean;
   receiptPrinterType?: 'browser' | 'network';
   receiptPrinterId?: string;
@@ -1785,6 +1786,8 @@ const normalizePrinterRecord = (input: Partial<ReceiptPrinter>, fallback?: Parti
 };
 
 const normalizeLocationRecord = (input: Partial<Location>, fallback?: Partial<Location>): Location => {
+  const inputMeta = toRecord((input as any)?.meta);
+  const fallbackMeta = toRecord((fallback as any)?.meta);
   const sourceMethods = Array.isArray(input.paymentMethods) && input.paymentMethods.length > 0
     ? input.paymentMethods
     : Array.isArray(fallback?.paymentMethods) && fallback.paymentMethods.length > 0
@@ -1829,6 +1832,13 @@ const normalizeLocationRecord = (input: Partial<Location>, fallback?: Partial<Lo
     invoiceLayoutPos: String(input.invoiceLayoutPos || fallback?.invoiceLayoutPos || '').trim(),
     invoiceLayoutSale: String(input.invoiceLayoutSale || fallback?.invoiceLayoutSale || '').trim(),
     posFeaturedProducts: String(input.posFeaturedProducts || fallback?.posFeaturedProducts || '').trim(),
+    businessLogo: String(
+      input.businessLogo ||
+      inputMeta.businessLogo ||
+      fallback?.businessLogo ||
+      fallbackMeta.businessLogo ||
+      ''
+    ).trim(),
     autoPrintInvoiceAfterFinalizing:
       input.autoPrintInvoiceAfterFinalizing ?? fallback?.autoPrintInvoiceAfterFinalizing ?? false,
     receiptPrinterType: resolvedReceiptPrinterType,
@@ -3971,6 +3981,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { id: '', name: String(sellingPriceGroupName || '').trim() };
   };
 
+  const resolveDefaultCustomerGroupSellingPrice = (
+    groupName: string | undefined,
+    availableGroups: SellingPriceGroup[]
+  ): { id: string; name: string } => {
+    const normalizedGroupName = normalizeText(groupName);
+    if (!normalizedGroupName.includes('supermarket')) return { id: '', name: '' };
+    return resolveSellingPriceGroupLink(
+      undefined,
+      'highest group supermarket',
+      availableGroups,
+    );
+  };
+
   const normalizeCustomerGroupRecord = (
     group: CustomerGroup,
     availablePriceGroups: SellingPriceGroup[] = sellingPriceGroups
@@ -3980,6 +4003,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       group.sellingPriceGroup,
       availablePriceGroups
     );
+    const fallbackLinked = (linked.id || linked.name)
+      ? linked
+      : resolveDefaultCustomerGroupSellingPrice(group.name, availablePriceGroups);
     const parsedCalculation = Number(group.calculationPercentage);
     const parsedDiscount = Number(group.discountPercent);
     const calculationPercentage = Number.isFinite(parsedCalculation)
@@ -3994,8 +4020,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       discountPercent,
       calculationPercentage,
       status: group.status || 'Active',
-      sellingPriceGroupId: linked.id,
-      sellingPriceGroup: linked.name,
+      sellingPriceGroupId: fallbackLinked.id,
+      sellingPriceGroup: fallbackLinked.name,
     };
   };
 
@@ -8644,41 +8670,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return { result, mirror };
   };
 
-  const addCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
-    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
-    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
-    const mirror = mirrorOutcome.mirror;
-    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
-    const normalizedGroup = normalizeCustomerGroupRecord({
-      ...normalizedGroupBase,
-      sellingPriceGroupId: mirror.id,
-      sellingPriceGroup: mirror.name,
-    }, nextSellingPriceGroups);
-    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
-    const result = toCrudResult(saved);
-    if (!result.ok) return result;
-    setSellingPriceGroups((prev) => mergeSellingPriceGroupList(prev, mirror));
-    setCustomerGroups(prev => [...prev, normalizedGroup]);
-    return result;
+  const shouldUseMirroredSellingPriceGroup = (group: CustomerGroup): boolean => {
+    const linkedId = String(group.sellingPriceGroupId || '').trim();
+    const linkedName = normalizeText(group.sellingPriceGroup);
+    const normalizedGroupName = normalizeText(group.name);
+    const derivedMirrorId = deriveMirroredSellingPriceGroupId(group.id);
+    if (!linkedId && !linkedName) return true;
+    if (linkedId && linkedId === derivedMirrorId) return true;
+    if (!linkedId && linkedName && linkedName === normalizedGroupName) return true;
+    return false;
   };
-  const updateCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
-    const existingGroup = customerGroups.find(g => g.id === group.id);
-    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
-    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
-    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
-    const mirror = mirrorOutcome.mirror;
-    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
-    const normalizedGroup = normalizeCustomerGroupRecord({
-      ...normalizedGroupBase,
-      sellingPriceGroupId: mirror.id,
-      sellingPriceGroup: mirror.name,
-    }, nextSellingPriceGroups);
-    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
-    const result = toCrudResult(saved);
-    if (!result.ok) return result;
+
+  const syncLinkedCustomersForCustomerGroupUpdate = async (
+    existingGroup: CustomerGroup | undefined,
+    normalizedGroup: CustomerGroup,
+  ): Promise<Map<string, Customer>> => {
     const linkedCustomers = customers.filter((customer) => {
-      const linkedById = customer.customerGroupId === group.id;
+      const linkedById = customer.customerGroupId === normalizedGroup.id;
       const linkedByLegacyName = !customer.customerGroupId &&
         !!existingGroup &&
         normalizeText(customer.customerGroup) === normalizeText(existingGroup.name);
@@ -8702,6 +8710,61 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       persistedById.set(updatedCustomer.id, updatedCustomer);
     }
+    return persistedById;
+  };
+
+  const addCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
+    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    if (!shouldUseMirroredSellingPriceGroup(normalizedGroupBase)) {
+      const saved = await syncRecordStrict('customerGroups', normalizedGroupBase);
+      const result = toCrudResult(saved);
+      if (!result.ok) return result;
+      setCustomerGroups(prev => [...prev, normalizedGroupBase]);
+      return result;
+    }
+    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
+    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
+    const mirror = mirrorOutcome.mirror;
+    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
+    const normalizedGroup = normalizeCustomerGroupRecord({
+      ...normalizedGroupBase,
+      sellingPriceGroupId: mirror.id,
+      sellingPriceGroup: mirror.name,
+    }, nextSellingPriceGroups);
+    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    setSellingPriceGroups((prev) => mergeSellingPriceGroupList(prev, mirror));
+    setCustomerGroups(prev => [...prev, normalizedGroup]);
+    return result;
+  };
+  const updateCustomerGroup = async (group: CustomerGroup): Promise<CrudMutationResult> => {
+    const existingGroup = customerGroups.find(g => g.id === group.id);
+    const normalizedGroupBase = normalizeCustomerGroupRecord(group, sellingPriceGroups);
+    if (!shouldUseMirroredSellingPriceGroup(normalizedGroupBase)) {
+      const saved = await syncRecordStrict('customerGroups', normalizedGroupBase);
+      const result = toCrudResult(saved);
+      if (!result.ok) return result;
+      const persistedById = await syncLinkedCustomersForCustomerGroupUpdate(existingGroup, normalizedGroupBase);
+      setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroupBase : g));
+      if (persistedById.size > 0) {
+        setCustomers(prev => prev.map(customer => persistedById.get(customer.id) || customer));
+      }
+      return result;
+    }
+    const mirrorOutcome = await ensureMirroredSellingPriceGroup(normalizedGroupBase, sellingPriceGroups);
+    if (!mirrorOutcome.result.ok || !mirrorOutcome.mirror) return mirrorOutcome.result;
+    const mirror = mirrorOutcome.mirror;
+    const nextSellingPriceGroups = mergeSellingPriceGroupList(sellingPriceGroups, mirror);
+    const normalizedGroup = normalizeCustomerGroupRecord({
+      ...normalizedGroupBase,
+      sellingPriceGroupId: mirror.id,
+      sellingPriceGroup: mirror.name,
+    }, nextSellingPriceGroups);
+    const saved = await syncRecordStrict('customerGroups', normalizedGroup);
+    const result = toCrudResult(saved);
+    if (!result.ok) return result;
+    const persistedById = await syncLinkedCustomersForCustomerGroupUpdate(existingGroup, normalizedGroup);
     setSellingPriceGroups((prev) => mergeSellingPriceGroupList(prev, mirror));
     setCustomerGroups(prev => prev.map(g => g.id === group.id ? normalizedGroup : g));
     if (persistedById.size > 0) {
@@ -8714,7 +8777,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const reassignGroup = reassignToGroupId
       ? customerGroups.find(g => g.id === reassignToGroupId)
       : undefined;
-    const mirrorGroup = existingGroup
+    const mirrorGroup = existingGroup && shouldUseMirroredSellingPriceGroup(existingGroup)
       ? (
           sellingPriceGroups.find((row) => row.id === existingGroup.sellingPriceGroupId)
           || sellingPriceGroups.find((row) => normalizeText(row.name) === normalizeText(existingGroup.name))
