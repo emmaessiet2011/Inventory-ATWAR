@@ -37,6 +37,8 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
     () => resolveInvoiceLayoutRenderConfig(sale?.invoiceLayout, invoiceLayouts),
     [sale?.invoiceLayout, invoiceLayouts]
   );
+  const layoutTemplate = layoutConfig.template;
+  const layoutLabels = layoutTemplate.labels;
   const [fieldPaymentRecords, setFieldPaymentRecords] = useState<any[]>([]);
 
   useEffect(() => {
@@ -171,8 +173,19 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   const customerName = String(sale?.customerName || customerRecord?.businessName || customerRecord?.name || 'Walk-in Customer').trim() || 'Walk-in Customer';
   const customerTaxNumber = String(customerRecord?.taxNumber || '').trim();
   const customerMobile = String(sale?.contactNumber || customerRecord?.mobile || customerRecord?.phone || '--').trim() || '--';
+  const invoiceFooterText =
+    String(layoutTemplate.footerText || '').trim()
+    || String(settings.invoiceFooterText || '').trim()
+    || 'Received in good condition; payment as agreed.';
   const netSubtotal = Math.max(0, Number((subtotal - discountValue).toFixed(3)));
-  const vatSummaryLabel = `VATIN (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
+  const vatSummaryLabel = `${layoutLabels.tax} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
+  const documentHeading = (() => {
+    const normalizedStatus = String(sale?.status || sale?.saleStatus || '').trim();
+    if (normalizedStatus === 'Quotation') return 'Quotation';
+    if (normalizedStatus === 'Proforma') return 'Proforma Invoice';
+    if (normalizedStatus === 'Draft') return 'Draft Invoice';
+    return String(layoutTemplate.invoiceHeading || '').trim() || 'Tax Invoice';
+  })();
   const printGeneratedAt = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
@@ -528,33 +541,38 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
               <div className="border-b border-slate-400 pb-2">
                 <div className="grid grid-cols-[84px_1fr_170px] items-start gap-2">
                   <div className="pt-1">
-                    {saleBusinessLogo ? (
-                      <img
-                        src={saleBusinessLogo}
-                        alt="Business logo"
-                        className="h-14 w-auto object-contain"
-                      />
-                    ) : (
-                      <div className="h-14 w-14 border border-slate-400 text-[9px] text-slate-500 grid place-items-center">
-                        LOGO
-                      </div>
+                    {layoutTemplate.showInvoiceLogo && (
+                      saleBusinessLogo ? (
+                        <img
+                          src={saleBusinessLogo}
+                          alt="Business logo"
+                          className="h-14 w-auto object-contain"
+                        />
+                      ) : (
+                        <div className="h-14 w-14 border border-slate-400 text-[9px] text-slate-500 grid place-items-center">
+                          LOGO
+                        </div>
+                      )
                     )}
                   </div>
                   <div className="text-center">
-                    <p className="text-[13px] font-bold uppercase tracking-wide">{businessName}</p>
+                    {layoutTemplate.showBusinessName && (
+                      <p className="text-[13px] font-bold uppercase tracking-wide">{businessName}</p>
+                    )}
                     <p>{businessAddressLine}</p>
                     <p>VATIN {businessTaxNumber || '--'}</p>
-                    <p className="mt-1 text-[13px] font-bold">Tax Invoice</p>
+                    {layoutTemplate.showLocationName && <p>{sale.location || '--'}</p>}
+                    <p className="mt-1 text-[13px] font-bold">{documentHeading}</p>
                   </div>
                   <div className="text-right">
                     <div className="grid grid-cols-[78px_1fr] gap-x-1">
-                      <span className="font-semibold">Invoice No.</span>
+                      <span className="font-semibold">{layoutLabels.invoiceNo}</span>
                       <span>{sale.invoiceNo || '--'}</span>
-                      <span className="font-semibold">Date</span>
+                      <span className="font-semibold">{layoutLabels.date}</span>
                       <span>{formatDateTimeDisplay(sale.date)}</span>
                       <span className="font-semibold">Status</span>
                       <span className={`font-bold ${isPaid ? 'text-emerald-700' : isPartiallyPaid ? 'text-amber-600' : 'text-red-700'}`}>
-                        {isPaid ? '✓ PAID' : isPartiallyPaid ? 'PARTIAL' : 'UNPAID'}
+                        {isPaid ? 'PAID' : isPartiallyPaid ? 'PARTIAL' : 'UNPAID'}
                       </span>
                     </div>
                   </div>
@@ -562,22 +580,30 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
               </div>
 
               <div className="mt-3 grid grid-cols-[82px_1fr] gap-y-0.5 gap-x-2">
-                <span className="font-semibold">Customer</span>
+                <span className="font-semibold">{layoutLabels.customer}</span>
                 <span>{customerName}</span>
-                <span className="font-semibold">VATIN</span>
-                <span>{customerTaxNumber || '--'}</span>
-                <span className="font-semibold">Mobile</span>
-                <span>{customerMobile}</span>
+                {layoutTemplate.showCustomerTaxNumber && (
+                  <>
+                    <span className="font-semibold">{layoutLabels.customerTaxNumber}</span>
+                    <span>{customerTaxNumber || '--'}</span>
+                  </>
+                )}
+                {layoutTemplate.showCustomerMobile && (
+                  <>
+                    <span className="font-semibold">{layoutLabels.mobile}</span>
+                    <span>{customerMobile}</span>
+                  </>
+                )}
               </div>
 
               <div className="mt-3 border border-slate-400">
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-slate-100">
-                      <th className="border-b border-slate-400 px-2 py-1 text-left font-semibold">Product</th>
-                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Quantity</th>
-                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Unit Price</th>
-                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Subtotal</th>
+                      <th className="border-b border-slate-400 px-2 py-1 text-left font-semibold">{layoutLabels.product}</th>
+                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{layoutLabels.quantity}</th>
+                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{layoutLabels.unitPrice}</th>
+                      <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{layoutLabels.subtotal}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -611,11 +637,11 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
               </div>
 
               <div className="mt-3 flex items-start gap-3">
-                {(isPaid || isPartiallyPaid) && (
+                {layoutTemplate.showPaymentInformation && (isPaid || isPartiallyPaid) && (
                   <div className="flex-1 border border-slate-400 px-2 py-1 self-end">
                     <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">Payment</div>
                     <div className="grid grid-cols-[80px_1fr] gap-y-0.5 gap-x-2">
-                      <span className="font-semibold">Amount Paid</span>
+                      <span className="font-semibold">{layoutLabels.paid}</span>
                       <span className="font-bold text-emerald-700">
                         {formatCurrency(totalPaid > 0 ? totalPaid : grandTotal)}
                       </span>
@@ -626,7 +652,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                 )}
                 <div className="flex-shrink-0 w-full max-w-[96mm] border border-slate-400 ml-auto">
                   <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1">
-                    <span>Subtotal</span><span>{formatCurrency(netSubtotal)}</span>
+                    <span>{layoutLabels.subtotal}</span><span>{formatCurrency(netSubtotal)}</span>
                   </div>
                   {taxValue > 0 && (
                     <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1">
@@ -639,10 +665,10 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                     </div>
                   )}
                   <div className="grid grid-cols-[1fr_auto] border-b border-slate-300 px-2 py-1 font-bold">
-                    <span>Total</span><span>{formatCurrency(grandTotal)}</span>
+                    <span>{layoutLabels.total}</span><span>{formatCurrency(grandTotal)}</span>
                   </div>
                   <div className={`grid grid-cols-[1fr_auto] px-2 py-1.5 font-bold ${!isPaid ? 'bg-amber-50' : ''}`}>
-                    <span className={!isPaid ? 'text-amber-800' : ''}>Amount Due</span>
+                    <span className={!isPaid ? 'text-amber-800' : ''}>{layoutLabels.due}</span>
                     <span className={!isPaid ? 'text-amber-800' : ''}>{formatCurrency(isPaid ? 0 : totalRemaining)}</span>
                   </div>
                 </div>
@@ -666,7 +692,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                   <p className="mt-2">Signature: ________________</p>
                 </div>
                 <div className="self-end text-[10px] text-slate-700">
-                  Received in good condition; payment as agreed.
+                  {invoiceFooterText}
                 </div>
               </div>
 

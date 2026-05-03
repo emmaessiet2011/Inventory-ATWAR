@@ -1881,6 +1881,8 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     () => resolveInvoiceLayoutRenderConfig(previewLayoutName, invoiceLayouts),
     [previewLayoutName, invoiceLayouts]
   );
+  const previewTemplate = previewLayoutConfig.template;
+  const previewTemplateLabels = previewTemplate.labels;
   const previewInvoiceNo = (() => {
     const editingSale = isEdit && saleId ? sales.find(s => s.id === saleId) : undefined;
     if (editingSale?.invoiceNo) return editingSale.invoiceNo;
@@ -1961,7 +1963,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     : 3;
   const previewNetSubtotal = Math.max(0, Number((subTotal - discountValue).toFixed(3)));
   const previewDueValue = Math.max(0, Number((grandTotal - paymentValue).toFixed(3)));
-  const previewVatSummaryLabel = `VATIN (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
+  const previewVatSummaryLabel = `${previewTemplateLabels.tax} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
   const previewBusinessName = String(selectedLocation?.name || settings.businessName || '--').trim() || '--';
   const previewBusinessAddressLine = (() => {
     const configuredAddress = String(settings.businessAddress || '').trim();
@@ -1981,6 +1983,17 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const previewCustomerMobile = String(
     selectedCustomerObj?.phone || selectedCustomerRecord?.mobile || selectedCustomerRecord?.phone || '--'
   ).trim() || '--';
+  const previewInvoiceHeading = status === 'Quotation'
+    ? 'Quotation'
+    : status === 'Proforma'
+      ? 'Proforma Invoice'
+      : status === 'Draft'
+        ? 'Draft Invoice'
+        : String(previewTemplate.invoiceHeading || '').trim() || 'Tax Invoice';
+  const previewInvoiceFooterText =
+    String(previewTemplate.footerText || '').trim()
+    || String(settings.invoiceFooterText || '').trim()
+    || 'Received in good condition; payment as agreed.';
   const previewPrintGeneratedAt = useMemo(
     () =>
       new Intl.DateTimeFormat('en-US', {
@@ -3012,9 +3025,18 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                             {/* Invoice Header */}
                             <div className="flex justify-between items-start mb-8">
                                 <div>
-                                    <div className="text-2xl font-black tracking-tight text-slate-900 mb-2">
-                                      {settings.businessName || 'Business Name'}
-                                    </div>
+                                    {previewTemplate.showInvoiceLogo && previewBusinessLogo && (
+                                      <img
+                                        src={previewBusinessLogo}
+                                        alt="Business logo"
+                                        className="h-12 w-auto object-contain mb-2"
+                                      />
+                                    )}
+                                    {previewTemplate.showBusinessName && (
+                                      <div className="text-2xl font-black tracking-tight text-slate-900 mb-2">
+                                        {previewBusinessName}
+                                      </div>
+                                    )}
                                     <p className="text-xs text-slate-500">
                                         {selectedLocation?.landmark || '--'}<br />
                                         {[selectedLocation?.city, selectedLocation?.state, selectedLocation?.country].filter(Boolean).join(', ') || '--'}<br />
@@ -3022,10 +3044,12 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                     </p>
                                 </div>
                                 <div className="text-right">
-                                    <h2 className="text-2xl font-bold text-slate-900 mb-1">{previewDocumentHeading}</h2>
-                                    <p className="text-sm font-medium text-slate-500 mb-1"># {previewInvoiceNo}</p>
-                                    <p className="text-xs text-slate-400">Date: {formatPreviewDateTime(saleDate)}</p>
-                                    <p className="text-xs text-slate-400">Location: {location || '--'}</p>
+                                    <h2 className="text-2xl font-bold text-slate-900 mb-1">{previewInvoiceHeading}</h2>
+                                    <p className="text-sm font-medium text-slate-500 mb-1">{previewTemplateLabels.invoiceNo}: {previewInvoiceNo}</p>
+                                    <p className="text-xs text-slate-400">{previewTemplateLabels.date}: {formatPreviewDateTime(saleDate)}</p>
+                                    {previewTemplate.showLocationName && (
+                                      <p className="text-xs text-slate-400">Location: {location || '--'}</p>
+                                    )}
                                 </div>
                             </div>
 
@@ -3033,12 +3057,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
                             {/* Bill To */}
                             <div className="mb-8">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">Bill To:</h4>
+                                <h4 className="text-xs font-bold text-slate-400 uppercase mb-2">{previewTemplateLabels.customer}:</h4>
                                 <p className="text-sm font-bold text-slate-800">
-                                    {selectedCustomerObj ? selectedCustomerObj.name : 'Direct Customer'}
+                                  {selectedCustomerObj ? selectedCustomerObj.name : 'Direct Customer'}
                                 </p>
                                 <p className="text-xs text-slate-500">{selectedCustomerObj?.billingAddress || shippingAddress || '--'}</p>
-                                <p className="text-xs text-slate-500">Ph: {selectedCustomerObj?.phone || '--'}</p>
+                                {previewTemplate.showCustomerTaxNumber && (
+                                  <p className="text-xs text-slate-500">
+                                    {previewTemplateLabels.customerTaxNumber}: {previewCustomerTaxNumber || '--'}
+                                  </p>
+                                )}
+                                {previewTemplate.showCustomerMobile && (
+                                  <p className="text-xs text-slate-500">
+                                    {previewTemplateLabels.mobile}: {selectedCustomerObj?.phone || '--'}
+                                  </p>
+                                )}
                             </div>
 
                             {/* Items Table */}
@@ -3047,10 +3080,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                     <thead className={`${previewLayoutConfig.theme.tableHeadClass} border-b border-slate-200`}>
                                         <tr>
                                             <th className="py-3 px-4 text-center font-bold w-12">S/N</th>
-                                            <th className="py-3 px-4 font-bold">Item</th>
-                                            <th className="py-3 px-4 text-center font-bold">Qty</th>
-                                            <th className="py-3 px-4 text-right font-bold">Price</th>
-                                            <th className="py-3 px-4 text-right font-bold">Total</th>
+                                            <th className="py-3 px-4 font-bold">{previewTemplateLabels.product}</th>
+                                            <th className="py-3 px-4 text-center font-bold">{previewTemplateLabels.quantity}</th>
+                                            <th className="py-3 px-4 text-right font-bold">{previewTemplateLabels.unitPrice}</th>
+                                            <th className="py-3 px-4 text-right font-bold">{previewTemplateLabels.subtotal}</th>
                                         </tr>
                                     </thead>
                                     <tbody className={`${previewLayoutConfig.theme.tableBodyClass} divide-y divide-slate-100`}>
@@ -3079,11 +3112,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                             <div className="mt-auto flex justify-end">
                                 <div className="w-64 space-y-2">
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>Subtotal:</span>
+                                        <span>{previewTemplateLabels.subtotal}:</span>
                                         <span>{formatCurrency(subTotal)}</span>
                                     </div>
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>Order Tax ({orderTax}):</span>
+                                        <span>{previewTemplateLabels.tax} ({orderTax}):</span>
                                         <span>{formatCurrency(orderTaxValue)}</span>
                                     </div>
                                     <div className="flex justify-between text-xs text-slate-500">
@@ -3095,17 +3128,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                         <span>{formatCurrency(typeof shippingCharges === 'number' ? shippingCharges : 0)}</span>
                                     </div>
                                     <div className="border-t border-slate-200 pt-2 flex justify-between text-lg font-black text-slate-900">
-                                        <span>Total:</span>
+                                        <span>{previewTemplateLabels.total}:</span>
                                         <span>{formatCurrency(grandTotal)}</span>
                                     </div>
-                                    <div className="flex justify-between text-xs text-emerald-600 font-bold pt-1">
-                                        <span>Paid:</span>
-                                        <span>{formatCurrency(paymentValue)}</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs text-red-600 font-bold">
-                                        <span>Balance Due:</span>
-                                        <span>{formatCurrency(Math.max(0, balance))}</span>
-                                    </div>
+                                    {previewTemplate.showPaymentInformation && (
+                                      <>
+                                        <div className="flex justify-between text-xs text-emerald-600 font-bold pt-1">
+                                            <span>{previewTemplateLabels.paid}:</span>
+                                            <span>{formatCurrency(paymentValue)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-xs text-red-600 font-bold">
+                                            <span>{previewTemplateLabels.due}:</span>
+                                            <span>{formatCurrency(Math.max(0, balance))}</span>
+                                        </div>
+                                      </>
+                                    )}
                                 </div>
                             </div>
 
@@ -3130,31 +3167,36 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                     <div className="hidden print:block bg-white text-black">
                       <div className="mx-auto w-full max-w-[200mm] px-0.5 py-0 text-[11px] leading-snug">
                         <div className="border-b border-slate-400 pb-2">
-                          <div className="grid grid-cols-[84px_1fr_170px] items-start gap-2">
-                            <div className="pt-1">
-                              {previewBusinessLogo ? (
-                                <img
-                                  src={previewBusinessLogo}
-                                  alt="Business logo"
-                                  className="h-14 w-auto object-contain"
-                                />
-                              ) : (
-                                <div className="h-14 w-14 border border-slate-400 text-[9px] text-slate-500 grid place-items-center">
-                                  LOGO
-                                </div>
-                              )}
-                            </div>
+                            <div className="grid grid-cols-[84px_1fr_170px] items-start gap-2">
+                              <div className="pt-1">
+                                {previewTemplate.showInvoiceLogo && (
+                                  previewBusinessLogo ? (
+                                    <img
+                                      src={previewBusinessLogo}
+                                      alt="Business logo"
+                                      className="h-14 w-auto object-contain"
+                                    />
+                                  ) : (
+                                    <div className="h-14 w-14 border border-slate-400 text-[9px] text-slate-500 grid place-items-center">
+                                      LOGO
+                                    </div>
+                                  )
+                                )}
+                              </div>
                             <div className="text-center">
-                              <p className="text-[13px] font-bold uppercase tracking-wide">{previewBusinessName}</p>
+                              {previewTemplate.showBusinessName && (
+                                <p className="text-[13px] font-bold uppercase tracking-wide">{previewBusinessName}</p>
+                              )}
                               <p>{previewBusinessAddressLine}</p>
                               <p>VATIN {previewBusinessTaxNumber || '--'}</p>
-                              <p className="mt-1 text-[13px] font-bold">Tax Invoice</p>
+                              {previewTemplate.showLocationName && <p>{location || '--'}</p>}
+                              <p className="mt-1 text-[13px] font-bold">{previewInvoiceHeading}</p>
                             </div>
                             <div className="text-right">
                               <div className="grid grid-cols-[78px_1fr] gap-x-1">
-                                <span className="font-semibold">Invoice No.</span>
+                                <span className="font-semibold">{previewTemplateLabels.invoiceNo}</span>
                                 <span>{previewInvoiceNo || '--'}</span>
-                                <span className="font-semibold">Date</span>
+                                <span className="font-semibold">{previewTemplateLabels.date}</span>
                                 <span>{formatPreviewDateTime(saleDate)}</span>
                               </div>
                             </div>
@@ -3162,22 +3204,30 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                         </div>
 
                         <div className="mt-3 grid grid-cols-[72px_1fr] gap-y-0.5 gap-x-2">
-                          <span className="font-semibold">Customer</span>
+                          <span className="font-semibold">{previewTemplateLabels.customer}</span>
                           <span>{previewCustomerName}</span>
-                          <span className="font-semibold">VATIN</span>
-                          <span>{previewCustomerTaxNumber || '--'}</span>
-                          <span className="font-semibold">Mobile</span>
-                          <span>{previewCustomerMobile}</span>
+                          {previewTemplate.showCustomerTaxNumber && (
+                            <>
+                              <span className="font-semibold">{previewTemplateLabels.customerTaxNumber}</span>
+                              <span>{previewCustomerTaxNumber || '--'}</span>
+                            </>
+                          )}
+                          {previewTemplate.showCustomerMobile && (
+                            <>
+                              <span className="font-semibold">{previewTemplateLabels.mobile}</span>
+                              <span>{previewCustomerMobile}</span>
+                            </>
+                          )}
                         </div>
 
                         <div className="mt-3 border border-slate-400">
                           <table className="w-full border-collapse">
                             <thead>
                               <tr className="bg-slate-100">
-                                <th className="border-b border-slate-400 px-2 py-1 text-left font-semibold">Product</th>
-                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Quantity</th>
-                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Unit Price</th>
-                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">Subtotal</th>
+                                <th className="border-b border-slate-400 px-2 py-1 text-left font-semibold">{previewTemplateLabels.product}</th>
+                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{previewTemplateLabels.quantity}</th>
+                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{previewTemplateLabels.unitPrice}</th>
+                                <th className="border-b border-slate-400 px-2 py-1 text-right font-semibold">{previewTemplateLabels.subtotal}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -3210,10 +3260,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
                         <div className="mt-3 ml-auto w-full max-w-[96mm] border border-slate-400">
                           {[
-                            { label: 'Due', value: formatCurrency(previewDueValue) },
-                            { label: 'Subtotal', value: formatCurrency(previewNetSubtotal) },
+                            { label: previewTemplateLabels.due, value: formatCurrency(previewDueValue) },
+                            { label: previewTemplateLabels.subtotal, value: formatCurrency(previewNetSubtotal) },
                             { label: previewVatSummaryLabel, value: formatCurrency(orderTaxValue) },
-                            { label: 'Total', value: formatCurrency(grandTotal), bold: true },
+                            { label: previewTemplateLabels.total, value: formatCurrency(grandTotal), bold: true },
                           ].map((row: any) => (
                             <div
                               key={row.label}
@@ -3243,7 +3293,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                             <p className="mt-2">Signature: ________________</p>
                           </div>
                           <div className="self-end text-[10px] text-slate-700">
-                            Received in good condition; payment as agreed.
+                            {previewInvoiceFooterText}
                           </div>
                         </div>
 

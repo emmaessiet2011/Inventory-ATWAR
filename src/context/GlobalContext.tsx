@@ -811,6 +811,38 @@ export interface InvoiceLayout {
   name: string;
   design: string;
   isDefault: boolean;
+  headerHtml?: string;
+  footerHtml?: string;
+  showClientLogo?: boolean;
+  bodyTemplate?: InvoiceLayoutBodyTemplate;
+}
+
+export interface InvoiceLayoutBodyTemplate {
+  invoiceHeading?: string;
+  showInvoiceLogo?: boolean;
+  showBusinessName?: boolean;
+  showLocationName?: boolean;
+  showCustomerTaxNumber?: boolean;
+  showCustomerMobile?: boolean;
+  showPaymentInformation?: boolean;
+  footerText?: string;
+  labels?: InvoiceLayoutLabels;
+}
+
+export interface InvoiceLayoutLabels {
+  invoiceNo?: string;
+  date?: string;
+  customer?: string;
+  customerTaxNumber?: string;
+  mobile?: string;
+  product?: string;
+  quantity?: string;
+  unitPrice?: string;
+  subtotal?: string;
+  tax?: string;
+  total?: string;
+  paid?: string;
+  due?: string;
 }
 
 export interface BarcodeStickerSetting {
@@ -930,6 +962,7 @@ export interface AppSettings {
   businessCity: string;
   address: string;
   businessLogo?: string;
+  invoiceFooterText?: string;
   startDate: string;
   defaultProfitPercent: string;
   currency: string;
@@ -2044,6 +2077,7 @@ const defaultSettings: AppSettings = {
   businessCity: '',
   address: '',
   businessLogo: '',
+  invoiceFooterText: 'Received in good condition; payment as agreed.',
   startDate: '11/10/2023',
   defaultProfitPercent: '25.000',
   currency: 'OMR',
@@ -2326,6 +2360,8 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   merged.businessAddress = String(merged.businessAddress || '').trim();
   merged.address = merged.businessAddress;
   merged.businessCity = String(merged.businessCity || '').trim();
+  merged.businessLogo = String(merged.businessLogo || '').trim();
+  merged.invoiceFooterText = String(merged.invoiceFooterText || '').trim();
   merged.tax1Number = String(merged.tax1Number || '').trim();
   merged.taxNumber = merged.tax1Number;
   if (!Object.prototype.hasOwnProperty.call(parsed, 'enableLotNumber')
@@ -9499,7 +9535,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const updateSettings = async (newSettings: AppSettings): Promise<CrudMutationResult> => {
-    if (!enforcePermissionBoundary('Settings', 'Access business settings', 'Update settings')) {
+    if (!enforcePermissionBoundary('Settings', ['Access business settings', 'Access invoice settings'], 'Update settings')) {
       return failResult(403, 'Missing permission to update settings.');
     }
     const normalized = normalizeAppSettings(newSettings);

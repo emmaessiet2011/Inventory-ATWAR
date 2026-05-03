@@ -1,4 +1,8 @@
-import type { InvoiceLayout, Location, ReceiptPrinter } from '../context/GlobalContext';
+import type {
+  InvoiceLayout,
+  Location,
+  ReceiptPrinter,
+} from '../context/GlobalContext';
 import type { NotificationType } from '../context/NotificationContext';
 
 type AddNotification = (payload: { title: string; message: string; type: NotificationType }) => void;
@@ -75,7 +79,146 @@ export interface InvoiceLayoutRenderConfig {
   layoutDesign: string;
   variant: InvoiceLayoutVariant;
   theme: InvoiceLayoutTheme;
+  template: InvoiceLayoutTemplateConfig;
 }
+
+export interface InvoiceLayoutTemplateLabels {
+  invoiceNo: string;
+  date: string;
+  customer: string;
+  customerTaxNumber: string;
+  mobile: string;
+  product: string;
+  quantity: string;
+  unitPrice: string;
+  subtotal: string;
+  tax: string;
+  total: string;
+  paid: string;
+  due: string;
+}
+
+export interface InvoiceLayoutTemplateConfig {
+  invoiceHeading: string;
+  showInvoiceLogo: boolean;
+  showBusinessName: boolean;
+  showLocationName: boolean;
+  showCustomerTaxNumber: boolean;
+  showCustomerMobile: boolean;
+  showPaymentInformation: boolean;
+  footerText: string;
+  labels: InvoiceLayoutTemplateLabels;
+}
+
+const DEFAULT_INVOICE_TEMPLATE_LABELS: InvoiceLayoutTemplateLabels = {
+  invoiceNo: 'Invoice No.',
+  date: 'Date',
+  customer: 'Customer',
+  customerTaxNumber: 'VATIN',
+  mobile: 'Mobile',
+  product: 'Product',
+  quantity: 'Quantity',
+  unitPrice: 'Unit Price',
+  subtotal: 'Subtotal',
+  tax: 'VATIN',
+  total: 'Total',
+  paid: 'Amount Paid',
+  due: 'Due',
+};
+
+const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceLayoutTemplateConfig = {
+  invoiceHeading: 'Tax Invoice',
+  showInvoiceLogo: true,
+  showBusinessName: true,
+  showLocationName: true,
+  showCustomerTaxNumber: true,
+  showCustomerMobile: true,
+  showPaymentInformation: true,
+  footerText: '',
+  labels: DEFAULT_INVOICE_TEMPLATE_LABELS,
+};
+
+const toObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+const toOptionalString = (value: unknown): string | undefined => {
+  const normalized = String(value ?? '').trim();
+  return normalized ? normalized : undefined;
+};
+
+const toBooleanWithFallback = (value: unknown, fallback: boolean): boolean => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
+    if (['false', '0', 'no', 'off'].includes(normalized)) return false;
+  }
+  return fallback;
+};
+
+const resolveInvoiceLayoutTemplateConfig = (layout?: InvoiceLayout): InvoiceLayoutTemplateConfig => {
+  const topLevel = toObject(layout);
+  const bodyTemplate = toObject(layout?.bodyTemplate);
+  const labels = toObject(bodyTemplate.labels);
+
+  const resolveLabel = (key: keyof InvoiceLayoutTemplateLabels): string =>
+    toOptionalString(labels[key]) ||
+    toOptionalString(bodyTemplate[key]) ||
+    toOptionalString(topLevel[key]) ||
+    DEFAULT_INVOICE_TEMPLATE_LABELS[key];
+
+  return {
+    invoiceHeading:
+      toOptionalString(bodyTemplate.invoiceHeading) ||
+      toOptionalString(topLevel.invoiceHeading) ||
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.invoiceHeading,
+    showInvoiceLogo: toBooleanWithFallback(
+      bodyTemplate.showInvoiceLogo ?? topLevel.showInvoiceLogo ?? topLevel.showClientLogo,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showInvoiceLogo,
+    ),
+    showBusinessName: toBooleanWithFallback(
+      bodyTemplate.showBusinessName ?? topLevel.showBusinessName,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showBusinessName,
+    ),
+    showLocationName: toBooleanWithFallback(
+      bodyTemplate.showLocationName ?? topLevel.showLocationName,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showLocationName,
+    ),
+    showCustomerTaxNumber: toBooleanWithFallback(
+      bodyTemplate.showCustomerTaxNumber ?? topLevel.showCustomerTaxNumber,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showCustomerTaxNumber,
+    ),
+    showCustomerMobile: toBooleanWithFallback(
+      bodyTemplate.showCustomerMobile ?? topLevel.showCustomerMobile,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showCustomerMobile,
+    ),
+    showPaymentInformation: toBooleanWithFallback(
+      bodyTemplate.showPaymentInformation ?? topLevel.showPaymentInformation,
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.showPaymentInformation,
+    ),
+    footerText:
+      toOptionalString(bodyTemplate.footerText) ||
+      toOptionalString(topLevel.footerText) ||
+      DEFAULT_INVOICE_TEMPLATE_CONFIG.footerText,
+    labels: {
+      invoiceNo: resolveLabel('invoiceNo'),
+      date: resolveLabel('date'),
+      customer: resolveLabel('customer'),
+      customerTaxNumber: resolveLabel('customerTaxNumber'),
+      mobile: resolveLabel('mobile'),
+      product: resolveLabel('product'),
+      quantity: resolveLabel('quantity'),
+      unitPrice: resolveLabel('unitPrice'),
+      subtotal: resolveLabel('subtotal'),
+      tax: resolveLabel('tax'),
+      total: resolveLabel('total'),
+      paid: resolveLabel('paid'),
+      due: resolveLabel('due'),
+    },
+  };
+};
 
 const resolveInvoiceLayoutVariant = (layout?: InvoiceLayout): InvoiceLayoutVariant => {
   const token = `${layout?.name || ''} ${layout?.design || ''}`.toLowerCase();
@@ -140,5 +283,6 @@ export const resolveInvoiceLayoutRenderConfig = (
     layoutDesign: activeLayout?.design || 'Classic',
     variant,
     theme: getInvoiceLayoutTheme(variant),
+    template: resolveInvoiceLayoutTemplateConfig(activeLayout),
   };
 };
