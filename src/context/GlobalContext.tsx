@@ -9539,7 +9539,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return failResult(403, 'Missing permission to update settings.');
     }
     const normalized = normalizeAppSettings(newSettings);
-    const saved = await syncRecordStrict('settings', normalized);
+    const saved = await syncRecordStrict('settings', { id: 'SETTINGS', ...normalized });
     const result = toCrudResult(saved);
     if (!result.ok) {
       recordActivity({

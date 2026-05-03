@@ -751,7 +751,12 @@ const resolveLookupId = async (delegate, explicitId, nameCandidates = [], nameFi
 app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   const resource = String(req.params.resource || '').trim();
   const raw = toObject(req.body);
-  const id = String(raw.id || '').trim();
+  let id = String(raw.id || '').trim();
+  // Singleton settings record may arrive without id from older clients.
+  // Force canonical id to keep Postgres as source of truth.
+  if (!id && resource === 'settings') {
+    id = 'SETTINGS';
+  }
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
 
   try {
