@@ -293,9 +293,6 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     if (!editingExpenseId) {
       resetExpenseForm();
     }
-    if (!editingExpenseId) {
-      resetExpenseForm();
-    }
     onNavigate?.('expenses');
   };
 
@@ -565,6 +562,9 @@ const AddExpense: React.FC<AddExpenseProps> = ({
       await deleteRegisterTransaction(registerTxId);
     }
 
+    if (!editingExpenseId) {
+      resetExpenseForm();
+    }
     onNavigate?.('expenses');
   };
 
