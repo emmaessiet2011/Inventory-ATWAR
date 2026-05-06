@@ -67,6 +67,7 @@ import {
   fetchDropdownCollections,
   isDropdownSyncEnabled,
 } from '../utils/dropdownSync';
+import { getSellingPriceGroupProductRules } from '../utils/sellingPriceGroups';
 import type { ProductPackagingType } from '../utils/productPackaging';
 
 // ============================================================
@@ -929,6 +930,7 @@ export interface SellingPriceGroup {
   priceCalcPercentage: number;
   status: 'Active' | 'Inactive';
   applicableProducts?: SellingPriceGroupProduct[];
+  meta?: Record<string, any>;
 }
 
 export interface ProductVariation {
@@ -3106,14 +3108,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remoteProductCategories) setProductCategories(remoteProductCategories as ProductCategory[]);
         if (remoteProductBrands) setProductBrands(remoteProductBrands as ProductBrand[]);
         if (remoteProductUnits) setProductUnits(remoteProductUnits as ProductUnit[]);
-        if (remoteSellingPriceGroups) {
-          setSellingPriceGroups((remoteSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
-            ...group,
-            status: group.status || 'Active',
-          })));
+        const normalizedRemoteSellingPriceGroups = remoteSellingPriceGroups
+          ? (remoteSellingPriceGroups as SellingPriceGroup[]).map(normalizeSellingPriceGroupRecord)
+          : null;
+        if (normalizedRemoteSellingPriceGroups) {
+          setSellingPriceGroups(normalizedRemoteSellingPriceGroups);
         }
         if (remoteCustomerGroups) {
-          const availablePriceGroups = (remoteSellingPriceGroups as SellingPriceGroup[] | null) ?? sellingPriceGroups;
+          const availablePriceGroups = normalizedRemoteSellingPriceGroups ?? sellingPriceGroups;
           setCustomerGroups((remoteCustomerGroups as CustomerGroup[]).map((group) =>
             normalizeCustomerGroupRecord(group, availablePriceGroups),
           ));
@@ -3278,14 +3280,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (freshProductCategories) setProductCategories(freshProductCategories as ProductCategory[]);
         if (freshProductBrands) setProductBrands(freshProductBrands as ProductBrand[]);
         if (freshProductUnits) setProductUnits(freshProductUnits as ProductUnit[]);
-        if (freshSellingPriceGroups) {
-          setSellingPriceGroups((freshSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
-            ...group,
-            status: group.status || 'Active',
-          })));
+        const normalizedFreshSellingPriceGroups = freshSellingPriceGroups
+          ? (freshSellingPriceGroups as SellingPriceGroup[]).map(normalizeSellingPriceGroupRecord)
+          : null;
+        if (normalizedFreshSellingPriceGroups) {
+          setSellingPriceGroups(normalizedFreshSellingPriceGroups);
         }
         if (freshCustomerGroups) {
-          const availablePriceGroups = (freshSellingPriceGroups as SellingPriceGroup[] | null) ?? sellingPriceGroups;
+          const availablePriceGroups = normalizedFreshSellingPriceGroups ?? sellingPriceGroups;
           setCustomerGroups((freshCustomerGroups as CustomerGroup[]).map((group) =>
             normalizeCustomerGroupRecord(group, availablePriceGroups),
           ));
@@ -3377,19 +3379,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       const remoteSellingPriceGroups = getRows('sellingPriceGroups');
+      const normalizedRemoteSellingPriceGroups = (remoteSellingPriceGroups as SellingPriceGroup[])
+        .map(normalizeSellingPriceGroupRecord);
       if (hasRemoteKey('sellingPriceGroups')) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setSellingPriceGroups((remoteSellingPriceGroups as SellingPriceGroup[]).map((group) => ({
-          ...group,
-          status: group.status || 'Active',
-        })));
+        setSellingPriceGroups(normalizedRemoteSellingPriceGroups);
       }
 
       const remoteCustomerGroups = getRows('customerGroups');
       if (hasRemoteKey('customerGroups')) {
         dropdownSyncApplyingRemoteRef.current = true;
         const availablePriceGroups = hasRemoteKey('sellingPriceGroups')
-          ? (remoteSellingPriceGroups as SellingPriceGroup[])
+          ? normalizedRemoteSellingPriceGroups
           : sellingPriceGroups;
         setCustomerGroups((remoteCustomerGroups as CustomerGroup[]).map((group) =>
           normalizeCustomerGroupRecord(group, availablePriceGroups),
@@ -3798,6 +3799,59 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const normalizeText = (value?: string): string => String(value || '').trim().toLowerCase();
+
+  const normalizeSellingPriceGroupProductRule = (
+    rule: any,
+    index = 0,
+  ): SellingPriceGroupProduct | null => {
+    if (!rule || typeof rule !== 'object') return null;
+    const id = String(rule.id || rule.productId || rule.product_id || rule.productID || '').trim();
+    const name = String(rule.name || rule.productName || rule.product || rule.description || '').trim();
+    const sku = String(rule.sku || rule.productSku || rule.productSKU || rule.productCode || rule.code || rule.barcode || '').trim();
+    const price = toFiniteNumber(
+      rule.price ?? rule.sellingPrice ?? rule.unitPrice ?? rule.groupPrice ?? rule.overridePrice ?? rule.value,
+      0,
+    );
+    const discount = toFiniteNumber(rule.discount ?? rule.discountPercent, 0);
+
+    if (!id && !name && !sku) return null;
+
+    return {
+      id: id || sku || `SPG-PRODUCT-${index}`,
+      name,
+      sku,
+      price: Number(Math.max(0, price).toFixed(3)),
+      discount: Number(Math.min(100, Math.max(0, discount)).toFixed(3)),
+    };
+  };
+
+  const normalizeSellingPriceGroupRecord = (group: SellingPriceGroup): SellingPriceGroup => {
+    const meta = group.meta && typeof group.meta === 'object' && !Array.isArray(group.meta)
+      ? group.meta
+      : {};
+    const applicableProducts = getSellingPriceGroupProductRules(group)
+      .map((rule, index) => normalizeSellingPriceGroupProductRule(rule, index))
+      .filter((rule): rule is SellingPriceGroupProduct => !!rule);
+    const status = String(group.status || (meta as any).status || 'Active').toLowerCase() === 'inactive'
+      ? 'Inactive'
+      : 'Active';
+
+    return {
+      ...group,
+      description: String(group.description || (meta as any).description || '').trim(),
+      payTermDays: Math.max(0, Math.floor(toFiniteNumber(group.payTermDays ?? (meta as any).payTermDays, 0))),
+      payTermUnit: group.payTermUnit === 'Months' || (meta as any).payTermUnit === 'Months' ? 'Months' : 'Days',
+      taxRate: Number(Math.max(0, toFiniteNumber(group.taxRate ?? (meta as any).taxRate, 0)).toFixed(3)),
+      discount: Number(Math.min(100, Math.max(0, toFiniteNumber(group.discount ?? (meta as any).discount, 0))).toFixed(3)),
+      priceCalcPercentage: Number(toFiniteNumber(group.priceCalcPercentage ?? (meta as any).priceCalcPercentage, 0).toFixed(3)),
+      status,
+      applicableProducts: applicableProducts.length > 0 ? applicableProducts : undefined,
+      meta: {
+        ...meta,
+        applicableProducts,
+      },
+    };
+  };
 
   const isCustomerRecordActive = (customer?: Customer): boolean =>
     !!customer && String(customer.status || 'Active') === 'Active';
@@ -8663,8 +8717,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const parsedTaxRate = Number(existing?.taxRate);
     const taxRate = Number.isFinite(parsedTaxRate) ? parsedTaxRate : 0;
     const mirrorId = String(existing?.id || group.sellingPriceGroupId || '').trim() || deriveMirroredSellingPriceGroupId(group.id);
-    const applicableProducts = Array.isArray(existing?.applicableProducts)
-      ? existing.applicableProducts
+    const applicableProducts = existing
+      ? getSellingPriceGroupProductRules(existing)
+        .map((rule, index) => normalizeSellingPriceGroupProductRule(rule, index))
+        .filter((rule): rule is SellingPriceGroupProduct => !!rule)
       : [];
 
     return {
@@ -9372,19 +9428,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const addSellingPriceGroup = async (group: SellingPriceGroup): Promise<CrudMutationResult> => {
-    const saved = await syncRecordStrict('sellingPriceGroups', group);
+    const normalizedGroup = normalizeSellingPriceGroupRecord(group);
+    const saved = await syncRecordStrict('sellingPriceGroups', normalizedGroup);
     const result = toCrudResult(saved);
     if (!result.ok) return result;
     const groupsToLink = customerGroups.filter((customerGroup) => (
       !customerGroup.sellingPriceGroupId &&
-      normalizeText(customerGroup.sellingPriceGroup) === normalizeText(group.name)
+      normalizeText(customerGroup.sellingPriceGroup) === normalizeText(normalizedGroup.name)
     ));
     const persistedGroups = new Map<string, CustomerGroup>();
     for (const customerGroup of groupsToLink) {
       const updatedGroup: CustomerGroup = {
         ...customerGroup,
-        sellingPriceGroupId: group.id,
-        sellingPriceGroup: group.name,
+        sellingPriceGroupId: normalizedGroup.id,
+        sellingPriceGroup: normalizedGroup.name,
       };
       const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
       if (!groupSaved.ok) {
@@ -9397,7 +9454,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       persistedGroups.set(updatedGroup.id, updatedGroup);
     }
-    setSellingPriceGroups(prev => [...prev, group]);
+    setSellingPriceGroups(prev => [...prev, normalizedGroup]);
     if (persistedGroups.size > 0) {
       setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
     }
@@ -9405,11 +9462,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
   const updateSellingPriceGroup = async (group: SellingPriceGroup): Promise<CrudMutationResult> => {
     const existing = sellingPriceGroups.find(g => g.id === group.id);
-    const saved = await syncRecordStrict('sellingPriceGroups', group);
+    const normalizedGroup = normalizeSellingPriceGroupRecord(group);
+    const saved = await syncRecordStrict('sellingPriceGroups', normalizedGroup);
     const result = toCrudResult(saved);
     if (!result.ok) return result;
     const groupsToLink = customerGroups.filter((customerGroup) => {
-      const linkedById = customerGroup.sellingPriceGroupId === group.id;
+      const linkedById = customerGroup.sellingPriceGroupId === normalizedGroup.id;
       const linkedByLegacyName = !customerGroup.sellingPriceGroupId &&
         !!existing &&
         normalizeText(customerGroup.sellingPriceGroup) === normalizeText(existing.name);
@@ -9419,8 +9477,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     for (const customerGroup of groupsToLink) {
       const updatedGroup: CustomerGroup = {
         ...customerGroup,
-        sellingPriceGroupId: group.id,
-        sellingPriceGroup: group.name,
+        sellingPriceGroupId: normalizedGroup.id,
+        sellingPriceGroup: normalizedGroup.name,
       };
       const groupSaved = await syncRecordStrict('customerGroups', updatedGroup);
       if (!groupSaved.ok) {
@@ -9433,7 +9491,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
       persistedGroups.set(updatedGroup.id, updatedGroup);
     }
-    setSellingPriceGroups(prev => prev.map(g => g.id === group.id ? group : g));
+    setSellingPriceGroups(prev => prev.map(g => g.id === normalizedGroup.id ? normalizedGroup : g));
     if (persistedGroups.size > 0) {
       setCustomerGroups(prev => prev.map(customerGroup => persistedGroups.get(customerGroup.id) || customerGroup));
     }

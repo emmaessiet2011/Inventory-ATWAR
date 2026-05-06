@@ -25,6 +25,10 @@ import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { resolveDefaultAccountFromMethod } from '@/utils/paymentAccounts';
 import { printElementSnapshot } from '@/utils/printUtils';
 import { resolveSaleDueDate } from '@/utils/paymentTerms';
+import {
+  computeSellingPriceGroupProductPrice,
+  getSellingPriceGroupRuleSignature,
+} from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 
 interface AddSaleProps {
@@ -241,9 +245,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     return { number: match[1], unit };
   };
 
-  const normalizeSku = (value?: string) =>
-    String(value || '').trim().toLowerCase().replace(/\s+/g, '');
-
   const selectedCustomerRecord = useMemo(
     () => customers.find(c => c.id === customer),
     [customers, customer]
@@ -368,6 +369,14 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const resolvedSellingPriceGroupSource = sellingPriceGroupResolution.source;
   const resolvedSellingPriceOverlayGroup = sellingPriceGroupResolution.overlayGroup;
   const resolvedSellingPriceOverlaySource = sellingPriceGroupResolution.overlaySource;
+  const resolvedSellingPriceRuleSignature = useMemo(
+    () => getSellingPriceGroupRuleSignature(resolvedSellingPriceGroup),
+    [resolvedSellingPriceGroup],
+  );
+  const resolvedSellingPriceOverlayRuleSignature = useMemo(
+    () => getSellingPriceGroupRuleSignature(resolvedSellingPriceOverlayGroup),
+    [resolvedSellingPriceOverlayGroup],
+  );
 
   const getGroupedProductPrice = (product: any) => {
     const basePrice = Number(product?.sellingPrice || 0);
@@ -376,36 +385,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       Math.max(0, price * (1 + (customerGroupCalculationPercentage / 100)));
     const evaluateGroupPrice = (targetGroup: typeof group): { price: number; applies: boolean } => {
       if (!targetGroup) return { price: basePrice, applies: false };
-      const adjustedBase = basePrice * (1 + (Number(targetGroup.priceCalcPercentage || 0) / 100));
-      const applicable = targetGroup.applicableProducts || [];
-
-      if (applicable.length === 0) {
-        const groupedPrice = Math.max(0, adjustedBase * (1 - (Number(targetGroup.discount || 0) / 100)));
-        return { price: groupedPrice, applies: true };
-      }
-
-      const normalizedProductId = String(product?.id ?? '').trim();
-      const normalizedProductSku = normalizeSku(product?.sku);
-      const productRule = applicable.find((p: any) => {
-        const normalizedRuleId = String(p?.id ?? p?.productId ?? '').trim();
-        const normalizedRuleSku = normalizeSku(p?.sku);
-        return (
-          (normalizedRuleId !== '' && normalizedRuleId === normalizedProductId) ||
-          (normalizedRuleSku !== '' && normalizedRuleSku === normalizedProductSku)
-        );
-      });
-      if (!productRule) return { price: basePrice, applies: false };
-
-      const productDiscountRaw = Number(productRule.discount);
-      const productDiscount = Number.isFinite(productDiscountRaw)
-        ? productDiscountRaw
-        : Number(targetGroup.discount || 0);
-      const rulePriceRaw = Number(productRule.price);
-      const hasRulePrice = Number.isFinite(rulePriceRaw) && rulePriceRaw >= 0;
-      const hasFixedOverride = hasRulePrice && Math.abs(rulePriceRaw - basePrice) > 0.0005;
-      const priceBase = hasFixedOverride ? rulePriceRaw : adjustedBase;
-      const groupedPrice = Math.max(0, priceBase * (1 - (productDiscount / 100)));
-      return { price: groupedPrice, applies: true };
+      return computeSellingPriceGroupProductPrice(targetGroup, product, { basePrice });
     };
 
     const baseGroupResult = evaluateGroupPrice(group);
@@ -1185,6 +1165,8 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     resolvedSellingPriceOverlayGroup?.id,
     selectedPriceGroupId,
     customerGroupCalculationPercentage,
+    resolvedSellingPriceRuleSignature,
+    resolvedSellingPriceOverlayRuleSignature,
     isEdit,
     products,
   ]);

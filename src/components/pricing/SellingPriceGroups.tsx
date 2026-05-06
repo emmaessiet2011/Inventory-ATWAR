@@ -7,6 +7,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { useGlobalContext } from '@/context/GlobalContext';
 import type { Product, SellingPriceGroup, SellingPriceGroupProduct } from '@/context/GlobalContext';
 import { buildPaginationItems } from '@/utils/pagination';
+import { getSellingPriceGroupProductRules } from '@/utils/sellingPriceGroups';
 
 const SellingPriceGroups: React.FC = () => {
   const { addNotification } = useNotifications();
@@ -126,8 +127,10 @@ const SellingPriceGroups: React.FC = () => {
       priceCalcPercentage: String(group.priceCalcPercentage),
       status: group.status,
     });
-    // Restore previously saved applicable products, refreshing names/SKUs/prices from latest products.
-    setSelectedProducts((group.applicableProducts || []).map(mapRuleWithLiveProduct));
+    // Restore previously saved applicable products, including rules stored in meta by imports.
+    setSelectedProducts(getSellingPriceGroupProductRules(group).map((rule) =>
+      mapRuleWithLiveProduct(rule as SellingPriceGroupProduct),
+    ));
     setProductSearch('');
     setShowOnlyOverrides(false);
     setFormError('');
@@ -186,19 +189,7 @@ const SellingPriceGroups: React.FC = () => {
       return;
     }
 
-    const normalizedGroupDiscount = Number(clampDiscount(parsedDiscount).toFixed(3));
-    const normalizedSelectedProducts = selectedProducts
-      .map(normalizeRuleForSave)
-      .filter((rule) => {
-        const liveProduct = resolveLiveProduct(rule);
-        if (!liveProduct) return true;
-        const basePrice = Number(liveProduct.sellingPrice || 0);
-        const rulePrice = Number(rule.price);
-        const ruleDiscount = Number(rule.discount);
-        const hasFixedOverride = Number.isFinite(rulePrice) && Math.abs(rulePrice - basePrice) > 0.0005;
-        const hasDiscountOverride = Number.isFinite(ruleDiscount) && Math.abs(ruleDiscount - normalizedGroupDiscount) > 0.0005;
-        return hasFixedOverride || hasDiscountOverride;
-      });
+    const normalizedSelectedProducts = selectedProducts.map(normalizeRuleForSave);
     const invalidProductDiscount = normalizedSelectedProducts.some(rule => rule.discount < 0 || rule.discount > 100);
     if (invalidProductDiscount) {
       const message = 'Per-product discount must be between 0 and 100.';

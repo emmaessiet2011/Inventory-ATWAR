@@ -8,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import type { Product, SellingPriceGroup } from '@/context/GlobalContext';
+import { computeSellingPriceGroupProductPrice } from '@/utils/sellingPriceGroups';
 
 type BarcodeSettingKey = string;
 
@@ -158,7 +159,6 @@ const BARCODE_SETTINGS = [
 ];
 
 const normalizeText = (value: unknown) => String(value ?? '').trim().toLowerCase();
-const normalizeSku = (value: unknown) => normalizeText(value);
 const clampNumber = (value: number, min: number, max: number, fallback: number) =>
   Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 const escapeHtml = (value: unknown) =>
@@ -452,28 +452,12 @@ const PrintLabels: React.FC<PrintLabelsProps> = ({ initialProductId }) => {
     selectedGroup?: SellingPriceGroup
   ): number => {
     if (!selectedGroup) return Math.max(0, basePrice);
-    const adjustedBase = basePrice * (1 + (Number(selectedGroup.priceCalcPercentage || 0) / 100));
-    const applicable = selectedGroup.applicableProducts || [];
-
-    if (applicable.length === 0) {
-      return Math.max(0, adjustedBase * (1 - (Number(selectedGroup.discount || 0) / 100)));
-    }
-
-    const productRule = applicable.find(p =>
-      p.id === productId || (p.sku && normalizeSku(p.sku) === normalizeSku(productSku))
-    );
-
-    if (!productRule) return Math.max(0, basePrice);
-
-    const productDiscount = Number.isFinite(Number(productRule.discount))
-      ? Number(productRule.discount)
-      : Number(selectedGroup.discount || 0);
-    const rulePrice = Number(productRule.price);
-    const hasRulePrice = Number.isFinite(rulePrice) && rulePrice >= 0;
-    const hasFixedOverride = hasRulePrice && Math.abs(rulePrice - basePrice) > 0.0005;
-    const priceBase = hasFixedOverride ? rulePrice : adjustedBase;
-
-    return Math.max(0, priceBase * (1 - (productDiscount / 100)));
+    const product = products.find(p => p.id === productId) || {
+      id: productId,
+      sku: productSku,
+      sellingPrice: basePrice,
+    };
+    return computeSellingPriceGroupProductPrice(selectedGroup, product, { basePrice }).price;
   };
 
   const preparedLabels = useMemo<PreparedLabel[]>(() => {

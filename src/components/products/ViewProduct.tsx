@@ -3,6 +3,11 @@ import { ArrowLeft, Printer, Edit, Image as ImageIcon } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { formatUnitWithPack, getPackHint } from '@/utils/productPackaging';
 import { printDocument } from '@/utils/printUtils';
+import {
+  computeSellingPriceGroupProductPrice,
+  findSellingPriceGroupProductRule,
+  getSellingPriceGroupProductRules,
+} from '@/utils/sellingPriceGroups';
 
 interface ViewProductProps {
   onBack: () => void;
@@ -60,16 +65,9 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
     .filter((group) => group.status === 'Active')
     .map((group) => {
       const basePrice = Number(product.sellingPrice || 0);
-      const adjustedBase = basePrice * (1 + (Number(group.priceCalcPercentage || 0) / 100));
-      const applicableProducts = group.applicableProducts || [];
-      const productRule = applicableProducts.find((rule) =>
-        String(rule.id || '').trim() === String(product.id || '').trim()
-        || (
-          String(rule.sku || '').trim().toLowerCase().replace(/\s+/g, '')
-          === String(product.sku || '').trim().toLowerCase().replace(/\s+/g, '')
-        )
-      );
-
+      const applicableProducts = getSellingPriceGroupProductRules(group);
+      const productRule = findSellingPriceGroupProductRule(group, product);
+      const computedPrice = computeSellingPriceGroupProductPrice(group, product, { basePrice });
       const hasSpecificRules = applicableProducts.length > 0;
       const appliesToProduct = !hasSpecificRules || !!productRule;
       const discount = appliesToProduct
@@ -77,14 +75,6 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
           ? Number(productRule.discount)
           : Number(group.discount || 0))
         : 0;
-      const rulePrice = Number(productRule?.price);
-      const hasRulePrice = Number.isFinite(rulePrice) && rulePrice >= 0;
-      const hasFixedOverride = hasRulePrice && Math.abs(rulePrice - basePrice) > 0.0005;
-      const priceBase = hasFixedOverride ? rulePrice : adjustedBase;
-
-      const groupedPrice = appliesToProduct
-        ? Math.max(0, priceBase * (1 - (discount / 100)))
-        : basePrice;
 
       return {
         id: group.id,
@@ -92,7 +82,7 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
         discount,
         priceAdjustment: Number(group.priceCalcPercentage || 0),
         taxRate: Number(group.taxRate || 0),
-        finalPrice: Number(groupedPrice.toFixed(3)),
+        finalPrice: computedPrice.price,
         appliesToProduct,
       };
     })
