@@ -384,10 +384,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
         return { price: groupedPrice, applies: true };
       }
 
-      const productRule = applicable.find((p) =>
-        p.id === product?.id ||
-        (p.sku && normalizeSku(p.sku) === normalizeSku(product?.sku))
-      );
+      const normalizedProductId = String(product?.id ?? '').trim();
+      const normalizedProductSku = normalizeSku(product?.sku);
+      const productRule = applicable.find((p: any) => {
+        const normalizedRuleId = String(p?.id ?? p?.productId ?? '').trim();
+        const normalizedRuleSku = normalizeSku(p?.sku);
+        return (
+          (normalizedRuleId !== '' && normalizedRuleId === normalizedProductId) ||
+          (normalizedRuleSku !== '' && normalizedRuleSku === normalizedProductSku)
+        );
+      });
       if (!productRule) return { price: basePrice, applies: false };
 
       const productDiscountRaw = Number(productRule.discount);
@@ -1654,6 +1660,75 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     };
   };
 
+  const resetNewSaleForm = () => {
+    if (isEdit) return;
+    const resetStatus: 'Final' | 'Draft' | 'Quotation' | 'Proforma' =
+      forceInitialStatusLock && initialStatus
+        ? initialStatus
+        : isAddDraftFlow
+          ? 'Draft'
+          : isAddQuotationFlow
+            ? 'Quotation'
+            : (initialStatus || 'Final');
+    const resetSaleType =
+      resetStatus === 'Draft'
+        ? (settings.disableCreditSaleButton ? 'Paid' : 'Credit Sale')
+        : 'Paid';
+    const resetLocation = defaultLocationName || '';
+
+    setSaleType(resetSaleType);
+    setLocation(resetLocation);
+    setCustomer('');
+    setCustomerSearch('');
+    setSelectedCustomerObj(null);
+    setPayTermNumber('');
+    setPayTermUnit('Days');
+    setSaleDate(getNowLocalDateTime());
+    setStatus(resetStatus);
+    setInvoiceScheme(getInvoiceSchemeForLocation(resetLocation));
+    setInvoiceLayout(getInvoiceLayoutForLocation(resetLocation));
+    setSelectedPriceGroupId('');
+    setSelectedCommissionAgentId('');
+    setCommissionAgentValidationError('');
+    setTopProductSearch('');
+    setTopProductDropdownOpen(false);
+    setShowMultiPicker(false);
+    setAttachedFileName('');
+    setRowProductSearch({});
+    setRowProductDropdownOpen({});
+    setRows([]);
+    setDiscountType(
+      Number.isFinite(initialDefaultSaleDiscount) && initialDefaultSaleDiscount > 0
+        ? 'Percentage'
+        : 'None'
+    );
+    setDiscountAmount(
+      Number.isFinite(initialDefaultSaleDiscount) && initialDefaultSaleDiscount > 0
+        ? Number(initialDefaultSaleDiscount.toFixed(3))
+        : ''
+    );
+    setIsDiscountManuallyOverridden(false);
+    setOrderTax(resolveDefaultOrderTax());
+    setSellNote('');
+    setShippingDetails('');
+    setShippingAddress('');
+    setShippingCharges('');
+    setShippingStatus('Ordered');
+    setDeliveredTo('');
+    setAmount('');
+    setPaymentDate(getNowLocalDateTime());
+    setPaymentMethod(settings.defaultSalePaymentMethod || 'Cash');
+    setPaymentAccount('None');
+    setPaymentNote('');
+    setShowPreview(false);
+    setSourceOrderId('');
+    setSourceOrderNumber('');
+    setShowDraftPrompt(false);
+    setPendingFinalStatus(null);
+    setIsDraftStatusLocked(isAddDraftFlow);
+    setIsQuotationStatusLocked(isAddQuotationFlow);
+  };
+
   // --- Action Handlers ---
   const handleSave = async (andPrint = false) => {
       if (!location) {
@@ -1824,7 +1899,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
       // In Add Sale, "Save" should only save.
       // Printing is explicit via "Save & Print".
-      const shouldPrint = andPrint;
+      const shouldPrint = andPrint === true;
       const targetPage = newSale.status === 'Draft'
         ? 'drafts'
         : newSale.status === 'Quotation' || newSale.status === 'Proforma'
@@ -1845,10 +1920,12 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
             extraStyles: '@media print { @page { size: A4; margin: 5mm; } }',
           });
           setShowPreview(false);
+          if (!isEdit) resetNewSaleForm();
           if (onNavigate) onNavigate(targetPage);
         }, 180);
         return;
       }
+      if (!isEdit) resetNewSaleForm();
       if (onNavigate) onNavigate(targetPage);
       setShowPreview(false);
   };
@@ -2964,7 +3041,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
              >
                 <Eye size={16} /> Preview
             </button>
-             <button onClick={handleSave} className="px-6 py-2.5 rounded-full font-bold text-xs bg-indigo-600 hover:bg-indigo-500 shadow-lg transition flex items-center gap-2">
+             <button onClick={() => void handleSave(false)} className="px-6 py-2.5 rounded-full font-bold text-xs bg-indigo-600 hover:bg-indigo-500 shadow-lg transition flex items-center gap-2">
                 <Save size={16} /> {saveLabel}
             </button>
             <button onClick={handleSaveAndPrint} className="px-6 py-2.5 rounded-full font-bold text-xs bg-emerald-600 hover:bg-emerald-500 shadow-lg transition flex items-center gap-2">
@@ -3311,7 +3388,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                         <button onClick={() => setShowPreview(false)} className="px-6 py-2.5 border border-slate-300 rounded-xl text-slate-700 font-bold hover:bg-white hover:shadow-sm transition-all text-sm">
                             Close
                         </button>
-                        <button onClick={handleSave} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-500 shadow-lg transition-all text-sm flex items-center gap-2">
+                        <button onClick={() => void handleSave(false)} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-500 shadow-lg transition-all text-sm flex items-center gap-2">
                             <Save size={16} /> {saveLabel}
                         </button>
                         <button onClick={handleSaveAndPrint} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-500 shadow-lg shadow-emerald-900/20 transition-all text-sm flex items-center gap-2">

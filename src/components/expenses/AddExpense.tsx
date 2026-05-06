@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGlobalContext, Expense, Payment } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
-import { Save, Calendar, Upload, Info, CreditCard, DollarSign, RefreshCw, MapPin, Tag, X, ArrowLeft, Receipt } from 'lucide-react';
+import { Save, Calendar, Upload, Info, CreditCard, RefreshCw, MapPin, Tag, X, ArrowLeft, Receipt } from 'lucide-react';
 import { toExpenseDateTimeInput, toExpenseIsoDateTime } from '@/utils/expenses';
 import {
   addRegisterTransaction,
@@ -119,6 +119,7 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     () => locations.filter(location => location.isActive !== false),
     [locations]
   );
+  const currencyBadge = String(settings.currencySymbol || settings.currency || 'OMR').trim() || 'OMR';
 
   const taxOptions = useMemo<TaxOption[]>(() => {
     const mapped = taxRates
@@ -261,7 +262,40 @@ const AddExpense: React.FC<AddExpenseProps> = ({
     setRefNo(`${prefix}${year}-${Math.floor(Math.random() * 9000 + 1000)}`);
   }, [settings?.expensesPrefix, editingExpenseId, refNo]);
 
+  const resetExpenseForm = () => {
+    const now = new Date().toISOString();
+    setEditingExpenseId(null);
+    bootstrappedEditIdRef.current = '';
+    setLocation(activeLocations[0]?.name || '');
+    setCategory('');
+    setSubCategory('');
+    setRefNo('');
+    setDate(toExpenseDateTimeInput(now));
+    setExpenseFor('');
+    setContact('');
+    setTaxSelection('None');
+    setAmount('');
+    setNote('');
+    setIsRefund(false);
+    setIsRecurring(false);
+    setRecurringInterval('');
+    setRecurringUnit('Days');
+    setRecurringRepetitions('');
+    setPayAmount('');
+    setPaidOn(toExpenseDateTimeInput(now));
+    setPayMethod('Cash');
+    setPayAccount('');
+    setPayNote('');
+    setAttachmentName('');
+  };
+
   const handleCancel = () => {
+    if (!editingExpenseId) {
+      resetExpenseForm();
+    }
+    if (!editingExpenseId) {
+      resetExpenseForm();
+    }
     onNavigate?.('expenses');
   };
 
@@ -627,8 +661,8 @@ const AddExpense: React.FC<AddExpenseProps> = ({
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Total Amount *</label>
             <div className="relative">
-              <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="number" step="0.001" min="0" className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">{currencyBadge}</span>
+              <input type="number" step="0.001" min="0" className="w-full pl-14 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </div>
             {taxAmount > 0 && <p className="text-xs text-slate-500 mt-1">Base: {formatCurrency(baseAmount)} + Tax: {formatCurrency(taxAmount)} = Total: {formatCurrency(totalAmount)}</p>}
           </div>
@@ -704,8 +738,8 @@ const AddExpense: React.FC<AddExpenseProps> = ({
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Amount</label>
             <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input type="number" step="0.001" min="0" className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">{currencyBadge}</span>
+              <input type="number" step="0.001" min="0" className="w-full pl-14 pr-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
             </div>
           </div>
           <div>
