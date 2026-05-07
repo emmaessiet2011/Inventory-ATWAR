@@ -2073,6 +2073,8 @@ const initialBarcodeSettings: BarcodeStickerSetting[] = [
   },
 ];
 
+const DEFAULT_VATIN_NUMBER = 'OM1100399470';
+
 const defaultSettings: AppSettings = {
   businessName: 'Atwar Al Mustaqbal',
   businessAddress: '',
@@ -2152,9 +2154,9 @@ const defaultSettings: AppSettings = {
   posShortcutAddNewProduct: 'f4',
   taxLabel: 'VAT',
   enableTax: true,
-  taxNumber: '',
+  taxNumber: DEFAULT_VATIN_NUMBER,
   tax1Name: 'VAT',
-  tax1Number: '',
+  tax1Number: DEFAULT_VATIN_NUMBER,
   tax2Name: '',
   tax2Number: '',
   // Prefixes (extended)
@@ -2364,7 +2366,7 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   merged.businessCity = String(merged.businessCity || '').trim();
   merged.businessLogo = String(merged.businessLogo || '').trim();
   merged.invoiceFooterText = String(merged.invoiceFooterText || '').trim();
-  merged.tax1Number = String(merged.tax1Number || '').trim();
+  merged.tax1Number = String(merged.tax1Number || '').trim() || DEFAULT_VATIN_NUMBER;
   merged.taxNumber = merged.tax1Number;
   if (!Object.prototype.hasOwnProperty.call(parsed, 'enableLotNumber')
     && Object.prototype.hasOwnProperty.call(parsed, 'enableLotNumbers')) {

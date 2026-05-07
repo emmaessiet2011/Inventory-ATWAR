@@ -17,6 +17,7 @@ interface ViewSaleDetailsProps {
 }
 
 const normalizeText = (value?: string): string => String(value || '').trim().toLowerCase();
+const DEFAULT_VATIN_NUMBER = 'OM1100399470';
 
 const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   isOpen,
@@ -169,16 +170,23 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
     const cityFallback = String(settings.businessCity || '').trim();
     return cityFallback || '--';
   })();
-  const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim();
+  const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || DEFAULT_VATIN_NUMBER;
   const customerName = String(sale?.customerName || customerRecord?.businessName || customerRecord?.name || 'Walk-in Customer').trim() || 'Walk-in Customer';
   const customerTaxNumber = String(customerRecord?.taxNumber || '').trim();
+  const customerTaxNumberDisplay = /vatin/i.test(String(layoutLabels.customerTaxNumber || ''))
+    ? (customerTaxNumber || businessTaxNumber)
+    : (customerTaxNumber || '--');
   const customerMobile = String(sale?.contactNumber || customerRecord?.mobile || customerRecord?.phone || '--').trim() || '--';
   const invoiceFooterText =
     String(layoutTemplate.footerText || '').trim()
     || String(settings.invoiceFooterText || '').trim()
     || 'Received in good condition; payment as agreed.';
   const netSubtotal = Math.max(0, Number((subtotal - discountValue).toFixed(3)));
-  const vatSummaryLabel = `${layoutLabels.tax} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
+  const taxLabel = String(layoutLabels.tax || '').trim();
+  const taxLabelWithVatin = /vatin/i.test(taxLabel)
+    ? `${taxLabel} ${businessTaxNumber}`
+    : taxLabel;
+  const vatSummaryLabel = `${taxLabelWithVatin} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
   const documentHeading = (() => {
     const normalizedStatus = String(sale?.status || sale?.saleStatus || '').trim();
     if (normalizedStatus === 'Quotation') return 'Quotation';
@@ -186,23 +194,6 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
     if (normalizedStatus === 'Draft') return 'Draft Invoice';
     return String(layoutTemplate.invoiceHeading || '').trim() || 'Tax Invoice';
   })();
-  const printGeneratedAt = useMemo(
-    () =>
-      new Intl.DateTimeFormat('en-US', {
-        month: 'numeric',
-        day: 'numeric',
-        year: '2-digit',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(new Date()),
-    []
-  );
-  const invoicePublicUrl = useMemo(() => {
-    const invoiceNo = String(sale?.invoiceNo || '').trim();
-    if (!invoiceNo) return '--';
-    if (typeof window === 'undefined') return `invoice/${invoiceNo}`;
-    return `${window.location.origin}/invoice/${encodeURIComponent(invoiceNo)}`;
-  }, [sale?.invoiceNo]);
 
   const activityRows = useMemo(() => {
     if (!sale) return [];
@@ -585,7 +576,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                 {layoutTemplate.showCustomerTaxNumber && (
                   <>
                     <span className="font-semibold">{layoutLabels.customerTaxNumber}</span>
-                    <span>{customerTaxNumber || '--'}</span>
+                    <span>{customerTaxNumberDisplay}</span>
                   </>
                 )}
                 {layoutTemplate.showCustomerMobile && (
@@ -696,10 +687,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                 </div>
               </div>
 
-              <div className="mt-8 grid grid-cols-[auto_auto_1fr_auto] gap-2 border-t border-slate-400 pt-2 text-[10px] text-slate-700">
-                <span>{printGeneratedAt}</span>
-                <span>{sale.invoiceNo || '--'}</span>
-                <span className="truncate">{invoicePublicUrl}</span>
+              <div className="mt-8 border-t border-slate-400 pt-2 text-[10px] text-slate-700 text-right">
                 <span>1/1</span>
               </div>
             </div>

@@ -37,6 +37,7 @@ interface VatInvoiceRow {
 
 const normalizeText = (value: unknown): string => String(value || '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+const DEFAULT_VATIN_NUMBER = 'OM1100399470';
 
 const toMs = (value: unknown): number => {
   const parsed = new Date(String(value || ''));
@@ -434,14 +435,8 @@ const VatBills: React.FC = () => {
       const logoCache = new Map<string, HTMLImageElement | null>();
       const businessName = String(settings.businessName || 'Business').trim() || 'Business';
       const businessAddress = String(settings.businessAddress || settings.address || '').trim() || 'Address not set';
-      const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || '--';
+      const businessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || DEFAULT_VATIN_NUMBER;
       const vatLabel = settings.tax1Name || settings.taxLabel || 'VAT';
-      const generatedAt = formatDateTimeBySettings(
-        new Date().toISOString(),
-        settings.dateFormat,
-        settings.timeFormat,
-        settings.timeZone,
-      );
 
       for (let index = 0; index < filteredInvoices.length; index += 1) {
         const invoice = filteredInvoices[index];
@@ -516,9 +511,10 @@ const VatBills: React.FC = () => {
         doc.line(pageLeft, headerBottom, pageRight, headerBottom);
         y = headerBottom + 4.5;
 
+        const customerTaxNumber = String(invoice.trn || '').trim() || businessTaxNumber;
         const customerRows = [
           { label: 'Customer', value: invoice.customer },
-          { label: 'VATIN', value: invoice.trn },
+          { label: 'VATIN', value: customerTaxNumber },
           { label: 'Mobile', value: invoice.customerMobile || '--' },
           { label: 'Address', value: invoice.customerAddress || '--' },
         ];
@@ -631,7 +627,7 @@ const VatBills: React.FC = () => {
         const totalsRows: Array<{ label: string; value: string; bold?: boolean }> = [
           { label: 'Due', value: formatCurrency(round3(due)) },
           { label: 'Subtotal', value: formatCurrency(round3(netSubtotal)) },
-          { label: `VATIN (${vatLabel}) (+)`, value: formatCurrency(round3(invoice.vat)) },
+          { label: `VATIN ${businessTaxNumber} (${vatLabel}) (+)`, value: formatCurrency(round3(invoice.vat)) },
           ...(shipping > 0.0001 ? [{ label: 'Shipping (+)', value: formatCurrency(round3(shipping)) }] : []),
           { label: 'Total', value: formatCurrency(round3(invoice.total)), bold: true },
         ];
@@ -656,17 +652,10 @@ const VatBills: React.FC = () => {
         doc.text('Signature: ________________', pageLeft, sectionTop + 20);
         doc.text('Received in good condition; payment as agreed.', 124, sectionTop + 20);
 
-        const invoicePublicUrl = sale.invoiceNo && typeof window !== 'undefined'
-          ? `${window.location.origin}/invoice/${encodeURIComponent(String(sale.invoiceNo))}`
-          : `invoice/${encodeURIComponent(String(sale.invoiceNo || invoice.id || ''))}`;
-
         const footerY = 289;
         doc.line(pageLeft, footerY - 3, pageRight, footerY - 3);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.4);
-        doc.text(generatedAt, pageLeft, footerY);
-        doc.text(String(invoice.id || '--'), pageLeft + 35, footerY);
-        doc.text(truncate(invoicePublicUrl, 64), pageLeft + 62, footerY);
         doc.text(`${index + 1}/${filteredInvoices.length}`, pageRight, footerY, { align: 'right' });
       }
 

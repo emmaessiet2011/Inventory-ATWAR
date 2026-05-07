@@ -42,6 +42,7 @@ interface AddSaleProps {
 }
 
 const normalizeLocationKey = (value: unknown): string => String(value || '').trim().toLowerCase();
+const DEFAULT_VATIN_NUMBER = 'OM1100399470';
 
 const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId: sourceOrderIdParam, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
   const { addNotification } = useNotifications();
@@ -2015,7 +2016,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     : 3;
   const previewNetSubtotal = Math.max(0, Number((subTotal - discountValue).toFixed(3)));
   const previewDueValue = Math.max(0, Number((grandTotal - paymentValue).toFixed(3)));
-  const previewVatSummaryLabel = `${previewTemplateLabels.tax} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
+  const previewVatinNumber = String(settings.taxNumber || settings.tax1Number || '').trim() || DEFAULT_VATIN_NUMBER;
+  const previewCustomerTaxNumberLabel = String(previewTemplateLabels.customerTaxNumber || '').trim();
+  const previewTaxLabel = String(previewTemplateLabels.tax || '').trim();
+  const previewTaxLabelWithVatin = /vatin/i.test(previewTaxLabel)
+    ? `${previewTaxLabel} ${previewVatinNumber}`
+    : previewTaxLabel;
+  const previewVatSummaryLabel = `${previewTaxLabelWithVatin} (${settings.tax1Name || settings.taxLabel || 'VAT'}): (+)`;
   const previewBusinessName = String(selectedLocation?.name || settings.businessName || '--').trim() || '--';
   const previewBusinessAddressLine = (() => {
     const configuredAddress = String(settings.businessAddress || '').trim();
@@ -2027,11 +2034,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     const cityFallback = String(settings.businessCity || '').trim();
     return cityFallback || '--';
   })();
-  const previewBusinessTaxNumber = String(settings.taxNumber || settings.tax1Number || '').trim();
   const previewCustomerName = String(
     selectedCustomerObj?.name || selectedCustomerRecord?.businessName || selectedCustomerRecord?.name || 'Walk-in Customer'
   ).trim() || 'Walk-in Customer';
   const previewCustomerTaxNumber = String(selectedCustomerRecord?.taxNumber || '').trim();
+  const previewCustomerTaxNumberDisplay = /vatin/i.test(previewCustomerTaxNumberLabel)
+    ? (previewCustomerTaxNumber || previewVatinNumber)
+    : (previewCustomerTaxNumber || '--');
   const previewCustomerMobile = String(
     selectedCustomerObj?.phone || selectedCustomerRecord?.mobile || selectedCustomerRecord?.phone || '--'
   ).trim() || '--';
@@ -2046,21 +2055,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     String(previewTemplate.footerText || '').trim()
     || String(settings.invoiceFooterText || '').trim()
     || 'Received in good condition; payment as agreed.';
-  const previewPrintGeneratedAt = useMemo(
-    () =>
-      new Intl.DateTimeFormat('en-US', {
-        month: 'numeric',
-        day: 'numeric',
-        year: '2-digit',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(new Date()),
-    []
-  );
-  const previewInvoicePublicUrl = useMemo(() => {
-    if (typeof window === 'undefined') return `invoice/${previewInvoiceNo}`;
-    return `${window.location.origin}/invoice/${encodeURIComponent(previewInvoiceNo)}`;
-  }, [previewInvoiceNo]);
   const showDraftOption = !settings.disableDraft || isAddDraftFlow || status === 'Draft';
   const showQuotationOption = !settings.disableQuotation || isAddQuotationFlow || status === 'Quotation' || status === 'Proforma';
   const isStatusLocked = forceInitialStatusLock || (isAddDraftFlow && isDraftStatusLocked) || (isAddQuotationFlow && isQuotationStatusLocked);
@@ -3113,7 +3107,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                 <p className="text-xs text-slate-500">{selectedCustomerObj?.billingAddress || shippingAddress || '--'}</p>
                                 {previewTemplate.showCustomerTaxNumber && (
                                   <p className="text-xs text-slate-500">
-                                    {previewTemplateLabels.customerTaxNumber}: {previewCustomerTaxNumber || '--'}
+                                    {previewTemplateLabels.customerTaxNumber}: {previewCustomerTaxNumberDisplay}
                                   </p>
                                 )}
                                 {previewTemplate.showCustomerMobile && (
@@ -3165,7 +3159,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                         <span>{formatCurrency(subTotal)}</span>
                                     </div>
                                     <div className="flex justify-between text-xs text-slate-500">
-                                        <span>{previewTemplateLabels.tax} ({orderTax}):</span>
+                                        <span>{previewTaxLabelWithVatin} ({orderTax}):</span>
                                         <span>{formatCurrency(orderTaxValue)}</span>
                                     </div>
                                     <div className="flex justify-between text-xs text-slate-500">
@@ -3237,7 +3231,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                 <p className="text-[13px] font-bold uppercase tracking-wide">{previewBusinessName}</p>
                               )}
                               <p>{previewBusinessAddressLine}</p>
-                              <p>VATIN {previewBusinessTaxNumber || '--'}</p>
+                              <p>VATIN {previewVatinNumber}</p>
                               {previewTemplate.showLocationName && <p>{location || '--'}</p>}
                               <p className="mt-1 text-[13px] font-bold">{previewInvoiceHeading}</p>
                             </div>
@@ -3258,7 +3252,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                           {previewTemplate.showCustomerTaxNumber && (
                             <>
                               <span className="font-semibold">{previewTemplateLabels.customerTaxNumber}</span>
-                              <span>{previewCustomerTaxNumber || '--'}</span>
+                              <span>{previewCustomerTaxNumberDisplay}</span>
                             </>
                           )}
                           {previewTemplate.showCustomerMobile && (
@@ -3346,10 +3340,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                           </div>
                         </div>
 
-                        <div className="mt-8 grid grid-cols-[auto_auto_1fr_auto] gap-2 border-t border-slate-400 pt-2 text-[10px] text-slate-700">
-                          <span>{previewPrintGeneratedAt}</span>
-                          <span>{previewInvoiceNo || '--'}</span>
-                          <span className="truncate">{previewInvoicePublicUrl}</span>
+                        <div className="mt-8 border-t border-slate-400 pt-2 text-[10px] text-slate-700 text-right">
                           <span>1/1</span>
                         </div>
                       </div>
