@@ -18,7 +18,10 @@ export interface SellingPriceRuleLike {
   unitPrice?: number | string;
   groupPrice?: number | string;
   overridePrice?: number | string;
+  finalPrice?: number | string;
   value?: number | string;
+  overrideDiscount?: number | string;
+  overrideDiscountPercent?: number | string;
   discount?: number | string;
   discountPercent?: number | string;
 }
@@ -63,14 +66,36 @@ const toPlainObject = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
-const toFiniteNumber = (value: unknown, fallback = 0): number => {
+const parseNumberish = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed
+      .replace(/,/g, '')
+      .replace(/[^\d.+-]/g, '');
+    if (!normalized || ['-', '+', '.', '-.', '+.'].includes(normalized)) return null;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const toFiniteNumber = (value: unknown, fallback = 0): number => {
+  const parsed = parseNumberish(value);
+  if (parsed === null) return fallback;
+  return parsed;
 };
 
 const toOptionalNonNegativeNumber = (value: unknown): number | null => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+  const parsed = parseNumberish(value);
+  if (parsed === null) return null;
+  if (parsed < 0) return null;
+  return parsed;
 };
 
 const normalizeText = (value: unknown): string =>
@@ -110,18 +135,36 @@ const normalizeRule = (value: unknown): SellingPriceRuleLike | null => {
   const id = firstNonEmpty(row.id, row.productId, row.product_id, row.productID);
   const name = firstNonEmpty(row.name, row.productName, row.product, row.description);
   const sku = firstNonEmpty(row.sku, row.productSku, row.productSKU, row.productCode, row.code, row.barcode);
-  const price = firstNumber(row.price, row.sellingPrice, row.unitPrice, row.groupPrice, row.overridePrice, row.value);
-  const discount = firstNumber(row.discount, row.discountPercent);
+  const price = firstNumber(
+    row.overridePrice,
+    row.price,
+    row.sellingPrice,
+    row.unitPrice,
+    row.groupPrice,
+    row.value,
+  );
+  const finalPrice = firstNumber(row.finalPrice, row.final_price, row.finalprice);
+  const discount = firstNumber(
+    row.overrideDiscount,
+    row.overrideDiscountPercent,
+    row.discount,
+    row.discountPercent,
+  );
 
-  if (!id && !name && !sku && price === null && discount === null) return null;
+  if (!id && !name && !sku && price === null && finalPrice === null && discount === null) return null;
+
+  const normalizedPrice = price ?? finalPrice;
 
   return {
     ...row,
     id,
     name,
     sku,
-    price: price ?? undefined,
+    price: normalizedPrice ?? undefined,
+    finalPrice: finalPrice ?? undefined,
     discount: discount ?? undefined,
+    overrideDiscount: discount ?? undefined,
+    overrideDiscountPercent: discount ?? undefined,
   } as SellingPriceRuleLike;
 };
 
@@ -211,7 +254,15 @@ export const computeSellingPriceGroupProductPrice = (
   if (!group) return { price: basePrice, applies: false };
 
   const rules = getSellingPriceGroupProductRules(group);
-  const groupDiscount = toFiniteNumber(group.discount, 0);
+  const meta = toPlainObject(group.meta);
+  const groupDiscount = toFiniteNumber(
+    group.discount
+      ?? (group as { discountPercent?: unknown }).discountPercent
+      ?? meta.discount
+      ?? meta.discountPercent
+      ?? meta.defaultDiscount,
+    0,
+  );
   const adjustedBase = basePrice * (1 + (toFiniteNumber(group.priceCalcPercentage, 0) / 100));
 
   if (rules.length === 0) {
@@ -222,10 +273,30 @@ export const computeSellingPriceGroupProductPrice = (
   const rule = findSellingPriceGroupProductRule(group, product);
   if (!rule) return { price: basePrice, applies: false };
 
-  const rulePrice = firstNumber(rule.price, rule.sellingPrice, rule.unitPrice, rule.groupPrice, rule.overridePrice, rule.value);
-  const discount = firstNumber(rule.discount, rule.discountPercent) ?? groupDiscount;
-  const priceBase = rulePrice !== null ? rulePrice : adjustedBase;
-  const price = Math.max(0, priceBase * (1 - (discount / 100)));
+  const rulePrice = firstNumber(
+    rule.overridePrice,
+    rule.price,
+    rule.sellingPrice,
+    rule.unitPrice,
+    rule.groupPrice,
+    rule.value,
+  );
+  const ruleFinalPrice = firstNumber(
+    rule.finalPrice,
+    (rule as { final_price?: unknown }).final_price,
+    (rule as { finalprice?: unknown }).finalprice,
+  );
+  const discount = firstNumber(
+    rule.overrideDiscount,
+    rule.overrideDiscountPercent,
+    rule.discount,
+    rule.discountPercent,
+  ) ?? groupDiscount;
+  const price = (() => {
+    if (rulePrice === null && ruleFinalPrice !== null) return Math.max(0, ruleFinalPrice);
+    const priceBase = rulePrice !== null ? rulePrice : adjustedBase;
+    return Math.max(0, priceBase * (1 - (discount / 100)));
+  })();
 
   return {
     price: Number(price.toFixed(3)),
@@ -241,8 +312,9 @@ export const getSellingPriceGroupRuleSignature = (group?: SellingPriceGroupLike 
       rule.id || rule.productId || rule.product_id || rule.productID || '',
       rule.sku || rule.productSku || rule.productSKU || rule.productCode || rule.code || rule.barcode || '',
       rule.name || rule.productName || rule.product || rule.description || '',
-      rule.price ?? rule.sellingPrice ?? rule.unitPrice ?? rule.groupPrice ?? rule.overridePrice ?? rule.value ?? '',
-      rule.discount ?? rule.discountPercent ?? '',
+      rule.overridePrice ?? rule.price ?? rule.sellingPrice ?? rule.unitPrice ?? rule.groupPrice ?? rule.value ?? '',
+      rule.overrideDiscount ?? rule.overrideDiscountPercent ?? rule.discount ?? rule.discountPercent ?? '',
+      rule.finalPrice ?? '',
     ].map((value) => String(value).trim()).join(':'))
     .join('|');
 };

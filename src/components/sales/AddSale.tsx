@@ -271,10 +271,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     return activeCustomerGroups.find(g => g.name.trim().toLowerCase() === normalizedGroupName) || null;
   }, [selectedCustomerRecord, activeCustomerGroups]);
 
-  const customerGroupCalculationPercentage = Number(
-    resolvedCustomerGroup?.calculationPercentage ?? resolvedCustomerGroup?.discountPercent ?? 0
-  ) || 0;
-
   const sellingPriceGroupResolution = useMemo(() => {
     const byId = (id: string) => activeSellingPriceGroups.find(g => g.id === id) || null;
     const byName = (name?: string) => {
@@ -381,8 +377,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const getGroupedProductPrice = (product: any) => {
     const basePrice = Number(product?.sellingPrice || 0);
     const group = resolvedSellingPriceGroup;
-    const applyCustomerGroupCalc = (price: number) =>
-      Math.max(0, price * (1 + (customerGroupCalculationPercentage / 100)));
     const evaluateGroupPrice = (targetGroup: typeof group): { price: number; applies: boolean } => {
       if (!targetGroup) return { price: basePrice, applies: false };
       return computeSellingPriceGroupProductPrice(targetGroup, product, { basePrice });
@@ -393,10 +387,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     if (shouldApplyOverlay) {
       const overlayResult = evaluateGroupPrice(resolvedSellingPriceOverlayGroup);
       if (overlayResult.applies) {
-        return Number(applyCustomerGroupCalc(overlayResult.price).toFixed(3));
+        return Number(overlayResult.price.toFixed(3));
       }
     }
-    return Number(applyCustomerGroupCalc(baseGroupResult.price).toFixed(3));
+    return Number(baseGroupResult.price.toFixed(3));
   };
 
   const round3 = (value: number): number => Number((Number(value) || 0).toFixed(3));
@@ -1164,7 +1158,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     resolvedSellingPriceGroup?.id,
     resolvedSellingPriceOverlayGroup?.id,
     selectedPriceGroupId,
-    customerGroupCalculationPercentage,
     resolvedSellingPriceRuleSignature,
     resolvedSellingPriceOverlayRuleSignature,
     isEdit,
@@ -2394,9 +2387,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                       Source: {resolvedSellingPriceGroupSource}
                       {!selectedPriceGroupId && resolvedSellingPriceOverlayGroup && (
                         <> | Overlay: {resolvedSellingPriceOverlaySource || resolvedSellingPriceOverlayGroup.name}</>
-                      )}
-                      {customerGroupCalculationPercentage !== 0 && (
-                        <> | Customer Group Adj: {customerGroupCalculationPercentage > 0 ? '+' : ''}{customerGroupCalculationPercentage}%</>
                       )}
                     </p>
                 </div>

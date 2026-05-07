@@ -14,6 +14,22 @@ const round3 = (value) => Number((Number.isFinite(Number(value)) ? Number(value)
 const norm = (value) => String(value || '').trim().toLowerCase();
 const compact = (value) => norm(value).replace(/[^a-z0-9]/g, '');
 const digitsOnly = (value) => String(value || '').replace(/\D+/g, '');
+const parseNumberish = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const normalized = text.replace(/,/g, '').replace(/[^\d.+-]/g, '');
+  if (!normalized || ['-', '+', '.', '-.', '+.'].includes(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const toOptionalNonNegative = (value) => {
+  const parsed = parseNumberish(value);
+  if (parsed === null) return null;
+  if (parsed < 0) return null;
+  return parsed;
+};
 const toObject = (value) => (
   value && typeof value === 'object' && !Array.isArray(value)
     ? { ...value }
@@ -162,6 +178,49 @@ const findCustomerGroupByHints = (customerGroups, hints) => {
   return null;
 };
 
+const firstNonNegative = (...values) => {
+  for (const value of values) {
+    const parsed = toOptionalNonNegative(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+};
+
+const clampPercent = (value) => Math.min(100, Math.max(0, Number(value || 0)));
+
+const resolveRowPrice = (row) => firstNonNegative(
+  row?.overridePrice,
+  row?.groupPrice,
+  row?.unitPrice,
+  row?.price,
+  row?.finalPrice,
+  row?.rawPrice,
+  row?.['override price'],
+  row?.['group price'],
+  row?.['unit price'],
+  row?.['final price'],
+);
+
+const resolveRowDiscount = (row, fallbackDiscount = 0) => {
+  const parsed = firstNonNegative(
+    row?.overrideDiscount,
+    row?.override_discount,
+    row?.overrideDiscountPercent,
+    row?.override_discount_percent,
+    row?.['override discount (%)'],
+    row?.['override discount %'],
+    row?.['override discount'],
+    row?.discount,
+    row?.discountPercent,
+    row?.discount_percent,
+    row?.['discount (%)'],
+    row?.['discount %'],
+    row?.['discount'],
+  );
+  if (parsed === null) return round3(clampPercent(fallbackDiscount));
+  return round3(clampPercent(parsed));
+};
+
 async function main() {
   const { input, report, dryRun } = parseArgs();
   if (!fs.existsSync(input)) {
@@ -198,6 +257,7 @@ async function main() {
   let totalPricedRows = 0;
   let totalMatchedRows = 0;
   let totalUnmatchedRows = 0;
+  let totalRowsWithDiscountOverride = 0;
 
   for (const sheet of payload) {
     const sourceRows = Array.isArray(sheet?.rows) ? sheet.rows : [];
@@ -213,17 +273,11 @@ async function main() {
     const unmatchedRows = [];
     let sheetPricedRows = 0;
     let sheetMatchedRows = 0;
+    let sheetRowsWithDiscountOverride = 0;
 
     for (const row of sourceRows) {
-      const hasExplicitPrice = (
-        row?.price !== null &&
-        row?.price !== undefined &&
-        String(row?.rawPrice ?? '').trim().length > 0
-      );
-      if (!hasExplicitPrice) continue;
-
-      const parsedPrice = Number(row?.price);
-      if (!Number.isFinite(parsedPrice)) continue;
+      const parsedPrice = resolveRowPrice(row);
+      if (parsedPrice === null) continue;
       sheetPricedRows += 1;
 
       const barcodeKey = digitsOnly(row?.barcode);
@@ -275,12 +329,16 @@ async function main() {
       }
 
       sheetMatchedRows += 1;
+      const resolvedDiscount = resolveRowDiscount(row, defaultDiscount);
+      if (resolvedDiscount !== round3(defaultDiscount)) {
+        sheetRowsWithDiscountOverride += 1;
+      }
       matchedRulesByProductId.set(match.id, {
         id: match.id,
         name: match.name,
         sku: match.sku,
         price: round3(parsedPrice),
-        discount: round3(defaultDiscount),
+        discount: resolvedDiscount,
         matchedBy,
       });
     }
@@ -343,6 +401,7 @@ async function main() {
     totalPricedRows += sheetPricedRows;
     totalMatchedRows += sheetMatchedRows;
     totalUnmatchedRows += unmatchedRows.length;
+    totalRowsWithDiscountOverride += sheetRowsWithDiscountOverride;
 
     sheetSummaries.push({
       fileName: sheet?.fileName || '',
@@ -352,6 +411,7 @@ async function main() {
       pricedRows: sheetPricedRows,
       matchedRows: sheetMatchedRows,
       unmatchedRows: unmatchedRows.length,
+      rowsWithDiscountOverride: sheetRowsWithDiscountOverride,
       customerGroupLinked: linkedCustomerGroup
         ? { id: linkedCustomerGroup.id, name: linkedCustomerGroup.name }
         : null,
@@ -410,6 +470,7 @@ async function main() {
       pricedRows: totalPricedRows,
       matchedRows: totalMatchedRows,
       unmatchedRows: totalUnmatchedRows,
+      rowsWithDiscountOverride: totalRowsWithDiscountOverride,
       matchRatePercent: totalPricedRows > 0 ? round3((totalMatchedRows / totalPricedRows) * 100) : 0,
       groupsUpserted: upserts.length,
       customerGroupLinksUpdated: customerGroupLinks.length,
@@ -429,6 +490,7 @@ async function main() {
     pricedRows: totalPricedRows,
     matchedRows: totalMatchedRows,
     unmatchedRows: totalUnmatchedRows,
+    rowsWithDiscountOverride: totalRowsWithDiscountOverride,
     matchRatePercent: reportPayload.totals.matchRatePercent,
     report,
   }, null, 2));
