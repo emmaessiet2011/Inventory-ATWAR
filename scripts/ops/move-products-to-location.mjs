@@ -7,7 +7,7 @@ dotenv.config({ path: path.resolve(process.cwd(), 'server', '.env') });
 
 const prisma = new PrismaClient();
 
-const DEFAULT_FROM_TERM = 'KNWZ ARD ALKHLYJ ALMTHDH';
+const DEFAULT_FROM_TERM = 'CR:1450968';
 const DEFAULT_TARGET_TERM = 'CR:1450968';
 const DEFAULT_REPORT_PATH = path.resolve(process.cwd(), 'qa', 'reports', 'ops-move-products-location-summary.json');
 

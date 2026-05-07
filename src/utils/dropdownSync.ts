@@ -1,18 +1,11 @@
 import { clearAuthToken, readAuthToken } from './hardenedStorage';
+import { getApiBaseUrl } from './apiBase';
 export type DropdownCollectionMap = Record<string, any[]>;
-
-const DEFAULT_API_BASE_URL = 'http://localhost:4000';
 
 type ResourceRow = Record<string, unknown>;
 type DropdownStrategy = {
   fetch: () => Promise<any[] | null>;
   push: (rows: any[]) => Promise<boolean>;
-};
-
-const getApiBaseUrl = (): string => {
-  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
-  const base = configured || DEFAULT_API_BASE_URL;
-  return base.replace(/\/+$/, '');
 };
 
 export const isDropdownSyncEnabled = (): boolean =>

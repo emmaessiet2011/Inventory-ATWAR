@@ -24,6 +24,7 @@ import {
   syncDedicatedStrict,
   deleteDedicatedStrict,
 } from '@/utils/apiClient';
+import { getApiBaseUrl } from '@/utils/apiBase';
 import { readAuthToken } from '@/utils/hardenedStorage';
 
 interface ListAccountsProps {
@@ -53,7 +54,7 @@ interface PaymentAccountTypeRow {
   isActive?: boolean;
 }
 
-const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const API_BASE_URL = getApiBaseUrl();
 
 const normalizeTypeId = (name: string): string =>
   `PAT-${String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'type'}`;

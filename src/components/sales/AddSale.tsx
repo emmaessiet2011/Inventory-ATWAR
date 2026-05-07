@@ -1706,7 +1706,17 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   };
 
   // --- Action Handlers ---
+  const resolveSaveErrorMessage = (error?: string): string => {
+    const raw = String(error || '').trim();
+    if (!raw) return 'Could not save this invoice to Postgres. Please check permissions and try again.';
+    if (raw.toLowerCase().includes('failed to fetch')) {
+      return 'Unable to reach the API server. Please check VPS/API connection and try again.';
+    }
+    return raw;
+  };
+
   const handleSave = async (andPrint = false) => {
+    try {
       if (!location) {
           addNotification({ title: 'Error', message: 'Please select a Business Location.', type: 'error' });
           return;
@@ -1789,7 +1799,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           if (!updated.ok) {
             addNotification({
               title: 'Invoice Not Updated',
-              message: updated.error || 'Could not update this invoice in Postgres. Please check permissions and try again.',
+              message: resolveSaveErrorMessage(updated.error),
               type: 'error',
             });
             return;
@@ -1799,7 +1809,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           if (!created.ok) {
             addNotification({
               title: 'Invoice Not Created',
-              message: created.error || 'Could not save this invoice to Postgres. Please check permissions and try again.',
+              message: resolveSaveErrorMessage(created.error),
               type: 'error',
             });
             return;
@@ -1904,6 +1914,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       if (!isEdit) resetNewSaleForm();
       if (onNavigate) onNavigate(targetPage);
       setShowPreview(false);
+    } catch (error) {
+      addNotification({
+        title: 'Invoice Not Saved',
+        message: resolveSaveErrorMessage(error instanceof Error ? error.message : 'Unexpected error'),
+        type: 'error',
+      });
+    }
   };
 
   const handleSaveAndPrint = () => handleSave(true);

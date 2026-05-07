@@ -1,10 +1,4 @@
-const DEFAULT_API_BASE_URL = 'http://localhost:4000';
-
-const getApiBaseUrl = (): string => {
-  const configured = String(import.meta.env.VITE_API_BASE_URL || '').trim();
-  const base = configured || DEFAULT_API_BASE_URL;
-  return base.replace(/\/+$/, '');
-};
+import { getApiBaseUrl } from './apiBase';
 
 export const isCoreSyncEnabled = (): boolean =>
   String(import.meta.env.VITE_ENABLE_DB_SYNC || '').trim().toLowerCase() === 'true';
@@ -20,3 +14,4 @@ export const pingBackend = async (): Promise<void> => {
     // Best effort only; app data is always loaded through typed API resources.
   }
 };
+

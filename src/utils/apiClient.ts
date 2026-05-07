@@ -6,9 +6,9 @@
  */
 
 import { clearAuthToken, readAuthToken } from './hardenedStorage';
+import { getApiBaseUrl } from './apiBase';
 
-const getApiBase = (): string =>
-  String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const getApiBase = (): string => getApiBaseUrl();
 
 const decodeJwtPayload = (token: string): Record<string, unknown> | null => {
   const parts = String(token || '').split('.');

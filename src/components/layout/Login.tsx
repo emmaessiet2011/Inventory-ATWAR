@@ -3,6 +3,7 @@ import { ArrowRight, Lock, Mail } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { verifyUserPassword } from '@/utils/authSecurity';
 import { isLiveSyncEnabled } from '@/utils/apiClient';
+import { getApiBaseUrl } from '@/utils/apiBase';
 import {
   AUTH_LAST_ACTIVITY_STORAGE_KEY,
   AUTH_LOGIN_STARTED_AT_STORAGE_KEY,
@@ -24,8 +25,7 @@ const LOGIN_RETRY_TIMEOUT_MS = 12000;
 const BACKEND_WARMUP_BUDGET_MS = 18000;
 const BACKEND_WARMUP_INTERVAL_MS = 1500;
 
-const resolveApiBase = () =>
-  String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000').replace(/\/+$/, '');
+const resolveApiBase = () => getApiBaseUrl();
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms));
 

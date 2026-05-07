@@ -1401,6 +1401,28 @@ const cloneDefaultLocationPaymentMethods = (): PaymentMethod[] =>
   DEFAULT_LOCATION_PAYMENT_METHODS.map(method => ({ ...method }));
 
 const initialPrinters: ReceiptPrinter[] = [];
+const REMOVED_LOCATION_ID = 'BL0002';
+const REMOVED_LOCATION_CODE = 'CR:1282649';
+const REMOVED_LOCATION_NAME_TERM = 'KNWZ ARD ALKHLYJ ALMTHDH';
+const REMOVED_INVOICE_LAYOUT_NAME = 'Knwz Ard Alkhlyj';
+const isRemovedLocationRecord = (value: Partial<Location> | null | undefined): boolean => {
+  if (!value) return false;
+  const id = String(value.id || '').trim().toLowerCase();
+  const name = String(value.name || '').trim().toLowerCase();
+  return (
+    id === REMOVED_LOCATION_ID.toLowerCase()
+    || name.includes(String(REMOVED_LOCATION_CODE).toLowerCase())
+    || name.includes(String(REMOVED_LOCATION_NAME_TERM).toLowerCase())
+  );
+};
+const isRemovedInvoiceLayoutName = (value: unknown): boolean =>
+  String(value || '').trim().toLowerCase() === REMOVED_INVOICE_LAYOUT_NAME.toLowerCase();
+const isRemovedInvoiceScheme = (value: Partial<InvoiceScheme> | null | undefined): boolean =>
+  isRemovedInvoiceLayoutName(value?.name);
+const isRemovedInvoiceLayout = (value: Partial<InvoiceLayout> | null | undefined): boolean =>
+  isRemovedInvoiceLayoutName(value?.name);
+const normalizeLocationArray = (records: Location[]): Location[] =>
+  records.filter((record) => !isRemovedLocationRecord(record));
 
 const initialLocations: Location[] = [
   {
@@ -1419,28 +1441,6 @@ const initialLocations: Location[] = [
     invoiceScheme: 'Atwar',
     invoiceLayoutPos: 'Default',
     invoiceLayoutSale: 'Default',
-    paymentMethods: cloneDefaultLocationPaymentMethods(),
-    autoPrintInvoiceAfterFinalizing: false,
-    receiptPrinterType: 'browser',
-    receiptPrinterId: '',
-    posFeaturedProducts: '',
-  },
-  {
-    id: 'BL0002',
-    name: 'KNWZ ARD ALKHLYJ ALMTHDH CR:1282649',
-    landmark: 'KNWZ',
-    city: 'Muscat',
-    zipCode: '112',
-    state: 'Muscat',
-    country: 'Oman',
-    mobile: '',
-    email: '',
-    website: '',
-    isActive: true,
-    priceGroup: '',
-    invoiceScheme: 'Knwz Ard Alkhlyj',
-    invoiceLayoutPos: 'Knwz Ard Alkhlyj',
-    invoiceLayoutSale: 'Knwz Ard Alkhlyj',
     paymentMethods: cloneDefaultLocationPaymentMethods(),
     autoPrintInvoiceAfterFinalizing: false,
     receiptPrinterType: 'browser',
@@ -1950,22 +1950,12 @@ const initialInvoiceSchemes: InvoiceScheme[] = [
     numberingType: 'Sequential',
     startFrom: 1,
     numberOfDigits: 4,
-    isDefault: false,
-  },
-  {
-    id: 'INV-SCH-KNWZ',
-    name: 'Knwz Ard Alkhlyj',
-    prefix: 'K2026-',
-    numberingType: 'Sequential',
-    startFrom: 1,
-    numberOfDigits: 4,
     isDefault: true,
   },
 ];
 
 const initialInvoiceLayouts: InvoiceLayout[] = [
   { id: 'INV-LYT-DEFAULT', name: 'Default', design: 'Classic', isDefault: true },
-  { id: 'INV-LYT-KNWZ', name: 'Knwz Ard Alkhlyj', design: 'Classic', isDefault: false },
 ];
 
 const initialBarcodeSettings: BarcodeStickerSetting[] = [
@@ -2366,6 +2356,12 @@ const normalizeAppSettings = (raw: unknown): AppSettings => {
   merged.businessCity = String(merged.businessCity || '').trim();
   merged.businessLogo = String(merged.businessLogo || '').trim();
   merged.invoiceFooterText = String(merged.invoiceFooterText || '').trim();
+  merged.currency = String(merged.currency || '').trim().toUpperCase() || 'OMR';
+  merged.currencySymbol = String(merged.currencySymbol || '').trim() || merged.currency || 'OMR';
+  if (merged.currencySymbol === '$' || merged.currencySymbol.toLowerCase() === 'usd') {
+    merged.currencySymbol = 'OMR';
+    merged.currency = 'OMR';
+  }
   merged.tax1Number = String(merged.tax1Number || '').trim() || DEFAULT_VATIN_NUMBER;
   merged.taxNumber = merged.tax1Number;
   if (!Object.prototype.hasOwnProperty.call(parsed, 'enableLotNumber')
@@ -3075,9 +3071,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteLocations) {
-          setLocations((remoteLocations as Location[])
-            .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-            .filter((row) => row.id && row.name));
+          setLocations(
+            normalizeLocationArray(
+              (remoteLocations as Location[])
+                .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+                .filter((row) => row.id && row.name),
+            ),
+          );
         }
         if (remoteSettings && remoteSettings.length > 0) {
           const s = remoteSettings[0];
@@ -3256,9 +3256,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setCustomers((freshCustomers as Customer[]).map((customer) => normalizeCustomerRecord(customer, availableCustomerGroups)));
         }
         if (freshLocations) {
-          setLocations((freshLocations as Location[])
-            .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
-            .filter((row) => row.id && row.name));
+          setLocations(
+            normalizeLocationArray(
+              (freshLocations as Location[])
+                .map((row, index) => normalizeLocationRecord(row, initialLocations[index] || initialLocations[0]))
+                .filter((row) => row.id && row.name),
+            ),
+          );
         }
         if (freshExpenses) {
           setExpenses((freshExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
@@ -3360,13 +3364,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const remoteInvoiceSchemes = getRows('invoiceSchemes');
       if (hasRemoteKey('invoiceSchemes')) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setInvoiceSchemes(remoteInvoiceSchemes as InvoiceScheme[]);
+        setInvoiceSchemes(
+          normalizeInvoiceSchemes(
+            (remoteInvoiceSchemes as InvoiceScheme[])
+              .map(normalizeInvoiceSchemeRecord)
+              .filter((row) => row.id && row.name)
+              .filter((row) => !isRemovedInvoiceScheme(row)),
+          ),
+        );
       }
 
       const remoteInvoiceLayouts = getRows('invoiceLayouts');
       if (hasRemoteKey('invoiceLayouts')) {
         dropdownSyncApplyingRemoteRef.current = true;
-        setInvoiceLayouts(remoteInvoiceLayouts as InvoiceLayout[]);
+        setInvoiceLayouts(
+          normalizeInvoiceLayouts(
+            (remoteInvoiceLayouts as InvoiceLayout[])
+              .map(normalizeInvoiceLayoutRecord)
+              .filter((row) => row.id && row.name)
+              .filter((row) => !isRemovedInvoiceLayout(row)),
+          ),
+        );
       }
 
       const remoteBarcodeSettings = getRows('barcodeSettings');
@@ -7372,6 +7390,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return { success: false, message: `Location name "${payload.name}" already exists.` };
     }
+    if (isRemovedLocationRecord(payload)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Locations',
+        description: `Add blocked. Location is deprecated and cannot be created: ${payload.name || payload.id}`,
+      });
+      return { success: false, message: 'This location is deprecated and cannot be used.' };
+    }
 
     const saved = await syncRecordStrict('locations', payload);
     if (!saved.ok) {
@@ -7386,7 +7412,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return { success: false, message };
     }
 
-    setLocations(prev => [...prev, payload]);
+    setLocations(prev => normalizeLocationArray([...prev, payload]));
     recordActivity({
       action: 'Created',
       module: 'Locations',
@@ -7447,6 +7473,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return { success: false, message: `Location name "${normalized.name}" already exists.` };
     }
+    if (isRemovedLocationRecord(normalized)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Locations',
+        description: `Update blocked. Location is deprecated and cannot be used: ${normalized.name || normalized.id}`,
+      });
+      return { success: false, message: 'This location is deprecated and cannot be used.' };
+    }
 
     const saved = await syncRecordStrict('locations', normalized);
     if (!saved.ok) {
@@ -7465,7 +7499,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const nextName = String(normalized.name || '').trim();
     const nameChanged = normalizeText(previousName) !== normalizeText(nextName);
 
-    setLocations(prev => prev.map(l => l.id === normalized.id ? normalized : l));
+    setLocations(prev =>
+      normalizeLocationArray(prev.map(l => l.id === normalized.id ? normalized : l))
+    );
 
     if (nameChanged && previousName && nextName) {
       const matchesOldName = (value?: string) => normalizeText(value) === normalizeText(previousName);
@@ -7968,10 +8004,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const normalizeInvoiceSchemes = (records: InvoiceScheme[]): InvoiceScheme[] => {
-    if (records.length === 0) return [];
-    const withDefault = records.some(record => record.isDefault)
-      ? records
-      : records.map((record, index) => ({ ...record, isDefault: index === 0 }));
+    const filtered = records.filter((record) => !isRemovedInvoiceScheme(record));
+    if (filtered.length === 0) return [];
+    const withDefault = filtered.some(record => record.isDefault)
+      ? filtered
+      : filtered.map((record, index) => ({ ...record, isDefault: index === 0 }));
     let defaultAssigned = false;
     return withDefault.map(record => {
       if (!record.isDefault) return record;
@@ -7984,10 +8021,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const normalizeInvoiceLayouts = (records: InvoiceLayout[]): InvoiceLayout[] => {
-    if (records.length === 0) return [];
-    const withDefault = records.some(record => record.isDefault)
-      ? records
-      : records.map((record, index) => ({ ...record, isDefault: index === 0 }));
+    const filtered = records.filter((record) => !isRemovedInvoiceLayout(record));
+    if (filtered.length === 0) return [];
+    const withDefault = filtered.some(record => record.isDefault)
+      ? filtered
+      : filtered.map((record, index) => ({ ...record, isDefault: index === 0 }));
     let defaultAssigned = false;
     return withDefault.map(record => {
       if (!record.isDefault) return record;
@@ -8038,6 +8076,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Add invoice scheme blocked. Duplicate name: ${normalized.name}`,
       });
       return failResult(409, `Invoice scheme "${normalized.name}" already exists.`);
+    }
+    if (isRemovedInvoiceScheme(normalized)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Invoice Settings',
+        description: `Add invoice scheme blocked. Deprecated scheme: ${normalized.name}`,
+      });
+      return failResult(400, 'This invoice scheme is deprecated and cannot be used.');
     }
 
     const saved = await syncRecordStrict('invoiceSchemes', normalized);
@@ -8095,6 +8141,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Update invoice scheme blocked. Duplicate name: ${normalized.name}`,
       });
       return failResult(409, `Invoice scheme "${normalized.name}" already exists.`);
+    }
+    if (isRemovedInvoiceScheme(normalized)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Invoice Settings',
+        description: `Update invoice scheme blocked. Deprecated scheme: ${normalized.name}`,
+      });
+      return failResult(400, 'This invoice scheme is deprecated and cannot be used.');
     }
 
     const saved = await syncRecordStrict('invoiceSchemes', normalized);
@@ -8240,6 +8294,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return failResult(409, `Invoice layout "${normalized.name}" already exists.`);
     }
+    if (isRemovedInvoiceLayout(normalized)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Invoice Settings',
+        description: `Add invoice layout blocked. Deprecated layout: ${normalized.name}`,
+      });
+      return failResult(400, 'This invoice layout is deprecated and cannot be used.');
+    }
     const saved = await syncRecordStrict('invoiceLayouts', normalized);
     const result = toCrudResult(saved);
     if (!result.ok) {
@@ -8295,6 +8357,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Update invoice layout blocked. Duplicate name: ${normalized.name}`,
       });
       return failResult(409, `Invoice layout "${normalized.name}" already exists.`);
+    }
+    if (isRemovedInvoiceLayout(normalized)) {
+      recordActivity({
+        action: 'Blocked',
+        module: 'Invoice Settings',
+        description: `Update invoice layout blocked. Deprecated layout: ${normalized.name}`,
+      });
+      return failResult(400, 'This invoice layout is deprecated and cannot be used.');
     }
     const saved = await syncRecordStrict('invoiceLayouts', normalized);
     const result = toCrudResult(saved);
