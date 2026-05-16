@@ -63,8 +63,9 @@ const isEngineOilCategory = (category) => normalizePolicyText(category).includes
 const resolveSaleLocationCategoryPolicy = (locationName) => {
   const normalizedLocation = normalizePolicyText(locationName);
   if (!normalizedLocation) return { mode: 'allow_all' };
+  const compactLocation = normalizedLocation.replace(/\s+/g, '');
   if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_engine_oil' };
-  const isO2Petshop = normalizedLocation.includes('o2 petshop');
+  const isO2Petshop = normalizedLocation.includes('o2 pet shop') || compactLocation.includes('o2petshop');
   const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
   if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_engine_oil' };
   return { mode: 'allow_all' };
