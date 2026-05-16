@@ -58,6 +58,29 @@ const toOptionalFiniteNumber = (value) => {
   const parsed = toFiniteNumber(value, Number.NaN);
   return Number.isFinite(parsed) ? parsed : null;
 };
+const normalizePolicyText = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const isEngineOilCategory = (category) => normalizePolicyText(category).includes('engine oil');
+const resolveSaleLocationCategoryPolicy = (locationName) => {
+  const normalizedLocation = normalizePolicyText(locationName);
+  if (!normalizedLocation) return { mode: 'allow_all' };
+  if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_engine_oil' };
+  const isO2Petshop = normalizedLocation.includes('o2 petshop');
+  const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
+  if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_engine_oil' };
+  return { mode: 'allow_all' };
+};
+const isProductAllowedBySaleLocationPolicy = (categoryName, policyMode) => {
+  if (policyMode === 'allow_all') return true;
+  const isEngineOil = isEngineOilCategory(categoryName);
+  if (policyMode === 'only_engine_oil') return isEngineOil;
+  return !isEngineOil;
+};
+const extractSaleItems = (raw) => {
+  const directItems = toArray(raw.items);
+  if (directItems.length > 0) return directItems;
+  const nestedMeta = toObject(raw.meta);
+  return toArray(nestedMeta.items);
+};
 const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const isCriticalAdminEmail = (value) => normalizeEmail(value) === CRITICAL_ADMIN_EMAIL;
@@ -909,6 +932,73 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           resolveLookupId(prisma.salesRepresentative, raw.salesRepresentativeId || raw.salesRepId, [raw.salesRepName, raw.salesRep], ['name', 'contactNo']),
           resolveLookupId(prisma.appUser, raw.deliveryPersonId || raw.driverId, [raw.deliveryPerson, raw.driver], ['name', 'username', 'email']),
         ]);
+        let resolvedLocationName = String(raw.location || raw.businessLocation || '').trim();
+        if (!resolvedLocationName && locationId) {
+          const locationRecord = await prisma.location.findUnique({
+            where: { id: locationId },
+            select: { name: true },
+          });
+          resolvedLocationName = String(locationRecord?.name || '').trim();
+        }
+        const saleLocationPolicy = resolveSaleLocationCategoryPolicy(resolvedLocationName);
+        if (saleLocationPolicy.mode !== 'allow_all') {
+          const saleItems = extractSaleItems(raw);
+          if (saleItems.length > 0) {
+            const requestedProductIds = Array.from(
+              new Set(
+                saleItems
+                  .map((item) => String(item?.productId || item?.id || '').trim())
+                  .filter(Boolean)
+              )
+            );
+            const productRows = requestedProductIds.length > 0
+              ? await prisma.product.findMany({
+                  where: { id: { in: requestedProductIds } },
+                  select: {
+                    id: true,
+                    name: true,
+                    meta: true,
+                    category: { select: { name: true } },
+                  },
+                })
+              : [];
+            const productById = new Map(productRows.map((row) => [String(row.id), row]));
+            const blockedProducts = Array.from(
+              new Set(
+                saleItems
+                  .map((item) => {
+                    const productId = String(item?.productId || item?.id || '').trim();
+                    const itemName = String(item?.name || '').trim();
+                    const productRecord = productId ? productById.get(productId) : null;
+                    const productMeta = toObject(productRecord?.meta);
+                    const categoryName = String(
+                      productRecord?.category?.name ||
+                      productMeta.category ||
+                      productMeta.categoryName ||
+                      ''
+                    ).trim();
+                    if (!productRecord && saleLocationPolicy.mode === 'only_engine_oil') {
+                      return itemName || productId || 'Unknown product';
+                    }
+                    const isAllowed = isProductAllowedBySaleLocationPolicy(categoryName, saleLocationPolicy.mode);
+                    if (isAllowed) return null;
+                    return itemName || productRecord?.name || productId || 'Unknown product';
+                  })
+                  .filter(Boolean)
+              )
+            );
+            if (blockedProducts.length > 0) {
+              const locationLabel = resolvedLocationName || 'Selected location';
+              const ruleMessage = saleLocationPolicy.mode === 'only_engine_oil'
+                ? `${locationLabel} can only sell Engine Oil category products.`
+                : `${locationLabel} cannot sell Engine Oil category products.`;
+              return res.status(400).json({
+                ok: false,
+                error: `${ruleMessage} Remove: ${blockedProducts.slice(0, 5).join(', ')}${blockedProducts.length > 5 ? ' ...' : ''}`,
+              });
+            }
+          }
+        }
         const taxAmountCandidate = raw.taxAmount ?? raw.tax;
         const d = {
           invoiceNo: String(raw.invoiceNo || `INV-${id}`),

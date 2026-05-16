@@ -43,6 +43,35 @@ interface AddSaleProps {
 
 const normalizeLocationKey = (value: unknown): string => String(value || '').trim().toLowerCase();
 const DEFAULT_VATIN_NUMBER = 'OM1100399470';
+type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_engine_oil' | 'exclude_engine_oil';
+type SaleLocationCategoryPolicy = { mode: SaleLocationCategoryPolicyMode };
+const normalizePolicyText = (value: unknown): string =>
+  String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+const isEngineOilCategory = (category: unknown): boolean =>
+  normalizePolicyText(category).includes('engine oil');
+const resolveSaleLocationCategoryPolicy = (locationName: unknown): SaleLocationCategoryPolicy => {
+  const normalizedLocation = normalizePolicyText(locationName);
+  if (!normalizedLocation) return { mode: 'allow_all' };
+
+  if (normalizedLocation.includes('kennol workshop')) {
+    return { mode: 'only_engine_oil' };
+  }
+  const isO2Petshop = normalizedLocation.includes('o2 petshop');
+  const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
+  if (isO2Petshop && isBarkaOrMowalah) {
+    return { mode: 'exclude_engine_oil' };
+  }
+  return { mode: 'allow_all' };
+};
+const isProductAllowedBySaleLocationPolicy = (
+  product: Pick<Product, 'category'> | null | undefined,
+  policy: SaleLocationCategoryPolicy
+): boolean => {
+  if (policy.mode === 'allow_all') return true;
+  const isEngineOil = isEngineOilCategory(product?.category);
+  if (policy.mode === 'only_engine_oil') return isEngineOil;
+  return !isEngineOil;
+};
 
 const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId: sourceOrderIdParam, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
   const { addNotification } = useNotifications();
@@ -173,6 +202,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const activeLocations = useMemo(
     () => locations.filter(loc => loc.isActive !== false),
     [locations]
+  );
+  const saleLocationPolicy = useMemo(
+    () => resolveSaleLocationCategoryPolicy(location),
+    [location]
   );
   const defaultLocationName = useMemo(
     () => activeLocations[0]?.name || locations[0]?.name || '',
@@ -1255,11 +1288,14 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   const getLocationScopedProducts = (): Product[] => {
     const normalizedLocation = String(location || '').trim().toLowerCase();
-    if (!normalizedLocation || !settings.filterProductsByLocation) return products;
-    return products.filter(p => {
+    const locationScoped = (!normalizedLocation || !settings.filterProductsByLocation)
+      ? products
+      : products.filter(p => {
       const pLoc = String(p.businessLocation || '').trim().toLowerCase();
       return !pLoc || pLoc === normalizedLocation;
     });
+    if (saleLocationPolicy.mode === 'allow_all') return locationScoped;
+    return locationScoped.filter((product) => isProductAllowedBySaleLocationPolicy(product, saleLocationPolicy));
   };
 
   const findWeighingBarcodeMatch = (search: string, scopedProducts: Product[]) => {
@@ -1749,6 +1785,34 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       if (rows.filter(r => r.name).length === 0) {
           addNotification({ title: 'Error', message: 'Please add at least one product.', type: 'error' });
           return;
+      }
+      const blockedRows = Array.from(
+        new Set(
+          rows
+            .filter(r => r.name)
+            .filter((row) => {
+              const rowProductKey = String(row.productId || row.id || '').trim().toLowerCase();
+              const linkedProduct = products.find((product) =>
+                String(product.id || '').trim().toLowerCase() === rowProductKey ||
+                String(product.sku || '').trim().toLowerCase() === rowProductKey ||
+                String(product.name || '').trim().toLowerCase() === String(row.name || '').trim().toLowerCase()
+              );
+              return !isProductAllowedBySaleLocationPolicy(linkedProduct, saleLocationPolicy);
+            })
+            .map(row => row.name)
+        )
+      );
+      if (blockedRows.length > 0) {
+        const locationLabel = location || 'Selected location';
+        const ruleMessage = saleLocationPolicy.mode === 'only_engine_oil'
+          ? `${locationLabel} can only sell products in the Engine Oil category.`
+          : `${locationLabel} cannot sell products in the Engine Oil category.`;
+        addNotification({
+          title: 'Restricted Products',
+          message: `${ruleMessage} Remove: ${blockedRows.slice(0, 5).join(', ')}${blockedRows.length > 5 ? ' ...' : ''}`,
+          type: 'error',
+        });
+        return;
       }
       const invalidRow = rows
         .filter(r => r.name)
