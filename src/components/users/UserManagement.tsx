@@ -24,6 +24,8 @@ interface UserManagementProps {
     onNavigate: (page: string) => void;
 }
 
+const normalizeRoleName = (value: unknown) => String(value || '').trim().toLowerCase();
+
 const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   const { addNotification } = useNotifications();
   const { users: globalUsers, updateUser, deleteUser, roles, currentUser } = useGlobalContext();
@@ -53,6 +55,19 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       ? uniqueRoleNames
       : ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
   }, [roles]);
+  const adminRoleNameSet = useMemo(() => {
+    const names = new Set<string>(['admin']);
+    roles.forEach((role) => {
+      const roleName = String(role.name || '').trim();
+      if (!roleName) return;
+      if (role.isSystem || normalizeRoleName(roleName) === 'admin') {
+        names.add(normalizeRoleName(roleName));
+      }
+    });
+    return names;
+  }, [roles]);
+  const isAdminUser = (user: Partial<AppUser> | null | undefined): boolean =>
+    adminRoleNameSet.has(normalizeRoleName(user?.role));
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -65,6 +80,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
   }, []);
 
   const getRoleColor = (role: string) => {
+    if (normalizeRoleName(role) === 'admin') return 'bg-slate-900 text-white border-slate-900';
     switch(role) {
       case 'CEO': return 'bg-purple-100 text-purple-700 border-purple-200';
       case 'Manager': return 'bg-blue-100 text-blue-700 border-blue-200';
@@ -73,7 +89,6 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       case 'Order': return 'bg-indigo-100 text-indigo-700 border-indigo-200';
       case 'Field Payment': return 'bg-rose-100 text-rose-700 border-rose-200';
       case 'Cashier': return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'Admin': return 'bg-slate-900 text-white border-slate-900';
       default: return 'bg-slate-100 text-slate-600 border-slate-200';
     }
   };
@@ -89,8 +104,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       return;
     }
 
-    if (user.role === 'Admin' && user.status === 'Active') {
-      const otherActiveAdmins = users.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== user.id);
+    if (isAdminUser(user) && user.status === 'Active' && user.allowLogin !== false) {
+      const otherActiveAdmins = users.filter(
+        u => isAdminUser(u) && u.status === 'Active' && u.allowLogin !== false && u.id !== user.id,
+      );
       if (otherActiveAdmins.length === 0) {
         addNotification({
           title: 'Action Blocked',
@@ -132,8 +149,10 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
       return;
     }
 
-    if (user.role === 'Admin') {
-      const otherActiveAdmins = users.filter(u => u.role === 'Admin' && u.status === 'Active' && u.id !== user.id);
+    if (isAdminUser(user)) {
+      const otherActiveAdmins = users.filter(
+        u => isAdminUser(u) && u.status === 'Active' && u.allowLogin !== false && u.id !== user.id,
+      );
       if (otherActiveAdmins.length === 0) {
         addNotification({
           title: 'Action Blocked',
@@ -248,7 +267,7 @@ const UserManagement: React.FC<UserManagementProps> = ({ onNavigate }) => {
               { label: 'Total Users', value: users.length, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
               { label: 'Active Users', value: users.filter(u => u.status === 'Active').length, icon: Zap, color: 'text-emerald-600', bg: 'bg-emerald-50' },
               { label: 'Managers', value: users.filter(u => u.role === 'Manager').length, icon: ShieldAlert, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-              { label: 'System Admins', value: users.filter(u => u.role === 'Admin').length, icon: BadgeCheck, color: 'text-slate-900', bg: 'bg-slate-100' },
+              { label: 'System Admins', value: users.filter((u) => isAdminUser(u)).length, icon: BadgeCheck, color: 'text-slate-900', bg: 'bg-slate-100' },
           ].map((stat, i) => (
               <div key={i} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4">
                   <div className={`p-3 rounded-xl ${stat.bg} ${stat.color}`}>

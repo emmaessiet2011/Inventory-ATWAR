@@ -2822,11 +2822,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     const sameIdentity =
-      normalizedCurrent.status === effectiveUser.status &&
+      String(normalizedCurrent.id || '').trim() === String(effectiveUser.id || '').trim() &&
+      normalizeActiveState(normalizedCurrent.status) === normalizeActiveState(effectiveUser.status) &&
       normalizedCurrent.allowLogin === effectiveUser.allowLogin &&
-      normalizeUserEmail(normalizedCurrent.email) === normalizeUserEmail(effectiveUser.email);
+      normalizeUserEmail(normalizedCurrent.email) === normalizeUserEmail(effectiveUser.email) &&
+      String(normalizedCurrent.name || '').trim() === String(effectiveUser.name || '').trim() &&
+      String(normalizedCurrent.username || '').trim() === String(effectiveUser.username || '').trim() &&
+      normalizeRoleNameKey(normalizedCurrent.role) === normalizeRoleNameKey(effectiveUser.role) &&
+      String(normalizedCurrent.businessLocation || '').trim() === String(effectiveUser.businessLocation || '').trim();
+    const sameAccessLocations =
+      JSON.stringify([...(normalizedCurrent.accessLocations || [])].map((id) => String(id)).sort()) ===
+      JSON.stringify([...(effectiveUser.accessLocations || [])].map((id) => String(id)).sort());
     const samePreferences = JSON.stringify(toRecord(normalizedCurrent.preferences)) === JSON.stringify(toRecord(effectiveUser.preferences));
-    if (!sameIdentity || !samePreferences) {
+    if (!sameIdentity || !sameAccessLocations || !samePreferences) {
       setCurrentUser(effectiveUser);
     }
   }, [currentUser, users]);

@@ -48,6 +48,14 @@ export interface StockLedgerEntry {
 export interface StockTransferSimulationResult {
   productsAfter: Product[];
   ledgerEntries: StockLedgerEntry[];
+  createdProductIds: string[];
+}
+
+export interface StockLedgerAppendResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+  failedEntryId?: string;
 }
 
 const STOCK_TRANSFERS_UPDATED_EVENT = 'app:stock-transfers-updated';
@@ -168,17 +176,45 @@ export const fetchStockLedgerFromDB = async (): Promise<StockLedgerEntry[]> => {
   return readStockLedger();
 };
 
-export const appendStockLedgerEntries = async (entries: StockLedgerEntry[]): Promise<boolean> => {
-  if (entries.length === 0) return true;
+const extractSyncError = (raw?: string): string => {
+  const text = String(raw || '').trim();
+  if (!text) return 'Unknown Postgres sync error.';
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && parsed.error) {
+      return String(parsed.error);
+    }
+  } catch {
+    // Keep original text when body is not JSON.
+  }
+  return text;
+};
+
+export const appendStockLedgerEntriesStrict = async (
+  entries: StockLedgerEntry[],
+): Promise<StockLedgerAppendResult> => {
+  if (entries.length === 0) return { ok: true, status: 200 };
   const normalizedEntries = normalizeLedgerRows(entries);
   for (const entry of normalizedEntries) {
     const saved = await syncDedicatedStrict('/api/sync/stock-ledger', entry.id, entry);
-    if (!saved.ok) return false;
+    if (!saved.ok) {
+      return {
+        ok: false,
+        status: saved.status,
+        error: extractSyncError(saved.error),
+        failedEntryId: entry.id,
+      };
+    }
   }
   const next = [...readStockLedger(), ...normalizedEntries];
   stockLedgerCache = normalizeLedgerRows(next);
   notify(STOCK_LEDGER_UPDATED_EVENT);
-  return true;
+  return { ok: true, status: 200 };
+};
+
+export const appendStockLedgerEntries = async (entries: StockLedgerEntry[]): Promise<boolean> => {
+  const result = await appendStockLedgerEntriesStrict(entries);
+  return result.ok;
 };
 
 /**
@@ -332,6 +368,6 @@ export const simulateStockTransfer = ({
       .filter((product): product is Product => !!product),
   ];
 
-  return { productsAfter, ledgerEntries };
+  return { productsAfter, ledgerEntries, createdProductIds: createdIds };
 };
 

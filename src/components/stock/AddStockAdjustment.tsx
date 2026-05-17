@@ -93,24 +93,29 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   const [editingStatus, setEditingStatus] = useState<StockAdjustmentStatus>('Pending');
   const [isEditMode, setIsEditMode] = useState(false);
   const permissionRedirectedRef = useRef(false);
+  const isAdminUser = normalize(currentUser?.role) === 'admin';
   const ownerIdFilter = normalize(restrictToAddedById);
   const ownerNameFilter = normalize(restrictToAddedByName);
   const activeLocations = useMemo(
     () => locations.filter(row => row.isActive !== false),
     [locations]
   );
+  const locationPool = useMemo(
+    () => (isAdminUser ? locations : activeLocations),
+    [activeLocations, isAdminUser, locations],
+  );
   const selectableLocations = useMemo(() => {
-    if (!location) return activeLocations;
+    if (!location) return locationPool;
     const current = locations.find(row => normalize(row.name) === normalize(location));
     if (
       current &&
       current.isActive === false &&
-      !activeLocations.some(row => normalize(row.name) === normalize(current.name))
+      !locationPool.some(row => normalize(row.name) === normalize(current.name))
     ) {
-      return [current, ...activeLocations];
+      return [current, ...locationPool];
     }
-    return activeLocations;
-  }, [activeLocations, locations, location]);
+    return locationPool;
+  }, [locationPool, locations, location]);
   const sellableDamageLocations = useMemo(
     () => activeLocations.filter((row) => normalize(row.name) !== normalize(location)),
     [activeLocations, location],
@@ -426,8 +431,12 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
       addNotification({ title: 'Validation Error', message: 'Select a business location.', type: 'error' });
       return;
     }
-    const selectedLocationRecord = activeLocations.find(row => normalize(row.name) === normalize(location));
+    const selectedLocationRecord = locationPool.find(row => normalize(row.name) === normalize(location));
     if (!selectedLocationRecord) {
+      addNotification({ title: 'Validation Error', message: 'Selected business location does not exist.', type: 'error' });
+      return;
+    }
+    if (!isAdminUser && selectedLocationRecord.isActive === false) {
       addNotification({ title: 'Validation Error', message: 'Selected business location is inactive.', type: 'error' });
       return;
     }

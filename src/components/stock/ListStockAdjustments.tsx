@@ -9,7 +9,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, statusBadge } from '@/utils/printUtils';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import {
-  appendStockLedgerEntries,
+  appendStockLedgerEntriesStrict,
   bootstrapStockTransfersFromDB,
   makeNextStockTransferRef,
   readStockTransfers,
@@ -26,7 +26,7 @@ import {
   simulateStockAdjustment,
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
-import { deleteDedicatedStrict } from '@/utils/apiClient';
+import { deleteDedicatedStrict, syncRecordStrict } from '@/utils/apiClient';
 
 interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
@@ -561,9 +561,21 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
         nextProductsAfter = appliedTransfer.productsAfter;
-        const transferLedgerSaved = await appendStockLedgerEntries(appliedTransfer.ledgerEntries);
-        if (!transferLedgerSaved) {
-          throw new Error('Unable to save stock ledger entries while approving transfer.');
+        for (const createdId of appliedTransfer.createdProductIds) {
+          const createdProduct = appliedTransfer.productsAfter.find((row) => row.id === createdId);
+          if (!createdProduct) continue;
+          const savedProduct = await syncRecordStrict('products', createdProduct);
+          if (!savedProduct.ok) {
+            const detail = savedProduct.error || `HTTP ${savedProduct.status || 0}`;
+            throw new Error(
+              `Unable to create destination product "${createdProduct.name}" (${createdProduct.sku}) in Postgres. ${detail}`,
+            );
+          }
+        }
+        const transferLedgerSaved = await appendStockLedgerEntriesStrict(appliedTransfer.ledgerEntries);
+        if (!transferLedgerSaved.ok) {
+          const detail = transferLedgerSaved.error || `HTTP ${transferLedgerSaved.status || 0}`;
+          throw new Error(`Unable to save stock ledger entries while approving transfer. ${detail}`);
         }
         const lotAdjustments = buildTransferLotAdjustments(
           appliedTransfer.productsAfter,
@@ -597,9 +609,10 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           notePrefix: 'Approval',
         });
         nextProductsAfter = applied.productsAfter;
-        const adjustmentLedgerSaved = await appendStockLedgerEntries(applied.ledgerEntries);
-        if (!adjustmentLedgerSaved) {
-          throw new Error('Unable to save stock ledger entries while approving adjustment.');
+        const adjustmentLedgerSaved = await appendStockLedgerEntriesStrict(applied.ledgerEntries);
+        if (!adjustmentLedgerSaved.ok) {
+          const detail = adjustmentLedgerSaved.error || `HTTP ${adjustmentLedgerSaved.status || 0}`;
+          throw new Error(`Unable to save stock ledger entries while approving adjustment. ${detail}`);
         }
         if (applied.lotAdjustments.length > 0) {
           const lotsSaved = await applyStockLotAdjustments(applied.lotAdjustments);
@@ -745,9 +758,21 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
           nextProductsAfter = rollbackTransfer.productsAfter;
-          const rollbackTransferLedgerSaved = await appendStockLedgerEntries(rollbackTransfer.ledgerEntries);
-          if (!rollbackTransferLedgerSaved) {
-            throw new Error('Unable to save rollback stock ledger entries.');
+          for (const createdId of rollbackTransfer.createdProductIds) {
+            const createdProduct = rollbackTransfer.productsAfter.find((row) => row.id === createdId);
+            if (!createdProduct) continue;
+            const savedProduct = await syncRecordStrict('products', createdProduct);
+            if (!savedProduct.ok) {
+              const detail = savedProduct.error || `HTTP ${savedProduct.status || 0}`;
+              throw new Error(
+                `Unable to create destination product "${createdProduct.name}" (${createdProduct.sku}) in Postgres. ${detail}`,
+              );
+            }
+          }
+          const rollbackTransferLedgerSaved = await appendStockLedgerEntriesStrict(rollbackTransfer.ledgerEntries);
+          if (!rollbackTransferLedgerSaved.ok) {
+            const detail = rollbackTransferLedgerSaved.error || `HTTP ${rollbackTransferLedgerSaved.status || 0}`;
+            throw new Error(`Unable to save rollback stock ledger entries. ${detail}`);
           }
           const lotAdjustments = buildTransferLotAdjustments(
             rollbackTransfer.productsAfter,
@@ -781,9 +806,10 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             notePrefix: 'Delete rollback',
           });
           nextProductsAfter = rollback.productsAfter;
-          const rollbackLedgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
-          if (!rollbackLedgerSaved) {
-            throw new Error('Unable to save rollback stock ledger entries.');
+          const rollbackLedgerSaved = await appendStockLedgerEntriesStrict(rollback.ledgerEntries);
+          if (!rollbackLedgerSaved.ok) {
+            const detail = rollbackLedgerSaved.error || `HTTP ${rollbackLedgerSaved.status || 0}`;
+            throw new Error(`Unable to save rollback stock ledger entries. ${detail}`);
           }
           if (rollback.lotAdjustments.length > 0) {
             const lotsSaved = await applyStockLotAdjustments(rollback.lotAdjustments);

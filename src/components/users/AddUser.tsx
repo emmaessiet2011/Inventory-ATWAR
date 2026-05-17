@@ -78,6 +78,7 @@ const InputGroup = ({ label, name, type = "text", placeholder, required = false,
 const FALLBACK_ROLE_NAMES = ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man', 'Order', 'Field Payment', 'Cashier'];
 const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
+const normalizeRoleName = (value: unknown) => String(value || '').trim().toLowerCase();
 
 const CheckboxGroup = ({ label, name, checked, info }: any) => {
   const { handleChange } = React.useContext(FormContext);
@@ -115,6 +116,18 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     const uniqueRoleNames = Array.from(new Set(roleNames));
     return uniqueRoleNames.length > 0 ? uniqueRoleNames : FALLBACK_ROLE_NAMES;
   }, [roles]);
+  const adminRoleNameSet = useMemo(() => {
+    const names = new Set<string>(['admin']);
+    roles.forEach((role: any) => {
+      const roleName = String(role?.name || '').trim();
+      if (!roleName) return;
+      if (role?.isSystem || normalizeRoleName(roleName) === 'admin') {
+        names.add(normalizeRoleName(roleName));
+      }
+    });
+    return names;
+  }, [roles]);
+  const isAdminRole = (roleName: unknown): boolean => adminRoleNameSet.has(normalizeRoleName(roleName));
   
   // --- Form State ---
   const [formData, setFormData] = useState({
@@ -240,13 +253,20 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const submitted = new FormData(e.currentTarget as HTMLFormElement);
+    const getSubmittedValue = (key: string, fallback: unknown): string => {
+      const raw = submitted.get(key);
+      if (typeof raw === 'string' && raw.trim()) return raw.trim();
+      return String(fallback || '').trim();
+    };
 
-    const normalizedFirstName = formData.firstName.trim();
-    const normalizedLastName = formData.lastName.trim();
-    const normalizedUsername = formData.username.trim();
-    const normalizedEmail = formData.email.trim();
-    const normalizedRole = String(formData.role || '').trim();
-    const enteredPassword = formData.password.trim();
+    const normalizedFirstName = getSubmittedValue('firstName', formData.firstName);
+    const normalizedLastName = getSubmittedValue('lastName', formData.lastName);
+    const normalizedUsername = getSubmittedValue('username', formData.username);
+    const normalizedEmail = getSubmittedValue('email', formData.email);
+    const normalizedRole = getSubmittedValue('role', formData.role);
+    const enteredPassword = getSubmittedValue('password', formData.password);
+    const confirmPassword = getSubmittedValue('confirmPassword', formData.confirmPassword);
     const commissionPercent = Number(formData.commissionPercent || 0);
     const maxDiscountPercent = formData.maxDiscountPercent === ''
       ? undefined
@@ -334,7 +354,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
         });
         return;
       }
-      if (enteredPassword !== formData.confirmPassword) {
+      if (enteredPassword !== confirmPassword) {
         addNotification({
           title: 'Validation Error',
           message: 'Password and confirm password do not match.',
@@ -403,7 +423,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
       return;
     }
     const activeAdminLoginUsers = projectedUsers.filter(
-      u => u.role === 'Admin' && u.status === 'Active' && u.allowLogin !== false
+      u => isAdminRole(u.role) && u.status === 'Active' && u.allowLogin !== false
     );
     if (activeAdminLoginUsers.length === 0) {
       addNotification({
@@ -447,7 +467,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
 
     addNotification({
       title: isEdit ? 'User Updated' : 'User Created',
-      message: `System user ${formData.firstName} has been successfully ${isEdit ? 'updated' : 'added'}.`,
+      message: `System user ${normalizedFirstName} has been successfully ${isEdit ? 'updated' : 'added'}.`,
       type: 'success'
     });
     if (onNavigate) onNavigate('users');
