@@ -286,10 +286,26 @@ const ReportSellPayment: React.FC = () => {
       .sort((left, right) => String(left).localeCompare(String(right)))
   ), [locations, rows]);
 
-  const paymentMethodOptions = useMemo(() => (
-    Array.from(new Set(rows.map((row) => row.method).filter(Boolean) as string[]))
-      .sort((left, right) => String(left).localeCompare(String(right)))
-  ), [rows]);
+  const paymentMethodOptions = useMemo(() => {
+    const commonMethods = ['Cash', 'Card', 'Bank Transfer', 'Cheque', 'Other', 'Emad'];
+    const locationMethods = locations.flatMap((location) => (
+      (location.paymentMethods || [])
+        .filter((method) => method?.enabled !== false)
+        .map((method) => String(method?.name || '').trim())
+    ));
+    const rowMethods = rows.map((row) => String(row.method || '').trim());
+    const byNormalizedKey = new Map<string, string>();
+
+    [...commonMethods, ...locationMethods, ...rowMethods].forEach((methodName) => {
+      const label = String(methodName || '').trim();
+      const key = normalize(label);
+      if (!label || label === '--' || !key) return;
+      if (!byNormalizedKey.has(key)) byNormalizedKey.set(key, label);
+    });
+
+    return Array.from(byNormalizedKey.values())
+      .sort((left, right) => String(left).localeCompare(String(right)));
+  }, [locations, rows]);
 
   const userOptions = useMemo(() => (
     Array.from(new Set(rows.map((row) => row.addedBy).filter((value) => value && value !== '--') as string[]))
