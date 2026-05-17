@@ -390,7 +390,7 @@ model ProductVariation {
 model Product {
   id                  String                @id
   name                String
-  sku                 String                @unique
+  sku                 String
   type                ProductType           @default(SINGLE)
   categoryId          String?
   brandId             String?
@@ -424,6 +424,7 @@ model Product {
   updatedAt           DateTime              @updatedAt
 
   @@index([name])
+  @@index([sku])
   @@index([categoryId])
   @@index([brandId])
   @@index([taxRateId])
