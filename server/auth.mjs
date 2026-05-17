@@ -18,8 +18,11 @@ const toObject = (value) => {
 
 const extractRoleLabel = (user) => {
   const meta = toObject(user?.meta);
+  const relationRoleName = String(toObject(user?.role).name || '').trim();
+  const directRole = typeof user?.role === 'string' ? user.role : '';
   const role = String(
-    user?.role
+    directRole
+    || relationRoleName
     || user?.roleName
     || user?.userRole
     || meta.role

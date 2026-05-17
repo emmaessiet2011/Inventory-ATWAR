@@ -1504,8 +1504,21 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
   let passwordUpdatedAt = String(user.passwordUpdatedAt || '').trim();
   const normalizedEmail = normalizeUserEmail(user.email);
   let normalizedStatus = normalizeActiveState(user.status, (user as any).isActive);
+  const userMeta = toRecord((user as any).meta);
+  const relationRoleName = String(toRecord((user as any).role).name || '').trim();
+  const directRole = typeof (user as any).role === 'string' ? String((user as any).role) : '';
+  const normalizedRole = String(
+    directRole
+    || relationRoleName
+    || (user as any).roleName
+    || (user as any).userRole
+    || userMeta.role
+    || userMeta.roleName
+    || userMeta.userRole
+    || 'Cashier',
+  ).trim();
   const normalizedPreferences = toRecord(
-    (user as any).preferences ?? toRecord((user as any).meta).preferences,
+    (user as any).preferences ?? userMeta.preferences,
   );
 
   if (!passwordHash && normalizedPassword) {
@@ -1525,6 +1538,7 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
 
   return {
     ...sanitizedUser,
+    role: normalizedRole || 'Cashier',
     email: normalizedEmail,
     status: normalizedStatus,
     passwordHash: hasCredential ? passwordHash : undefined,

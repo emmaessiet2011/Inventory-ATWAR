@@ -88,6 +88,35 @@ const isCriticalAdminEmail = (value) => normalizeEmail(value) === CRITICAL_ADMIN
 const isUserLoginEnabled = (user) =>
   String(user?.status || '').trim().toUpperCase() === 'ACTIVE' &&
   user?.allowLogin !== false;
+const resolveUserRoleLabel = (user) => {
+  const meta = toObject(user?.meta);
+  const relationRoleName = String(toObject(user?.role).name || '').trim();
+  const directRole = typeof user?.role === 'string' ? user.role : '';
+  return String(
+    directRole
+    || relationRoleName
+    || user?.roleName
+    || user?.userRole
+    || meta.role
+    || meta.roleName
+    || meta.userRole
+    || '',
+  ).trim();
+};
+const serializeAppUser = (user) => {
+  const role = resolveUserRoleLabel(user);
+  const meta = toObject(user?.meta);
+  return {
+    ...user,
+    role,
+    roleName: role,
+    userRole: role,
+    meta: {
+      ...meta,
+      ...(role ? { role, roleName: role, userRole: role } : {}),
+    },
+  };
+};
 
 const enforceCriticalAdminStatus = async (userId) => {
   const id = String(userId || '').trim();
@@ -237,6 +266,7 @@ app.post('/api/auth/login', async (req, res) => {
         ],
       },
       orderBy: { updatedAt: 'desc' },
+      include: { role: { select: { name: true, isSystem: true } } },
     });
 
     if (user && isCriticalAdminEmail(user.email) && !isUserLoginEnabled(user)) {
@@ -300,11 +330,12 @@ app.post('/api/auth/login', async (req, res) => {
     const token = generateToken(user, { rememberMe: rememberMe === true });
 
     // Send minimal user details, NEVER send passwordHash back
-    delete user.passwordHash;
-    delete user.passwordSalt;
-    delete user.password;
-    
-    return res.json({ ok: true, token, user });
+    const safeUser = serializeAppUser(user);
+    delete safeUser.passwordHash;
+    delete safeUser.passwordSalt;
+    delete safeUser.password;
+
+    return res.json({ ok: true, token, user: safeUser });
   } catch (error) {
     return res.status(500).json({ ok: false, error: 'Login failed' });
   }
@@ -425,21 +456,31 @@ app.get('/api/data/:resource', async (req, res) => {
         : { OR: cfg.searchFields.map((field) => ({ [field]: { contains: search, mode: 'insensitive' } })) })
       : baseWhere;
 
+    const findManyArgs = {
+      where,
+      orderBy: { [sortBy]: sortDir },
+      ...(paginate ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
+    };
+    if (cfg.delegate === 'appUser') {
+      findManyArgs.include = {
+        role: { select: { name: true, isSystem: true } },
+        location: { select: { id: true, name: true } },
+      };
+    }
     const [data, total] = await prisma.$transaction([
-      delegate.findMany({
-        where,
-        orderBy: { [sortBy]: sortDir },
-        ...(paginate ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
-      }),
+      delegate.findMany(findManyArgs),
       delegate.count({ where }),
     ]);
+    const normalizedData = cfg.delegate === 'appUser'
+      ? data.map((row) => serializeAppUser(row))
+      : data;
 
     return res.json({
       ok: true,
-      data,
+      data: normalizedData,
       pagination: {
         page,
-        pageSize: paginate ? pageSize : data.length,
+        pageSize: paginate ? pageSize : normalizedData.length,
         total,
         totalPages: paginate ? Math.max(1, Math.ceil(total / pageSize)) : 1,
       },
@@ -456,9 +497,17 @@ app.get('/api/data/:resource/:id', async (req, res) => {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ ok: false, error: `${cfg.idField} is required` });
     const delegate = prisma[cfg.delegate];
-    const data = await delegate.findUnique({ where: { [cfg.idField]: id } });
+    const findUniqueArgs = { where: { [cfg.idField]: id } };
+    if (cfg.delegate === 'appUser') {
+      findUniqueArgs.include = {
+        role: { select: { name: true, isSystem: true } },
+        location: { select: { id: true, name: true } },
+      };
+    }
+    const data = await delegate.findUnique(findUniqueArgs);
     if (!data) return res.status(404).json({ ok: false, error: 'Record not found' });
-    return res.json({ ok: true, data });
+    const normalizedData = cfg.delegate === 'appUser' ? serializeAppUser(data) : data;
+    return res.json({ ok: true, data: normalizedData });
   } catch (error) {
     return sendPrismaError(res, error, 'Failed to fetch record');
   }
@@ -1059,13 +1108,28 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           : await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
         const normalizedEmail = normalizeEmail(raw.email || existingUser?.email || `user-${id}@local.atwar`);
         const isCriticalAdmin = isCriticalAdminEmail(normalizedEmail);
-        const normalizedMeta = isCriticalAdmin
-          ? { ...raw, email: normalizedEmail, status: 'Active', allowLogin: true }
-          : raw;
         const [roleId, locationId] = await Promise.all([
           resolveLookupId(prisma.role, raw.roleId, [raw.role, raw.roleName], ['name']),
           resolveLookupId(prisma.location, raw.locationId, [raw.businessLocation, raw.location], ['name']),
         ]);
+        const linkedRole = roleId
+          ? await prisma.role.findUnique({ where: { id: roleId }, select: { name: true } })
+          : null;
+        const resolvedRoleLabel = String(
+          linkedRole?.name
+          || raw.role
+          || raw.roleName
+          || raw.userRole
+          || '',
+        ).trim();
+        const normalizedMeta = {
+          ...raw,
+          email: normalizedEmail,
+          role: resolvedRoleLabel || raw.role || raw.roleName || raw.userRole || '',
+          roleName: resolvedRoleLabel || raw.roleName || raw.role || raw.userRole || '',
+          userRole: resolvedRoleLabel || raw.userRole || raw.roleName || raw.role || '',
+          ...(isCriticalAdmin ? { status: 'Active', allowLogin: true } : {}),
+        };
         const updatePayload = {
           username: String(raw.username || normalizedEmail || `user-${id}`),
           name: String(raw.name || raw.username || `User-${id}`),

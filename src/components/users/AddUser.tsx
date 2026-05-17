@@ -79,6 +79,27 @@ const FALLBACK_ROLE_NAMES = ['Admin', 'CEO', 'Manager', 'Sale Agent', 'Sales Man
 const CRITICAL_ADMIN_EMAIL = 'admin@atwar.com';
 const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 const normalizeRoleName = (value: unknown) => String(value || '').trim().toLowerCase();
+const resolveUserRole = (user: Partial<AppUser> | null | undefined): string => {
+  const meta = (user && typeof (user as any).meta === 'object' && !Array.isArray((user as any).meta))
+    ? ((user as any).meta as Record<string, unknown>)
+    : {};
+  const relationRoleName = String(
+    (user && typeof (user as any).role === 'object' && (user as any).role && !Array.isArray((user as any).role))
+      ? ((user as any).role.name || '')
+      : '',
+  ).trim();
+  const directRole = user && typeof (user as any).role === 'string' ? String((user as any).role) : '';
+  return String(
+    directRole
+    || relationRoleName
+    || (user as any)?.roleName
+    || (user as any)?.userRole
+    || meta.role
+    || meta.roleName
+    || meta.userRole
+    || '',
+  ).trim();
+};
 
 const CheckboxGroup = ({ label, name, checked, info }: any) => {
   const { handleChange } = React.useContext(FormContext);
@@ -182,7 +203,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
           lastName: u.name.split(' ').slice(1).join(' ') || '',
           email: u.email,
           username: u.username,
-          role: u.role,
+          role: resolveUserRole(u) || availableRoleNames[0] || 'Admin',
           isActive: u.status === 'Active',
           allowLogin: u.allowLogin !== false,
           enableServiceStaffPin: u.enableServiceStaffPin || false,
@@ -215,7 +236,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
         }));
       }
     }
-  }, [isEdit, userId, users]);
+  }, [isEdit, userId, users, availableRoleNames]);
 
   const handleLocationChange = (locId: string, checked: boolean) => {
     setFormData(prev => {
@@ -423,7 +444,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
       return;
     }
     const activeAdminLoginUsers = projectedUsers.filter(
-      u => isAdminRole(u.role) && u.status === 'Active' && u.allowLogin !== false
+      u => isAdminRole(resolveUserRole(u) || u.role) && u.status === 'Active' && u.allowLogin !== false
     );
     if (activeAdminLoginUsers.length === 0) {
       addNotification({
