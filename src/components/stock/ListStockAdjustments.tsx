@@ -26,7 +26,7 @@ import {
   simulateStockAdjustment,
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
-import { deleteDedicatedStrict, syncRecordStrict } from '@/utils/apiClient';
+import { deleteDedicatedStrict } from '@/utils/apiClient';
 
 interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
@@ -561,17 +561,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
         nextProductsAfter = appliedTransfer.productsAfter;
-        for (const createdId of appliedTransfer.createdProductIds) {
-          const createdProduct = appliedTransfer.productsAfter.find((row) => row.id === createdId);
-          if (!createdProduct) continue;
-          const savedProduct = await syncRecordStrict('products', createdProduct);
-          if (!savedProduct.ok) {
-            const detail = savedProduct.error || `HTTP ${savedProduct.status || 0}`;
-            throw new Error(
-              `Unable to create destination product "${createdProduct.name}" (${createdProduct.sku}) in Postgres. ${detail}`,
-            );
-          }
-        }
         const transferLedgerSaved = await appendStockLedgerEntriesStrict(appliedTransfer.ledgerEntries);
         if (!transferLedgerSaved.ok) {
           const detail = transferLedgerSaved.error || `HTTP ${transferLedgerSaved.status || 0}`;
@@ -758,17 +747,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
           nextProductsAfter = rollbackTransfer.productsAfter;
-          for (const createdId of rollbackTransfer.createdProductIds) {
-            const createdProduct = rollbackTransfer.productsAfter.find((row) => row.id === createdId);
-            if (!createdProduct) continue;
-            const savedProduct = await syncRecordStrict('products', createdProduct);
-            if (!savedProduct.ok) {
-              const detail = savedProduct.error || `HTTP ${savedProduct.status || 0}`;
-              throw new Error(
-                `Unable to create destination product "${createdProduct.name}" (${createdProduct.sku}) in Postgres. ${detail}`,
-              );
-            }
-          }
           const rollbackTransferLedgerSaved = await appendStockLedgerEntriesStrict(rollbackTransfer.ledgerEntries);
           if (!rollbackTransferLedgerSaved.ok) {
             const detail = rollbackTransferLedgerSaved.error || `HTTP ${rollbackTransferLedgerSaved.status || 0}`;

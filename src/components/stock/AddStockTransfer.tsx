@@ -13,7 +13,6 @@ import {
   simulateStockTransfer,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
-import { syncRecordStrict } from '@/utils/apiClient';
 
 interface AddStockTransferProps {
   onNavigate?: (page: string) => void;
@@ -294,7 +293,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       let workingProducts = products.map(product => ({ ...product }));
       const ledgerEntries = [];
       const actorName = currentUser?.name || 'System';
-      const createdProductMap = new Map<string, Product>();
 
       if (editingRecord?.status === 'Completed') {
         const rollback = simulateStockTransfer({
@@ -307,10 +305,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         });
         workingProducts = rollback.productsAfter;
         ledgerEntries.push(...rollback.ledgerEntries);
-        rollback.createdProductIds.forEach((id) => {
-          const created = rollback.productsAfter.find((row) => row.id === id);
-          if (created) createdProductMap.set(id, created);
-        });
       }
 
       if (nextRecord.status === 'Completed') {
@@ -323,20 +317,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         });
         workingProducts = applied.productsAfter;
         ledgerEntries.push(...applied.ledgerEntries);
-        applied.createdProductIds.forEach((id) => {
-          const created = applied.productsAfter.find((row) => row.id === id);
-          if (created) createdProductMap.set(id, created);
-        });
-      }
-
-      for (const createdProduct of createdProductMap.values()) {
-        const persisted = await syncRecordStrict('products', createdProduct);
-        if (!persisted.ok) {
-          const detail = persisted.error || `HTTP ${persisted.status || 0}`;
-          throw new Error(
-            `Unable to create destination product "${createdProduct.name}" (${createdProduct.sku}) in Postgres. ${detail}`,
-          );
-        }
       }
 
       const ledgerSaved = await appendStockLedgerEntriesStrict(ledgerEntries);

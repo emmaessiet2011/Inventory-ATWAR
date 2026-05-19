@@ -48,7 +48,6 @@ export interface StockLedgerEntry {
 export interface StockTransferSimulationResult {
   productsAfter: Product[];
   ledgerEntries: StockLedgerEntry[];
-  createdProductIds: string[];
 }
 
 export interface StockLedgerAppendResult {
@@ -259,14 +258,13 @@ export const simulateStockTransfer = ({
 }: SimulateParams): StockTransferSimulationResult => {
   const productById = new Map<string, Product>();
   const skuLocToId = new Map<string, string>();
-  const originalIds = products.map(p => p.id);
+  const originalIds = products.map((p) => p.id);
 
   products.forEach((product) => {
     productById.set(product.id, { ...product });
     skuLocToId.set(skuLocationKey(product.sku, product.businessLocation), product.id);
   });
 
-  const createdIds: string[] = [];
   const transferDate = toIsoDate(transfer.date);
   const now = Date.now();
   const ledgerEntries: StockLedgerEntry[] = [];
@@ -283,32 +281,17 @@ export const simulateStockTransfer = ({
     throw new Error(`Source product not found for SKU "${item.sku}" at "${transfer.locationFrom}".`);
   };
 
-  const getTargetProduct = (
-    item: StockTransferItem,
-    sourceProduct: Product,
-    delta: number,
-  ): Product => {
-    const key = skuLocationKey(item.sku || sourceProduct.sku, transfer.locationTo);
+  const getTargetProduct = (item: StockTransferItem): Product => {
+    const key = skuLocationKey(item.sku, transfer.locationTo);
     const targetId = skuLocToId.get(key);
     if (targetId) {
       const target = productById.get(targetId);
       if (target) return target;
     }
-    if (delta < 0) {
-      throw new Error(`Target product not found for SKU "${item.sku}" at "${transfer.locationTo}".`);
-    }
-    const created: Product = {
-      ...sourceProduct,
-      id: generateId('PRD'),
-      businessLocation: transfer.locationTo,
-      stock: 0,
-      openingStock: 0,
-      openingStockLocation: transfer.locationTo,
-    };
-    productById.set(created.id, created);
-    skuLocToId.set(key, created.id);
-    createdIds.push(created.id);
-    return created;
+    throw new Error(
+      `Target product not found for SKU "${item.sku}" at "${transfer.locationTo}". ` +
+      'Transfer can only move stock to a destination where the product already exists.',
+    );
   };
 
   (transfer.items || []).forEach((item, index) => {
@@ -322,7 +305,7 @@ export const simulateStockTransfer = ({
     }
     source.stock = Math.max(0, sourceNext);
 
-    const target = getTargetProduct(item, source, round3(qty * direction));
+    const target = getTargetProduct(item);
     const deltaIn = round3(qty * direction);
     const targetNext = round3(Number(target.stock || 0) + deltaIn);
     if (targetNext < -0.0001) {
@@ -363,11 +346,8 @@ export const simulateStockTransfer = ({
     ...originalIds
       .map((id) => productById.get(id))
       .filter((product): product is Product => !!product),
-    ...createdIds
-      .map((id) => productById.get(id))
-      .filter((product): product is Product => !!product),
   ];
 
-  return { productsAfter, ledgerEntries, createdProductIds: createdIds };
+  return { productsAfter, ledgerEntries };
 };
 
