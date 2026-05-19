@@ -134,7 +134,7 @@ const runDatabaseDirectProbe = async () => {
   const prisma = new PrismaClient();
   const started = Date.now();
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$executeRaw`SELECT 1`;
     const latencyMs = Date.now() - started;
     return {
       enabled: true,

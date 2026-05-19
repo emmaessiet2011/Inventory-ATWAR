@@ -222,7 +222,7 @@ app.get('/api/health', async (_req, res) => {
   const timeoutMs = Number(process.env.HEALTH_DB_TIMEOUT_MS || 1500);
   try {
     await Promise.race([
-      prisma.$queryRaw`SELECT 1`,
+      prisma.$executeRaw`SELECT 1`,
       new Promise((_, reject) => {
         setTimeout(() => reject(new Error(`DB ping timeout after ${timeoutMs}ms`)), timeoutMs);
       }),
