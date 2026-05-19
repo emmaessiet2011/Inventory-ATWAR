@@ -1050,8 +1050,9 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           }
         }
         const taxAmountCandidate = raw.taxAmount ?? raw.tax;
+        const normalizedInvoiceNo = String(raw.invoiceNo || `INV-${id}`).trim();
         const d = {
-          invoiceNo: String(raw.invoiceNo || `INV-${id}`),
+          invoiceNo: normalizedInvoiceNo,
           date: normDate(raw.date),
           customerId,
           locationId,
@@ -1073,7 +1074,36 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           sellReturnDue: toFiniteNumber(raw.sellReturnDue, 0),
           meta: raw,
         };
-        await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
+        const [existingSaleById, existingSaleByInvoiceNo] = await Promise.all([
+          prisma.sale.findUnique({ where: { id }, select: { id: true } }),
+          prisma.sale.findUnique({ where: { invoiceNo: normalizedInvoiceNo }, select: { id: true } }),
+        ]);
+
+        if (existingSaleByInvoiceNo && existingSaleByInvoiceNo.id !== id) {
+          if (existingSaleById) {
+            return res.status(409).json({
+              ok: false,
+              error: 'Invoice number already exists on a different sale record',
+              code: 'P2002',
+            });
+          }
+          await prisma.sale.update({ where: { id: existingSaleByInvoiceNo.id }, data: d });
+        } else {
+          try {
+            await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
+          } catch (error) {
+            const duplicateInvoice = error?.code === 'P2002'
+              && Array.isArray(error?.meta?.target)
+              && error.meta.target.includes('invoiceNo');
+            if (!duplicateInvoice) throw error;
+            const winner = await prisma.sale.findUnique({
+              where: { invoiceNo: normalizedInvoiceNo },
+              select: { id: true },
+            });
+            if (!winner || winner.id === id || existingSaleById) throw error;
+            await prisma.sale.update({ where: { id: winner.id }, data: d });
+          }
+        }
         break;
       }
       case 'payments': {
