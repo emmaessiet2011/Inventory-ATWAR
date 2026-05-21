@@ -50,12 +50,14 @@ const toIso = (value: string) => {
 };
 
 const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string }) => {
+  const id = normalize(location.id);
   const joined = normalize(`${location.id || ''} ${location.name || ''} ${location.landmark || ''}`);
   return (
-    joined.includes('atwar') ||
-    joined.includes('1450968') ||
-    joined.includes('1460968') ||
-    joined.includes('warehouse')
+    id === 'bl0001' ||
+    joined.includes('atwar al mustaqbal') ||
+    joined.includes('cr:1450968') ||
+    joined.includes('cr 1450968') ||
+    joined.includes('1450968')
   );
 };
 
