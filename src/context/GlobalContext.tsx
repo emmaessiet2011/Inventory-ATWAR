@@ -16,6 +16,11 @@ import {
   writeStockAdjustments,
 } from '../utils/stockAdjustments';
 import {
+  fetchLocationInventoryFromDB,
+  syncChangedLocationInventoryStrict,
+  inventoryKey,
+} from '../utils/stockLocationInventory';
+import {
   bootstrapRegisterFromDB,
   getActiveRegisterSession,
   getRegisterSessions,
@@ -5069,7 +5074,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const applyStockDelta = async (deltaByProduct: Record<string, number>): Promise<CrudMutationResult> => {
+  const applyStockDelta = async (deltaByProduct: Record<string, number>, locationName?: string): Promise<CrudMutationResult> => {
     if (Object.keys(deltaByProduct).length === 0) return okResult(200);
     const perProductDeltas = products
       .map((product) => {
@@ -5080,11 +5085,60 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .filter((entry): entry is { id: string; delta: number } => !!entry);
     if (perProductDeltas.length === 0) return okResult(200);
 
+    const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string } | null) => {
+      if (!location) return true;
+      const id = String(location.id || '').trim().toLowerCase();
+      const joined = `${id} ${String(location.name || '').trim().toLowerCase()} ${String(location.landmark || '').trim().toLowerCase()}`;
+      return (
+        id === 'bl0001' ||
+        joined.includes('atwar al mustaqbal') ||
+        joined.includes('cr:1450968') ||
+        joined.includes('cr 1450968') ||
+        joined.includes('1450968')
+      );
+    };
+
+    const linkedLocation = locationName ? resolveLocationRecordByName(locationName) : null;
+    const usesBranchInventory = locationName && linkedLocation && !isWarehouseLocation(linkedLocation);
+
+    if (usesBranchInventory) {
+      try {
+        const currentInventory = await fetchLocationInventoryFromDB();
+        const nextInventory = currentInventory.map(row => ({ ...row }));
+        
+        perProductDeltas.forEach((entry) => {
+          const key = inventoryKey(entry.id, linkedLocation.id);
+          const matchIndex = nextInventory.findIndex(r => inventoryKey(r.productId, r.locationId) === key);
+          if (matchIndex >= 0) {
+            nextInventory[matchIndex].stock = Math.max(0, nextInventory[matchIndex].stock + entry.delta);
+          } else if (entry.delta > 0) {
+             const product = products.find(p => p.id === entry.id);
+             nextInventory.push({
+               id: `PINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+               productId: entry.id,
+               locationId: linkedLocation.id,
+               locationName: linkedLocation.name,
+               stock: entry.delta,
+               unitCost: product ? Number(product.unitPurchasePrice || 0) : 0,
+             });
+          }
+        });
+
+        const syncResult = await syncChangedLocationInventoryStrict(nextInventory, currentInventory);
+        if (!syncResult.ok) {
+           return toCrudResult(syncResult);
+        }
+        return okResult(200);
+      } catch (error) {
+        return failResult(500, String(error));
+      }
+    }
+
     const deltaById = new Map<string, number>(perProductDeltas.map((entry) => [entry.id, entry.delta]));
     setProducts(prevProducts => prevProducts.map((product) => {
       const delta = deltaById.get(product.id) || 0;
       if (!delta) return product;
-      return { ...product, stock: product.stock + delta };
+      return { ...product, stock: Math.max(0, product.stock + delta) };
     }));
 
     let firstFailure: CrudMutationResult | null = null;
@@ -5092,7 +5146,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const outcome = await syncStockDeltaStrict(entry.id, entry.delta);
       if (outcome.ok) continue;
       setProducts(prev => prev.map(row => (
-        row.id === entry.id ? { ...row, stock: row.stock - entry.delta } : row
+        row.id === entry.id ? { ...row, stock: Math.max(0, row.stock - entry.delta) } : row
       )));
       if (!firstFailure) {
         firstFailure = toCrudResult(outcome);
@@ -5171,7 +5225,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     let stockSyncFailure: CrudMutationResult | null = null;
     if (isFinalizedSale(saleWithSnapshot)) {
-      const stockResult = await applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1));
+      const stockResult = await applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1), saleWithSnapshot.location);
       if (!stockResult.ok) {
         recordActivity({
           action: 'Blocked',
@@ -5259,10 +5313,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!oldSale) return failResult(404, 'Sale not found.');
     let stockSyncFailure: CrudMutationResult | null = null;
 
-    const stockDelta: Record<string, number> = {};
-    if (isFinalizedSale(oldSale)) mergeStockDelta(stockDelta, buildSaleStockDelta(oldSale, +1));
-    if (isFinalizedSale(saleWithSnapshot)) mergeStockDelta(stockDelta, buildSaleStockDelta(saleWithSnapshot, -1));
-    const stockResult = await applyStockDelta(stockDelta);
+    let stockResult: CrudMutationResult = okResult(200);
+    if (oldSale.location === saleWithSnapshot.location) {
+      const stockDelta: Record<string, number> = {};
+      if (isFinalizedSale(oldSale)) mergeStockDelta(stockDelta, buildSaleStockDelta(oldSale, +1));
+      if (isFinalizedSale(saleWithSnapshot)) mergeStockDelta(stockDelta, buildSaleStockDelta(saleWithSnapshot, -1));
+      stockResult = await applyStockDelta(stockDelta, saleWithSnapshot.location);
+    } else {
+      if (isFinalizedSale(oldSale)) await applyStockDelta(buildSaleStockDelta(oldSale, +1), oldSale.location);
+      if (isFinalizedSale(saleWithSnapshot)) stockResult = await applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1), saleWithSnapshot.location);
+    }
     if (!stockResult.ok) {
       recordActivity({
         action: 'Blocked',
@@ -5386,7 +5446,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     let stockSyncFailure: CrudMutationResult | null = null;
     if (saleToDelete) {
       if (isFinalizedSale(saleToDelete)) {
-        const stockResult = await applyStockDelta(buildSaleStockDelta(saleToDelete, +1));
+        const stockResult = await applyStockDelta(buildSaleStockDelta(saleToDelete, +1), saleToDelete.location);
         if (!stockResult.ok) {
           recordActivity({
             action: 'Blocked',
@@ -5454,7 +5514,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const applySellReturnEffects = async (sellReturn: SellReturn, factor: 1 | -1): Promise<CrudMutationResult> => {
-    return applyStockDelta(buildSellReturnStockDelta(sellReturn, factor));
+    return applyStockDelta(buildSellReturnStockDelta(sellReturn, factor), sellReturn.location);
   };
 
   const resolveSaleDueCeiling = (sale: Sale): number =>

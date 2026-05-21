@@ -393,8 +393,16 @@ export const simulateStockTransfer = ({
     if (!locationId || !locationName) return;
     const visibilityIds = Array.isArray(product.availableLocationIds) ? product.availableLocationIds : [];
     const visibilityNames = Array.isArray(product.availableLocations) ? product.availableLocations : [];
-    product.availableLocationIds = Array.from(new Set([...visibilityIds, locationId]));
-    product.availableLocations = Array.from(new Set([...visibilityNames, locationName]));
+    
+    const newVisibilityIds = [...visibilityIds, locationId];
+    const newVisibilityNames = [...visibilityNames, locationName];
+    
+    if (visibilityIds.length === 0 && visibilityNames.length === 0 && product.businessLocation) {
+      newVisibilityNames.push(product.businessLocation);
+    }
+    
+    product.availableLocationIds = Array.from(new Set(newVisibilityIds));
+    product.availableLocations = Array.from(new Set(newVisibilityNames));
   };
 
   (transfer.items || []).forEach((item, index) => {

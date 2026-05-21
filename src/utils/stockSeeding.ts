@@ -171,8 +171,16 @@ export const simulateSeedLocationStock = ({
     const existingTarget = inventoryByKey.get(targetKey);
     const visibilityIds = Array.isArray(source.availableLocationIds) ? source.availableLocationIds : [];
     const visibilityNames = Array.isArray(source.availableLocations) ? source.availableLocations : [];
-    source.availableLocationIds = Array.from(new Set([...visibilityIds, cleanLocationId]));
-    source.availableLocations = Array.from(new Set([...visibilityNames, cleanLocation]));
+    
+    const newVisibilityIds = [...visibilityIds, cleanLocationId];
+    const newVisibilityNames = [...visibilityNames, cleanLocation];
+    
+    if (visibilityIds.length === 0 && visibilityNames.length === 0 && source.businessLocation) {
+      newVisibilityNames.push(source.businessLocation);
+    }
+    
+    source.availableLocationIds = Array.from(new Set(newVisibilityIds));
+    source.availableLocations = Array.from(new Set(newVisibilityNames));
     productById.set(source.id, source);
 
     const target: ProductLocationInventory = existingTarget || {

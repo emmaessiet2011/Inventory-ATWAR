@@ -1,0 +1,35 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          script: |
+            # Navigate to your app directory (UPDATE THIS PATH to match your VPS)
+            cd /var/www/erp.atwarbss.com
+            
+            # Pull the latest code
+            git pull
+            
+            # Install any new dependencies
+            npm install
+            
+            # Build the React app
+            npm run build
+            
+            # If you are running a Node backend with PM2, uncomment the line below:
+            # pm2 restart all

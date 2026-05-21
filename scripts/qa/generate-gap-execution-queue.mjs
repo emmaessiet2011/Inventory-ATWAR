@@ -4,9 +4,9 @@ import { readText, relPath, repoRoot, writeText } from './fs-utils.mjs';
 
 const checklistPath = path.join(repoRoot, 'docs', 'quality', 'screen-audit-checklist.md');
 const releaseChecklistPath = path.join(repoRoot, 'docs', 'quality', 'release-checklist.md');
-const loginPath = path.join(repoRoot, 'components', 'Login.tsx');
+const loginPath = path.join(repoRoot, 'src', 'components', 'layout', 'Login.tsx');
 const globalContextPath = path.join(repoRoot, 'src', 'context', 'GlobalContext.tsx');
-const settingsPath = path.join(repoRoot, 'components', 'Settings.tsx');
+const settingsPath = path.join(repoRoot, 'src', 'components', 'settings', 'Settings.tsx');
 const backupPlanPath = path.join(repoRoot, 'docs', 'quality', 'backup-restore-plan.md');
 const backupUtilityPath = path.join(repoRoot, 'src', 'utils', 'backupRestore.ts');
 

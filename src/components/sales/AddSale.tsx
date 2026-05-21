@@ -31,6 +31,7 @@ import {
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 import { productVisibleAtLocation } from '@/utils/productVisibility';
+import { fetchLocationInventoryFromDB, ProductLocationInventory, inventoryKey } from '@/utils/stockLocationInventory';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
@@ -508,6 +509,38 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   // --- Product Grid State ---
   const [rows, setRows] = useState<any[]>([]);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchLocationInventoryFromDB().then((records) => {
+      if (isMounted) setLocationInventory(records);
+    }).catch(() => {
+      if (isMounted) setLocationInventory([]);
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const isWarehouseLocation = (locName: string) => {
+    const locId = normalizeLocationKey(locations.find(l => l.name === locName)?.id);
+    const joined = normalizeLocationKey(`${locId} ${locName}`);
+    return (
+      locId === 'bl0001' ||
+      joined.includes('atwar al mustaqbal') ||
+      joined.includes('cr:1450968') ||
+      joined.includes('cr 1450968') ||
+      joined.includes('1450968')
+    );
+  };
+
+  const getAvailableStock = (product: Product) => {
+    if (!location) return 0;
+    if (isWarehouseLocation(location)) return Number(product.stock || 0);
+    const locId = locations.find(l => l.name === location)?.id;
+    if (!locId) return 0;
+    const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locId));
+    return Number(match?.stock || 0);
+  };
 
   // --- Bottom Section State ---
   const initialDefaultSaleDiscount = Number(settings.defaultSaleDiscount || 0);
@@ -1845,7 +1878,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
               );
               if (!product) return false;
               const rowQty = Number(r.qty || 0);
-              return rowQty > Number(product.stock || 0);
+              return rowQty > getAvailableStock(product);
             });
           if (oversold) {
             addNotification({
@@ -2574,10 +2607,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                     type="button"
                                     onMouseDown={(e) => e.stopPropagation()}
                                     onClick={(e) => { e.stopPropagation(); openStockHistory(p); }}
-                                    className={`font-bold hover:underline ${p.stock <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                                    className={`font-bold hover:underline ${getAvailableStock(p) <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
                                     title="Open stock history"
                                   >
-                                    Stock: {p.stock}
+                                    Stock: {getAvailableStock(p)}
                                   </button>
                                   <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
                                   {packHint && <span>{packHint}</span>}
@@ -2673,10 +2706,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                                       type="button"
                                                       onMouseDown={(e) => e.stopPropagation()}
                                                       onClick={(e) => { e.stopPropagation(); openStockHistory(p); }}
-                                                      className={`font-bold hover:underline ${p.stock <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                                                      className={`font-bold hover:underline ${getAvailableStock(p) <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
                                                       title="Open stock history"
                                                     >
-                                                      Stock: {p.stock}
+                                                      Stock: {getAvailableStock(p)}
                                                     </button>
                                                     <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
                                                     {packHint && <span>{packHint}</span>}
@@ -2706,7 +2739,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                             className="text-blue-600 hover:underline"
                                             title="Open stock history"
                                           >
-                                            Stock: {selectedProduct.stock} {selectedProduct.unit}
+                                            Stock: {getAvailableStock(selectedProduct)} {selectedProduct.unit}
                                           </button>
                                           {selectedProductPackHint && <span> | {selectedProductPackHint}</span>}
                                           <span> | {selectedProduct.category}</span>
