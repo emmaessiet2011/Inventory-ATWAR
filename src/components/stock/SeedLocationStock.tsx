@@ -72,6 +72,18 @@ const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: 
   );
 };
 
+const productLocationIsWarehouse = (
+  product: Product,
+  locationRecords: Array<{ id?: string; name?: string; landmark?: string }>,
+) => {
+  const productLocation = normalize(product.businessLocation);
+  if (!productLocation) return false;
+  return locationRecords.some((record) => (
+    isWarehouseLocation(record) &&
+    (normalize(record.id) === productLocation || normalize(record.name) === productLocation)
+  ));
+};
+
 const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => {
   const {
     locations,
@@ -138,23 +150,24 @@ const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => 
   }, [locationInventory]);
 
   const catalogProducts = useMemo(() => {
-    const bySku = new Map<string, Product>();
+    const bySku = new Map<string, { product: Product; score: number }>();
     products.forEach((product) => {
       const skuKey = normalize(product.sku);
       if (!skuKey) return;
+      const score = productLocationIsWarehouse(product, locations)
+        ? 100
+        : normalize(product.businessLocation) === normalize(location)
+          ? 10
+          : 1;
       const existing = bySku.get(skuKey);
-      if (!existing) {
-        bySku.set(skuKey, product);
-        return;
-      }
-      const existingAtSelected = normalize(existing.businessLocation) === normalize(location);
-      const productAtSelected = normalize(product.businessLocation) === normalize(location);
-      if (existingAtSelected && !productAtSelected) {
-        bySku.set(skuKey, product);
+      if (!existing || score > existing.score) {
+        bySku.set(skuKey, { product, score });
       }
     });
-    return Array.from(bySku.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [products, location]);
+    return Array.from(bySku.values())
+      .map((entry) => entry.product)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [products, locations, location]);
 
   const filteredProducts = useMemo(() => {
     const query = normalize(productSearch);

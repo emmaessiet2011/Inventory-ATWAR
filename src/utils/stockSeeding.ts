@@ -61,6 +61,15 @@ export interface ReverseSeedStockResult {
 const normalize = (value: unknown): string => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
+const productLooksWarehouseMaster = (product: Product): boolean => {
+  const joined = normalize(`${product.id || ''} ${product.businessLocation || ''}`);
+  return (
+    joined.includes('bl0001') ||
+    joined.includes('warehouse') ||
+    joined.includes('atwar al mustaqbal') ||
+    joined.includes('1450968')
+  );
+};
 
 const toIsoDate = (value: string): string => {
   const parsed = Date.parse(value);
@@ -106,6 +115,12 @@ export const simulateSeedLocationStock = ({
   }
 
   const productById = new Map(products.map((product) => [product.id, { ...product }]));
+  const productsBySku = new Map<string, Product[]>();
+  products.forEach((product) => {
+    const skuKey = normalize(product.sku);
+    if (!skuKey) return;
+    productsBySku.set(skuKey, [...(productsBySku.get(skuKey) || []), product]);
+  });
   const inventoryByKey = new Map<string, ProductLocationInventory>();
   const inventoryIds = inventoryRows.map((row) => row.id);
   const createdInventoryIds: string[] = [];
@@ -139,7 +154,15 @@ export const simulateSeedLocationStock = ({
     }
     usedSkus.add(skuKey);
 
-    const source = productById.get(item.productId) || products.find((product) => normalize(product.sku) === skuKey);
+    const skuMatches = productsBySku.get(skuKey) || [];
+    const warehouseMatch = skuMatches.find(productLooksWarehouseMaster);
+    const selectedMatch = productById.get(item.productId);
+    if (!warehouseMatch && !selectedMatch && skuMatches.length > 1) {
+      throw new Error(`SKU "${sku}" has multiple product rows and no warehouse master product. Merge duplicates before seeding.`);
+    }
+    const source = warehouseMatch
+      ? productById.get(warehouseMatch.id)
+      : selectedMatch || (skuMatches.length === 1 ? productById.get(skuMatches[0].id) : undefined);
     if (!source) {
       throw new Error(`Product not found for SKU "${sku}".`);
     }
