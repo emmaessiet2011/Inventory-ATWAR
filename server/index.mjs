@@ -1910,6 +1910,11 @@ app.put('/api/sync/stock-ledger/:id', requireAuth, async (req, res) => {
   const productId = String(raw.productId || '').trim();
   if (!productId) return res.status(400).json({ ok: false, error: 'productId is required' });
   try {
+    const productExists = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, name: true, sku: true } });
+    if (!productExists) {
+      const label = [raw.sku, raw.productName, raw.ref].filter(Boolean).join(' / ') || productId;
+      return res.status(400).json({ ok: false, error: `Product not found for stock ledger entry: ${label}` });
+    }
     const [saleId, locationId] = await Promise.all([
       resolveLookupId(prisma.sale, raw.saleId || raw.parentSaleId, [raw.invoiceNo, raw.ref], ['invoiceNo']),
       resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),

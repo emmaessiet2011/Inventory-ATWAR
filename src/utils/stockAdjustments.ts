@@ -1,5 +1,9 @@
 import { Product } from '../context/GlobalContext';
 import { syncDedicatedStrict, fetchDedicated } from '@/utils/apiClient';
+import {
+  ProductLocationInventory,
+  inventoryKey,
+} from './stockLocationInventory';
 
 import type { StockLotAdjustment } from './stockLots';
 
@@ -56,6 +60,7 @@ export interface StockLedgerEntry {
 
 export interface StockAdjustmentSimulationResult {
   productsAfter: Product[];
+  inventoryAfter: ProductLocationInventory[];
   ledgerEntries: StockLedgerEntry[];
   lotAdjustments: StockLotAdjustment[];
 }
@@ -199,6 +204,9 @@ interface SimulateParams {
   adjustment: StockAdjustmentRecord;
   direction: 1 | -1;
   products: Product[];
+  inventoryRows?: ProductLocationInventory[];
+  locationId?: string;
+  generateId?: (prefix: string) => string;
   actorName: string;
   notePrefix?: string;
 }
@@ -207,16 +215,37 @@ export const simulateStockAdjustment = ({
   adjustment,
   direction,
   products,
+  inventoryRows = [],
+  locationId = '',
+  generateId,
   actorName,
   notePrefix,
 }: SimulateParams): StockAdjustmentSimulationResult => {
   const productById = new Map<string, Product>();
   const skuLocToId = new Map<string, string>();
+  const skuToProductIds = new Map<string, string[]>();
+  const nameToProductIds = new Map<string, string[]>();
   const originalIds = products.map((p) => p.id);
+  const inventoryByKey = new Map<string, ProductLocationInventory>();
+  const inventoryIds = inventoryRows.map((row) => row.id);
+  const createdInventoryIds: string[] = [];
 
   products.forEach((product) => {
     productById.set(product.id, { ...product });
     skuLocToId.set(skuLocationKey(product.sku, product.businessLocation), product.id);
+    const skuKey = normalize(product.sku);
+    const nameKey = normalize(product.name);
+    if (skuKey) skuToProductIds.set(skuKey, [...(skuToProductIds.get(skuKey) || []), product.id]);
+    if (nameKey) nameToProductIds.set(nameKey, [...(nameToProductIds.get(nameKey) || []), product.id]);
+  });
+
+  inventoryRows.forEach((row) => {
+    const key = inventoryKey(row.productId, row.locationId);
+    const existing = inventoryByKey.get(key);
+    if (existing && existing.id !== row.id) {
+      throw new Error(`Duplicate inventory rows found for product "${row.productId}" at one location. Merge duplicates before adjustment.`);
+    }
+    inventoryByKey.set(key, { ...row });
   });
 
   const transferDate = toIsoDate(adjustment.date);
@@ -227,13 +256,49 @@ export const simulateStockAdjustment = ({
 
   const resolveProduct = (item: StockAdjustmentItem): Product => {
     const byId = item.productId ? productById.get(item.productId) : undefined;
-    if (byId && normalize(byId.businessLocation) === normalize(adjustment.location)) return byId;
+    if (byId) return byId;
     const fallbackId = skuLocToId.get(skuLocationKey(item.sku, adjustment.location));
     if (fallbackId) {
       const fallback = productById.get(fallbackId);
       if (fallback) return fallback;
     }
+    const skuMatches = skuToProductIds.get(normalize(item.sku)) || [];
+    if (skuMatches.length === 1) {
+      const match = productById.get(skuMatches[0]);
+      if (match) return match;
+    }
+    const nameMatches = nameToProductIds.get(normalize(item.productName)) || [];
+    if (nameMatches.length === 1) {
+      const match = productById.get(nameMatches[0]);
+      if (match) return match;
+    }
     throw new Error(`Product not found for SKU "${item.sku}" at "${adjustment.location}".`);
+  };
+
+  const getInventoryRecord = (
+    product: Product,
+    allowCreate: boolean,
+  ): ProductLocationInventory => {
+    if (!locationId) {
+      throw new Error(`Location "${adjustment.location}" does not have a database ID.`);
+    }
+    const key = inventoryKey(product.id, locationId);
+    const existing = inventoryByKey.get(key);
+    if (existing) return existing;
+    if (!allowCreate || !generateId) {
+      throw new Error(`Location inventory not found for SKU "${product.sku}" at "${adjustment.location}".`);
+    }
+    const created: ProductLocationInventory = {
+      id: generateId('PINV'),
+      productId: product.id,
+      locationId,
+      locationName: adjustment.location,
+      stock: 0,
+      unitCost: round3(Number(product.unitPurchasePrice || 0)),
+    };
+    inventoryByKey.set(key, created);
+    createdInventoryIds.push(created.id);
+    return created;
   };
 
   (adjustment.items || []).forEach((item, index) => {
@@ -242,11 +307,18 @@ export const simulateStockAdjustment = ({
 
     const product = resolveProduct(item);
     const delta = round3(qty * direction);
-    const next = round3(Number(product.stock || 0) + delta);
+    const usesProductStock = normalize(product.businessLocation) === normalize(adjustment.location) || !locationId;
+    const inventory = usesProductStock ? null : getInventoryRecord(product, delta > 0);
+    const currentStock = usesProductStock ? Number(product.stock || 0) : Number(inventory?.stock || 0);
+    const next = round3(currentStock + delta);
     if (next < -0.0001) {
       throw new Error(`Insufficient stock for "${product.name}" at "${adjustment.location}".`);
     }
-    product.stock = Math.max(0, next);
+    if (usesProductStock) {
+      product.stock = Math.max(0, next);
+    } else if (inventory) {
+      inventory.stock = Math.max(0, next);
+    }
 
     const reasonText = adjustment.reason ? ` | ${adjustment.reason}` : '';
     const statusText = adjustment.status ? ` | ${adjustment.status}` : '';
@@ -256,7 +328,7 @@ export const simulateStockAdjustment = ({
       productId: product.id,
       type: direction === 1 ? 'Stock Adjustment' : 'Stock Adjustment Reversal',
       change: delta,
-      newQty: product.stock,
+      newQty: usesProductStock ? product.stock : Number(inventory?.stock || 0),
       date: transferDate,
       ref: adjustment.referenceNo,
       party: actorName || 'System',
@@ -282,5 +354,15 @@ export const simulateStockAdjustment = ({
     .map((id) => productById.get(id))
     .filter((product): product is Product => !!product);
 
-  return { productsAfter, ledgerEntries, lotAdjustments };
+  const allInventory = Array.from(inventoryByKey.values());
+  const inventoryAfter: ProductLocationInventory[] = [
+    ...inventoryIds
+      .map((id) => allInventory.find((row) => row.id === id))
+      .filter((row): row is ProductLocationInventory => !!row),
+    ...createdInventoryIds
+      .map((id) => allInventory.find((row) => row.id === id))
+      .filter((row): row is ProductLocationInventory => !!row),
+  ];
+
+  return { productsAfter, inventoryAfter, ledgerEntries, lotAdjustments };
 };

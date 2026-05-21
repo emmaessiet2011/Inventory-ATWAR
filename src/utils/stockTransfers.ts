@@ -277,6 +277,8 @@ export const simulateStockTransfer = ({
 }: SimulateParams): StockTransferSimulationResult => {
   const productById = new Map<string, Product>();
   const skuLocToId = new Map<string, string>();
+  const skuToProductIds = new Map<string, string[]>();
+  const nameToProductIds = new Map<string, string[]>();
   const duplicateSkuLocKeys = new Map<string, string[]>();
   const originalIds = products.map((p) => p.id);
   const inventoryByKey = new Map<string, ProductLocationInventory>();
@@ -292,6 +294,10 @@ export const simulateStockTransfer = ({
     } else {
       skuLocToId.set(key, product.id);
     }
+    const skuKey = normalize(product.sku);
+    const nameKey = normalize(product.name);
+    if (skuKey) skuToProductIds.set(skuKey, [...(skuToProductIds.get(skuKey) || []), product.id]);
+    if (nameKey) nameToProductIds.set(nameKey, [...(nameToProductIds.get(nameKey) || []), product.id]);
   });
 
   inventoryRows.forEach((row) => {
@@ -314,11 +320,21 @@ export const simulateStockTransfer = ({
       throw new Error(`Duplicate product rows found for SKU "${item.sku}" at "${transfer.locationFrom}". Merge duplicates before transfer.`);
     }
     const idMatch = item.productId ? productById.get(item.productId) : undefined;
-    if (idMatch && normalize(idMatch.businessLocation) === normalize(transfer.locationFrom)) return idMatch;
+    if (idMatch) return idMatch;
     const fallbackId = skuLocToId.get(sourceKey);
     if (fallbackId) {
       const fallback = productById.get(fallbackId);
       if (fallback) return fallback;
+    }
+    const skuMatches = skuToProductIds.get(normalize(item.sku)) || [];
+    if (skuMatches.length === 1) {
+      const match = productById.get(skuMatches[0]);
+      if (match) return match;
+    }
+    const nameMatches = nameToProductIds.get(normalize(item.productName)) || [];
+    if (nameMatches.length === 1) {
+      const match = productById.get(nameMatches[0]);
+      if (match) return match;
     }
     throw new Error(`Source product not found for SKU "${item.sku}" at "${transfer.locationFrom}".`);
   };

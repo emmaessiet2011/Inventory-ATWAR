@@ -17,6 +17,10 @@ import {
   syncChangedProductsStrict,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
+import {
+  fetchLocationInventoryFromDB,
+  syncChangedLocationInventoryStrict,
+} from '@/utils/stockLocationInventory';
 import { applyStockLotAdjustments, StockLotAdjustment } from '@/utils/stockLots';
 import {
   bootstrapStockAdjustmentsFromDB,
@@ -154,6 +158,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   const resolvedCanDelete = canDelete ?? resolvedCanEdit;
   const ownerIdFilter = normalize(restrictToAddedById);
   const ownerNameFilter = normalize(restrictToAddedByName);
+  const resolveLocationRecord = (value: string) => {
+    const normalizedValue = normalize(value);
+    if (!normalizedValue) return undefined;
+    return locations.find(location =>
+      normalize(location.id) === normalizedValue || normalize(location.name) === normalizedValue
+    );
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -540,6 +551,8 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       let linkedTransferId = '';
       let linkedExpenseId = '';
       let nextProductsAfter: typeof products | null = null;
+      let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
+      let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
 
       if (
         adjustment.adjustmentType === 'Damage'
@@ -547,21 +560,28 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       ) {
         await bootstrapStockTransfersFromDB().catch(() => {});
         const { transfer, transferItems, existingTransfers, targetLocation } = buildLinkedTransferRecordFromAdjustment(adjustment, actorName);
-        const destinationActive = locations.some(
-          (row) => normalize(row.name) === normalize(targetLocation) && row.isActive !== false,
-        );
-        if (!destinationActive) {
+        const sourceLocationRecord = resolveLocationRecord(transfer.locationFrom);
+        const destinationLocationRecord = resolveLocationRecord(targetLocation);
+        if (!sourceLocationRecord) {
+          throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
+        }
+        if (!destinationLocationRecord || destinationLocationRecord.isActive === false) {
           throw new Error(`Sellable damage location "${targetLocation}" is inactive or missing.`);
         }
+        originalInventoryRows = await fetchLocationInventoryFromDB();
         const appliedTransfer = simulateStockTransfer({
           transfer,
           direction: 1,
           products,
+          inventoryRows: originalInventoryRows,
+          locationFromId: sourceLocationRecord.id,
+          locationToId: destinationLocationRecord.id,
           generateId,
           actorName,
           notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
         nextProductsAfter = appliedTransfer.productsAfter;
+        nextInventoryAfter = appliedTransfer.inventoryAfter;
         const transferLedgerSaved = await appendStockLedgerEntriesStrict(appliedTransfer.ledgerEntries);
         if (!transferLedgerSaved.ok) {
           const detail = transferLedgerSaved.error || `HTTP ${transferLedgerSaved.status || 0}`;
@@ -591,14 +611,23 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         }
         linkedTransferId = transfer.id;
       } else {
+        const adjustmentLocationRecord = resolveLocationRecord(adjustment.location);
+        if (!adjustmentLocationRecord) {
+          throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
+        }
+        originalInventoryRows = await fetchLocationInventoryFromDB();
         const applied = simulateStockAdjustment({
           adjustment: { ...adjustment, status: 'Approved' },
           direction: 1,
           products,
+          inventoryRows: originalInventoryRows,
+          locationId: adjustmentLocationRecord.id,
+          generateId,
           actorName,
           notePrefix: 'Approval',
         });
         nextProductsAfter = applied.productsAfter;
+        nextInventoryAfter = applied.inventoryAfter;
         const adjustmentLedgerSaved = await appendStockLedgerEntriesStrict(applied.ledgerEntries);
         if (!adjustmentLedgerSaved.ok) {
           const detail = adjustmentLedgerSaved.error || `HTTP ${adjustmentLedgerSaved.status || 0}`;
@@ -677,6 +706,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
         }
       }
+      if (nextInventoryAfter && originalInventoryRows) {
+        const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
+        if (!inventorySaved.ok) {
+          const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+          throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
+        }
+      }
       const adjustmentSaved = await writeStockAdjustments(sorted, approvedRecord.id);
       if (!adjustmentSaved) {
         throw new Error('Unable to save approved stock adjustment in Postgres.');
@@ -726,6 +762,8 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
     try {
       const status = normalizeStockAdjustmentStatus(adjustment.status);
       let nextProductsAfter: typeof products | null = null;
+      let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
+      let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       if (status === 'Approved') {
         const actorName = currentUser?.name || 'System';
         const isSellableDamage =
@@ -738,6 +776,14 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           const linkedTransfer = allTransfers.find((row) => row.id === adjustment.linkedTransferId);
           const fallback = buildLinkedTransferRecordFromAdjustment(adjustment, actorName);
           const transfer = linkedTransfer || fallback.transfer;
+          const sourceLocationRecord = resolveLocationRecord(transfer.locationFrom);
+          const destinationLocationRecord = resolveLocationRecord(transfer.locationTo);
+          if (!sourceLocationRecord) {
+            throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
+          }
+          if (!destinationLocationRecord) {
+            throw new Error(`Destination location "${transfer.locationTo}" is inactive or missing.`);
+          }
           const transferItems = transfer.items.map((item) => ({
             sku: item.sku,
             qty: item.qty,
@@ -746,15 +792,20 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             productName: item.productName,
           }));
 
+          originalInventoryRows = await fetchLocationInventoryFromDB();
           const rollbackTransfer = simulateStockTransfer({
             transfer,
             direction: -1,
             products,
+            inventoryRows: originalInventoryRows,
+            locationFromId: sourceLocationRecord.id,
+            locationToId: destinationLocationRecord.id,
             generateId,
             actorName,
             notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
           nextProductsAfter = rollbackTransfer.productsAfter;
+          nextInventoryAfter = rollbackTransfer.inventoryAfter;
           const rollbackTransferLedgerSaved = await appendStockLedgerEntriesStrict(rollbackTransfer.ledgerEntries);
           if (!rollbackTransferLedgerSaved.ok) {
             const detail = rollbackTransferLedgerSaved.error || `HTTP ${rollbackTransferLedgerSaved.status || 0}`;
@@ -784,14 +835,23 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             }
           }
         } else {
+          const adjustmentLocationRecord = resolveLocationRecord(adjustment.location);
+          if (!adjustmentLocationRecord) {
+            throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
+          }
+          originalInventoryRows = await fetchLocationInventoryFromDB();
           const rollback = simulateStockAdjustment({
             adjustment,
             direction: -1,
             products,
+            inventoryRows: originalInventoryRows,
+            locationId: adjustmentLocationRecord.id,
+            generateId,
             actorName,
             notePrefix: 'Delete rollback',
           });
           nextProductsAfter = rollback.productsAfter;
+          nextInventoryAfter = rollback.inventoryAfter;
           const rollbackLedgerSaved = await appendStockLedgerEntriesStrict(rollback.ledgerEntries);
           if (!rollbackLedgerSaved.ok) {
             const detail = rollbackLedgerSaved.error || `HTTP ${rollbackLedgerSaved.status || 0}`;
@@ -819,6 +879,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         if (!productsSaved.ok) {
           const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
           throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
+        }
+      }
+      if (nextInventoryAfter && originalInventoryRows) {
+        const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
+        if (!inventorySaved.ok) {
+          const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+          throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
         }
       }
       const savedAdjustments = await writeStockAdjustments(nextAdjustments);
