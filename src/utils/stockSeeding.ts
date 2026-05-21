@@ -39,6 +39,25 @@ export interface SeedLocationStockResult {
   unchangedCount: number;
 }
 
+export interface ReverseSeedStockParams {
+  seedRef: string;
+  location: string;
+  locationId: string;
+  products: Product[];
+  inventoryRows: ProductLocationInventory[];
+  existingLedgerEntries: StockLedgerEntry[];
+  generateId: (prefix: string) => string;
+  actorName: string;
+  date: string;
+}
+
+export interface ReverseSeedStockResult {
+  inventoryAfter: ProductLocationInventory[];
+  ledgerEntries: StockLedgerEntry[];
+  reversedCount: number;
+  totalReversedQty: number;
+}
+
 const normalize = (value: unknown): string => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
@@ -218,5 +237,115 @@ export const applySeedLocationStockStrict = async (
   if (!productsSaved.ok) {
     const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
     throw new Error(`Unable to save seeded product visibility in Postgres. ${detail}`);
+  }
+};
+
+export const simulateReverseSeedLocationStock = ({
+  seedRef,
+  location,
+  locationId,
+  products,
+  inventoryRows,
+  existingLedgerEntries,
+  generateId,
+  actorName,
+  date,
+}: ReverseSeedStockParams): ReverseSeedStockResult => {
+  const cleanRef = String(seedRef || '').trim();
+  const cleanLocation = String(location || '').trim();
+  const cleanLocationId = String(locationId || '').trim();
+  if (!cleanRef) throw new Error('Select a seed reference to reverse.');
+  if (!cleanLocation || !cleanLocationId) throw new Error('Selected location is missing.');
+
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const inventoryByKey = new Map<string, ProductLocationInventory>();
+  const inventoryIds = inventoryRows.map((row) => row.id);
+  inventoryRows.forEach((row) => {
+    inventoryByKey.set(inventoryKey(row.productId, row.locationId), { ...row });
+  });
+
+  const seedEntries = existingLedgerEntries.filter((entry) => (
+    normalize(entry.ref) === normalize(cleanRef) &&
+    normalize(entry.location) === normalize(cleanLocation) &&
+    normalize(entry.type) === normalize('Opening Balance')
+  ));
+  if (seedEntries.length === 0) {
+    throw new Error(`No opening seed ledger entries found for "${cleanRef}" at "${cleanLocation}".`);
+  }
+
+  const alreadyReversed = existingLedgerEntries.some((entry) => (
+    normalize(entry.location) === normalize(cleanLocation) &&
+    normalize(entry.type) === normalize('Opening Balance Reversal') &&
+    normalize(entry.note).includes(normalize(`Reverse seed ${cleanRef}`))
+  ));
+  if (alreadyReversed) {
+    throw new Error(`Seed "${cleanRef}" has already been reversed.`);
+  }
+
+  const ledgerDate = toIsoDate(date);
+  const ledgerEntries: StockLedgerEntry[] = [];
+  let totalReversedQty = 0;
+
+  seedEntries.forEach((entry, index) => {
+    const product = productById.get(entry.productId);
+    if (!product) {
+      throw new Error(`Product not found for seed ledger entry "${cleanRef}".`);
+    }
+    const key = inventoryKey(entry.productId, cleanLocationId);
+    const inventory = inventoryByKey.get(key);
+    if (!inventory) {
+      throw new Error(`Location inventory not found for SKU "${product.sku}" at "${cleanLocation}".`);
+    }
+
+    const reversalQty = round3(-Number(entry.change || 0));
+    const nextStock = round3(Number(inventory.stock || 0) + reversalQty);
+    if (nextStock < -0.0001) {
+      throw new Error(`Cannot reverse "${product.name}". Only ${Number(inventory.stock || 0).toFixed(3)} remains at ${cleanLocation}.`);
+    }
+    inventory.stock = Math.max(0, nextStock);
+    inventoryByKey.set(key, inventory);
+    totalReversedQty = round3(totalReversedQty + Math.abs(reversalQty));
+
+    ledgerEntries.push({
+      id: generateId('STK-SEED-REV') || `STK-SEED-REV-${Date.now()}-${index}`,
+      productId: product.id,
+      productName: product.name || entry.productName || '',
+      sku: product.sku || entry.sku || '',
+      type: 'Opening Balance Reversal',
+      change: reversalQty,
+      newQty: inventory.stock,
+      date: ledgerDate,
+      ref: `REV-${cleanRef}`,
+      party: actorName || 'System',
+      location: cleanLocation,
+      note: `Reverse seed ${cleanRef}`,
+    });
+  });
+
+  const allInventory = Array.from(inventoryByKey.values());
+  return {
+    inventoryAfter: inventoryIds
+      .map((id) => allInventory.find((row) => row.id === id))
+      .filter((row): row is ProductLocationInventory => !!row),
+    ledgerEntries,
+    reversedCount: ledgerEntries.length,
+    totalReversedQty,
+  };
+};
+
+export const applyReverseSeedLocationStockStrict = async (
+  result: ReverseSeedStockResult,
+  previousInventoryRows: ProductLocationInventory[],
+) => {
+  const ledgerSaved = await appendStockLedgerEntriesStrict(result.ledgerEntries);
+  if (!ledgerSaved.ok) {
+    const detail = ledgerSaved.error || `HTTP ${ledgerSaved.status || 0}`;
+    throw new Error(`Unable to save reverse seed ledger entries in Postgres. ${detail}`);
+  }
+
+  const inventorySaved = await syncChangedLocationInventoryStrict(result.inventoryAfter, previousInventoryRows);
+  if (!inventorySaved.ok) {
+    const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+    throw new Error(`Unable to save reversed location inventory in Postgres. ${detail}`);
   }
 };
