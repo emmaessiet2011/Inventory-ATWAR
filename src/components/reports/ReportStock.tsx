@@ -9,15 +9,20 @@ import {
   Printer,
   Search,Warehouse} from 'lucide-react';
 import MultiSelect from '@/components/shared/MultiSelect';
-import { useGlobalContext } from '@/context/GlobalContext';
+import { Product, useGlobalContext } from '@/context/GlobalContext';
 
 import ProductStockHistory from '@/components/products/ProductStockHistory';
 
 import { printActiveReportTable } from '@/utils/printUtils';
 import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
+import {
+  fetchLocationInventoryFromDB,
+  ProductLocationInventory,
+} from '@/utils/stockLocationInventory';
 
 interface StockReportItem {
   id: string;
+  productId: string;
   sku: string;
   product: string;
   variation: string;
@@ -87,6 +92,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
   const [currentPage, setCurrentPage] = useState(1);
   const [historyProductId, setHistoryProductId] = useState<string | null>(null);
   const [ledgerVersion, setLedgerVersion] = useState(0);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
   const [filters, setFilters] = useState({
     location: [] as string[],
     category: [] as string[],
@@ -145,8 +151,12 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
   useEffect(() => {
     let cancelled = false;
     const refreshLedger = async () => {
-      await bootstrapStockTransfersFromDB().catch(() => {});
+      const [inventoryRows] = await Promise.all([
+        fetchLocationInventoryFromDB().catch(() => [] as ProductLocationInventory[]),
+        bootstrapStockTransfersFromDB().catch(() => {}),
+      ]);
       if (cancelled) return;
+      setLocationInventory(inventoryRows);
       setLedgerVersion((prev) => prev + 1);
     };
     void refreshLedger();
@@ -301,13 +311,17 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
     return map;
   }, [ledgerVersion, products]);
 
-  const stockData = useMemo<StockReportItem[]>(() => (
-    products.map((product) => {
-      const currentStock = Number(product.stock) || 0;
-      const unitPurchasePrice = Number(product.unitPurchasePrice) || 0;
+  const stockData = useMemo<StockReportItem[]>(() => {
+    const productById = new Map<string, Product>(products.map((product) => [product.id, product]));
+    const locationNameById = new Map(locations.map((location) => [location.id, location.name]));
+    const buildRow = (
+      product: Product,
+      location: string,
+      currentStock: number,
+      unitPurchasePrice: number,
+      rowId: string,
+    ): StockReportItem => {
       const unitSellingPrice = Number(product.sellingPrice) || 0;
-      const stockValuePurchase = currentStock * unitPurchasePrice;
-      const stockValueSale = currentStock * unitSellingPrice;
       const movement = movementByProductId.get(product.id) || { transferred: 0, adjusted: 0 };
       const soldQty = soldByProductId.get(product.id) || 0;
       const variation = Array.isArray(product.variationRows) && product.variationRows.length > 0
@@ -315,26 +329,49 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
         : (product.type === 'Variable' ? 'Variable' : '-');
 
       return {
-        id: product.id,
+        id: rowId,
+        productId: product.id,
         sku: product.sku || '',
         product: product.name || '',
         variation,
         category: product.category || '',
         subCategory: product.subCategory || '',
-        location: product.businessLocation || '',
+        location,
         unitSellingPrice,
-        currentStock,
-        stockValuePurchase,
-        stockValueSale,
-        potentialProfit: stockValueSale - stockValuePurchase,
+        currentStock: Number(currentStock.toFixed(3)),
+        stockValuePurchase: currentStock * unitPurchasePrice,
+        stockValueSale: currentStock * unitSellingPrice,
+        potentialProfit: (currentStock * unitSellingPrice) - (currentStock * unitPurchasePrice),
         totalUnitSold: Number(soldQty.toFixed(3)),
         totalUnitTransferred: movement.transferred,
         totalUnitAdjusted: movement.adjusted,
         brand: product.brand || '',
         unit: product.unit || '',
       };
-    })
-  ), [products, movementByProductId, soldByProductId]);
+    };
+
+    const rows: StockReportItem[] = products.map((product) => buildRow(
+      product,
+      product.businessLocation || '',
+      Number(product.stock) || 0,
+      Number(product.unitPurchasePrice) || 0,
+      product.id,
+    ));
+
+    locationInventory.forEach((inventory) => {
+      const product = productById.get(inventory.productId);
+      if (!product) return;
+      rows.push(buildRow(
+        product,
+        inventory.locationName || locationNameById.get(inventory.locationId) || '',
+        Number(inventory.stock) || 0,
+        Number(inventory.unitCost ?? product.unitPurchasePrice ?? 0) || 0,
+        `${product.id}@@${inventory.locationId}`,
+      ));
+    });
+
+    return rows;
+  }, [products, locations, locationInventory, movementByProductId, soldByProductId]);
 
   const locationOptions = useMemo(
     () => Array.from(new Set([
@@ -671,7 +708,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
                   <td className="px-4 py-3 text-center">
                     <button
                       type="button"
-                      onClick={() => handleOpenHistory(item.id)}
+                      onClick={() => handleOpenHistory(item.productId)}
                       className="flex items-center gap-1 px-2 py-1 bg-white border border-blue-200 text-blue-600 rounded text-[10px] font-bold hover:bg-blue-50 whitespace-nowrap"
                     >
                       <History size={10} /> Product stock history

@@ -15,6 +15,10 @@ import {
   bootstrapStockTransfersFromDB,
   readStockLedger,
 } from '@/utils/stockTransfers';
+import {
+  fetchLocationInventoryFromDB,
+  ProductLocationInventory,
+} from '@/utils/stockLocationInventory';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { formatUnitWithPack } from '@/utils/productPackaging';
@@ -36,6 +40,7 @@ const downloadFile = (filename: string, content: string, type: string) => {
 
 interface StockReportItem {
   id: string;
+  productId: string;
   sku: string;
   product: string;
   variation: string;
@@ -133,13 +138,18 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean; title: string; message: string; onConfirm: () => void | Promise<void>} | null>(null);
   const [stockLedgerVersion, setStockLedgerVersion] = useState(0);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
 
   useEffect(() => {
     const refreshLedger = () => setStockLedgerVersion((prev) => prev + 1);
     let isMounted = true;
 
     const refreshFromDB = async () => {
-      await bootstrapStockTransfersFromDB().catch(() => {});
+      const [inventoryRows] = await Promise.all([
+        fetchLocationInventoryFromDB().catch(() => [] as ProductLocationInventory[]),
+        bootstrapStockTransfersFromDB().catch(() => {}),
+      ]);
+      if (isMounted) setLocationInventory(inventoryRows);
       if (isMounted) refreshLedger();
     };
 
@@ -249,35 +259,66 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     return map;
   }, [products, stockLedgerVersion]);
 
-  const stockReport = useMemo<StockReportItem[]>(() => products.map((p) => {
-    const currentStock = Number(p.stock) || 0;
-    const unitPurchasePrice = Number(p.unitPurchasePrice) || 0;
-    const unitSellingPrice = Number(p.sellingPrice) || 0;
-    const stockValuePurchase = currentStock * unitPurchasePrice;
-    const stockValueSale = currentStock * unitSellingPrice;
-    const movement = stockMovementByProductId.get(p.id) || { transferred: 0, adjusted: 0 };
-    return {
-      id: p.id,
-      sku: p.sku,
-      product: p.name,
-      variation: '-',
-      category: p.category,
-      brand: p.brand,
-      productType: p.type,
-      tax: p.tax,
-      location: p.businessLocation,
-      unitSellingPrice,
-      unitPurchasePrice,
-      currentStock,
-      unit: p.unit,
-      stockValuePurchase,
-      stockValueSale,
-      potentialProfit: stockValueSale - stockValuePurchase,
-      totalUnitSold: soldByProductName.get(normalize(p.name)) || 0,
-      totalUnitTransferred: movement.transferred,
-      totalUnitAdjusted: movement.adjusted,
+  const stockReport = useMemo<StockReportItem[]>(() => {
+    const productById = new Map<string, Product>(products.map((product) => [product.id, product]));
+    const locationNameById = new Map(locations.map((location) => [location.id, location.name]));
+    const buildRow = (
+      product: Product,
+      location: string,
+      currentStock: number,
+      unitPurchasePrice: number,
+      rowId: string,
+    ): StockReportItem => {
+      const unitSellingPrice = Number(product.sellingPrice) || 0;
+      const stockValuePurchase = currentStock * unitPurchasePrice;
+      const stockValueSale = currentStock * unitSellingPrice;
+      const movement = stockMovementByProductId.get(product.id) || { transferred: 0, adjusted: 0 };
+      return {
+        id: rowId,
+        productId: product.id,
+        sku: product.sku,
+        product: product.name,
+        variation: '-',
+        category: product.category,
+        brand: product.brand,
+        productType: product.type,
+        tax: product.tax,
+        location,
+        unitSellingPrice,
+        unitPurchasePrice,
+        currentStock: Number(currentStock.toFixed(3)),
+        unit: product.unit,
+        stockValuePurchase,
+        stockValueSale,
+        potentialProfit: stockValueSale - stockValuePurchase,
+        totalUnitSold: soldByProductName.get(normalize(product.name)) || 0,
+        totalUnitTransferred: movement.transferred,
+        totalUnitAdjusted: movement.adjusted,
+      };
     };
-  }), [products, soldByProductName, stockMovementByProductId]);
+
+    const rows = products.map((product) => buildRow(
+      product,
+      product.businessLocation,
+      Number(product.stock) || 0,
+      Number(product.unitPurchasePrice) || 0,
+      product.id,
+    ));
+
+    locationInventory.forEach((inventory) => {
+      const product = productById.get(inventory.productId);
+      if (!product) return;
+      rows.push(buildRow(
+        product,
+        inventory.locationName || locationNameById.get(inventory.locationId) || '',
+        Number(inventory.stock) || 0,
+        Number(inventory.unitCost ?? product.unitPurchasePrice ?? 0) || 0,
+        `${product.id}@@${inventory.locationId}`,
+      ));
+    });
+
+    return rows;
+  }, [products, locations, locationInventory, soldByProductName, stockMovementByProductId]);
 
   const filteredStockReport = useMemo(() => {
     const q = normalize(searchTerm);
@@ -292,7 +333,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       if (filters.tax.length && !filters.tax.includes(r.tax)) return false;
       if (filters.brand.length && !filters.brand.includes(r.brand)) return false;
       if (filters.businessLocation.length && !filters.businessLocation.includes(r.location)) return false;
-      if (notForSellingOnly && !products.find(p => p.id === r.id)?.notForSelling) return false;
+      if (notForSellingOnly && !products.find(p => p.id === r.productId)?.notForSelling) return false;
       return true;
     });
   }, [stockReport, searchTerm, filters, notForSellingOnly, products]);
@@ -1296,7 +1337,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4">
                                     <button
                                         onClick={() => {
-                                          const product = products.find(p => p.id === item.id);
+                                          const product = products.find(p => p.id === item.productId);
                                           if (product) handleProductHistory(product);
                                         }}
                                         className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 bg-white border border-slate-200 text-indigo-600 rounded-lg text-[10px] font-bold hover:bg-indigo-50 hover:border-indigo-200 shadow-sm whitespace-nowrap transition-all"
