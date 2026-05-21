@@ -17,6 +17,7 @@ import {
 } from '@/utils/stockTransfers';
 import {
   fetchLocationInventoryFromDB,
+  inventoryKey,
   ProductLocationInventory,
 } from '@/utils/stockLocationInventory';
 import { useNotifications } from '@/context/NotificationContext';
@@ -27,6 +28,16 @@ import { productVisibleAtLocation, productVisibleToUser } from '@/utils/productV
 
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
 const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string } | undefined): boolean => {
+  const hay = normalize(`${location?.id || ''} ${location?.name || ''} ${location?.landmark || ''}`);
+  return hay.includes('atwar') || hay.includes('1450968') || hay.includes('warehouse') || hay.includes('bl0001');
+};
+const productBelongsToLocation = (product: Product, location: { name?: string; landmark?: string } | undefined): boolean => {
+  const productLocation = normalize(product.businessLocation);
+  const locationName = normalize(location?.name);
+  const locationLandmark = normalize(location?.landmark);
+  return !!productLocation && (productLocation === locationName || (!!locationLandmark && productLocation === locationLandmark));
+};
 
 const downloadFile = (filename: string, content: string, type: string) => {
   const blob = new Blob([content], { type });
@@ -192,12 +203,39 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     () => products.filter(product => productVisibleToUser(product, currentUser, locations)),
     [products, currentUser, locations],
   );
+  const selectedProductListLocations = useMemo(
+    () => locations.filter(location => filters.businessLocation.includes(location.name)),
+    [locations, filters.businessLocation],
+  );
+  const locationInventoryByKey = useMemo(
+    () => new Map(locationInventory.map(row => [inventoryKey(row.productId, row.locationId), row])),
+    [locationInventory],
+  );
+  const getProductStockForList = (product: Product): number => {
+    if (!selectedProductListLocations.length) return Number(product.stock || 0);
+
+    const selectedStock = selectedProductListLocations.reduce((sum, location) => {
+      if (isWarehouseLocation(location)) {
+        return sum + (productBelongsToLocation(product, location) || isWarehouseLocation({ name: product.businessLocation })
+          ? Number(product.stock || 0)
+          : 0);
+      }
+      const row = locationInventoryByKey.get(inventoryKey(product.id, location.id));
+      return sum + Number(row?.stock || 0);
+    }, 0);
+
+    return Number(selectedStock.toFixed(3));
+  };
+  const getProductLocationLabelForList = (product: Product): string => {
+    if (!selectedProductListLocations.length) return product.businessLocation || '';
+    return selectedProductListLocations.map(location => location.name).join(', ');
+  };
 
   const filteredProducts = useMemo(() => {
     const q = normalize(searchTerm);
     return userVisibleProducts.filter((p) => {
       if (q) {
-        const hay = [p.name, p.sku, p.category, p.brand, p.businessLocation, p.unit, p.tax].map(normalize);
+        const hay = [p.name, p.sku, p.category, p.brand, p.businessLocation, getProductLocationLabelForList(p), p.unit, p.tax].map(normalize);
         if (!hay.some(v => v.includes(q))) return false;
       }
       if (filters.productType.length && !filters.productType.includes(p.type)) return false;
@@ -212,7 +250,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       if (notForSellingOnly && !p.notForSelling) return false;
       return true;
     });
-  }, [userVisibleProducts, searchTerm, filters, notForSellingOnly, locations]);
+  }, [userVisibleProducts, searchTerm, filters, notForSellingOnly, locations, selectedProductListLocations]);
 
   const soldByProductName = useMemo(() => {
     const map = new Map<string, number>();
@@ -697,9 +735,9 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         csvCell(formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage)),
         csvCell((p.unitPurchasePrice || 0).toFixed(3)),
         csvCell((p.sellingPrice || 0).toFixed(3)),
-        csvCell((p.stock || 0).toFixed(3)),
+        csvCell(getProductStockForList(p).toFixed(3)),
         csvCell(p.tax || '--'),
-        csvCell(p.businessLocation || ''),
+        csvCell(getProductLocationLabelForList(p) || ''),
       ].join(','));
       downloadFile('products.csv', [headers.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;');
       addNotification({ title: 'Exported', message: `${filteredProducts.length} product row(s) exported to CSV.`, type: 'success' });
@@ -731,9 +769,9 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         p.name, p.sku, p.type, p.category, p.brand, formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage),
         (p.unitPurchasePrice || 0).toFixed(3),
         (p.sellingPrice || 0).toFixed(3),
-        (p.stock || 0).toFixed(3),
+        getProductStockForList(p).toFixed(3),
         p.tax || '--',
-        p.businessLocation || '',
+        getProductLocationLabelForList(p) || '',
       ].join('\t'));
       downloadFile('products.xls', [headers.join('\t'), ...rows].join('\n'), 'application/vnd.ms-excel;charset=utf-8;');
       addNotification({ title: 'Exported', message: `${filteredProducts.length} product row(s) exported to Excel.`, type: 'success' });
@@ -772,14 +810,14 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     ? `Filters: ${inventoryPrintFilterParts.join(' | ')}`
     : undefined;
   const inventoryListSubtotalPurchase = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * Number(p.stock || 0)),
+    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * getProductStockForList(p)),
     0
   );
   const inventoryListSubtotalSale = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.sellingPrice || 0) * Number(p.stock || 0)),
+    (sum, p) => sum + (Number(p.sellingPrice || 0) * getProductStockForList(p)),
     0
   );
-  const inventoryListTotalQty = filteredProducts.reduce((sum, p) => sum + Number(p.stock || 0), 0);
+  const inventoryListTotalQty = filteredProducts.reduce((sum, p) => sum + getProductStockForList(p), 0);
   const stockReportTotalQty = filteredStockReport.reduce((sum, row) => sum + Number(row.currentStock || 0), 0);
 
   const handlePrint = () => {
@@ -859,10 +897,10 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           p.sku,
           p.type,
           p.category || '--',
-          p.businessLocation || '--',
+          getProductLocationLabelForList(p) || '--',
           formatCurrency(p.unitPurchasePrice || 0),
           formatCurrency(p.sellingPrice || 0),
-          Number(p.stock || 0).toFixed(3),
+          getProductStockForList(p).toFixed(3),
         ]),
         stats: [
           { label: 'Total Products', value: String(filteredProducts.length), color: 'blue' },
@@ -1222,7 +1260,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                     {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}
                                   </div>
                                 </td>
-                                {!hiddenCols.includes('businessLocation') && <td className="px-4 py-3 text-slate-500 text-xs">{product.businessLocation}</td>}
+                                {!hiddenCols.includes('businessLocation') && <td className="px-4 py-3 text-slate-500 text-xs">{getProductLocationLabelForList(product)}</td>}
                                 {!hiddenCols.includes('sellingPrice') && <td 
                                     className="px-4 py-3 text-right font-bold text-slate-800 cursor-pointer hover:bg-slate-100 transition-colors"
                                     onClick={() => handleCellEdit(product, 'sellingPrice')}
@@ -1242,8 +1280,12 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                     )}
                                 </td>}
                                 {!hiddenCols.includes('stock') && <td 
-                                    className="px-4 py-3 text-right font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition-colors"
-                                    onClick={() => handleCellEdit(product, 'stock')}
+                                    className={`px-4 py-3 text-right font-medium text-slate-700 transition-colors ${
+                                      selectedProductListLocations.length ? '' : 'cursor-pointer hover:bg-slate-100'
+                                    }`}
+                                    onClick={() => {
+                                      if (!selectedProductListLocations.length) handleCellEdit(product, 'stock');
+                                    }}
                                 >
                                     {editingCell?.id === product.id && editingCell.field === 'stock' ? (
                                         <input 
@@ -1256,7 +1298,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                             autoFocus
                                         />
                                     ) : (
-                                        <>{Number(product.stock || 0).toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
+                                        <>{getProductStockForList(product).toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
                                     )}
                                 </td>}
                                 {!hiddenCols.includes('type') && <td className="px-4 py-3">
