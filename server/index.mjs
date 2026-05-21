@@ -923,6 +923,27 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         await prisma.productVariation.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
       }
+      case 'productInventory': {
+        const productId = String(raw.productId || '').trim();
+        const locationId = String(raw.locationId || '').trim();
+        if (!productId || !locationId) {
+          return res.status(400).json({ ok: false, error: 'productId and locationId are required' });
+        }
+        const d = {
+          productId,
+          locationId,
+          stock: toFiniteNumber(raw.stock, 0),
+          unitCost: raw.unitCost === undefined || raw.unitCost === null ? null : toFiniteNumber(raw.unitCost, 0),
+          rack: normOptionalString(raw.rack),
+          row: normOptionalString(raw.row),
+          position: normOptionalString(raw.position),
+          lotNumber: normOptionalString(raw.lotNumber),
+          expiryDate: raw.expiryDate ? normDate(raw.expiryDate) : null,
+          meta: raw,
+        };
+        await prisma.productInventory.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
       case 'customers': {
         const customerGroupId = await resolveLookupId(
           prisma.customerGroup,

@@ -14,6 +14,7 @@ import {
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
+  syncChangedProductsStrict,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 import { applyStockLotAdjustments, StockLotAdjustment } from '@/utils/stockLots';
@@ -669,6 +670,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         row.id === approvedRecord.id ? approvedRecord : row
       ));
       const sorted = sortAdjustments(nextAdjustments);
+      if (nextProductsAfter) {
+        const productsSaved = await syncChangedProductsStrict(nextProductsAfter, products);
+        if (!productsSaved.ok) {
+          const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
+          throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
+        }
+      }
       const adjustmentSaved = await writeStockAdjustments(sorted, approvedRecord.id);
       if (!adjustmentSaved) {
         throw new Error('Unable to save approved stock adjustment in Postgres.');
@@ -806,6 +814,13 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       }
 
       const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
+      if (nextProductsAfter) {
+        const productsSaved = await syncChangedProductsStrict(nextProductsAfter, products);
+        if (!productsSaved.ok) {
+          const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
+          throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
+        }
+      }
       const savedAdjustments = await writeStockAdjustments(nextAdjustments);
       if (!savedAdjustments) {
         throw new Error('Unable to sync stock adjustments to Postgres.');

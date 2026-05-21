@@ -84,8 +84,6 @@ async function main() {
     ['currency',                 () => prisma.currency.deleteMany()],
     ['appSetting',               () => prisma.appSetting.deleteMany()],
 
-    // Caches — must be cleared so the frontend doesn't restore old data
-    ['optionCollection',         () => prisma.optionCollection.deleteMany()],
   ];
 
   for (const [label, fn] of steps) {
@@ -97,36 +95,10 @@ async function main() {
     }
   }
 
-  // ── 2. Fetch surviving users and write a clean snapshot ──────────────────
+  // ── 2. Fetch surviving users for summary only ────────────────────────────
   console.log('\nBuilding clean snapshot from surviving users…');
   const users = await prisma.appUser.findMany();
   console.log(`  Found ${users.length} user(s): ${users.map(u => u.name).join(', ')}`);
-
-  const cleanSnapshot = {
-    products:  [],
-    customers: [],
-    suppliers: [],
-    sales:     [],
-    payments:  [],
-    users:     users.map(u => ({
-      id:       u.id,
-      username: u.username,
-      name:     u.name,
-      email:    u.email,
-      role:     u.roleId ?? 'Admin',
-      status:   u.status,
-      meta:     u.meta ?? {},
-    })),
-    settings:  {},
-    syncedAt:  new Date().toISOString(),
-  };
-
-  await prisma.appStateSnapshot.upsert({
-    where:  { id: 'core' },
-    update: { payload: cleanSnapshot },
-    create: { id: 'core', payload: cleanSnapshot },
-  });
-  console.log('  ✓ AppStateSnapshot updated — frontend will clear on next load');
 
   // ── 3. Summary ────────────────────────────────────────────────────────────
   const [userCount, locationCount] = await Promise.all([

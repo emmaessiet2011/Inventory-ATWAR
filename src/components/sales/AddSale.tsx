@@ -30,6 +30,7 @@ import {
   getSellingPriceGroupRuleSignature,
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
+import { productVisibleAtLocation } from '@/utils/productVisibility';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
@@ -1289,11 +1290,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   const getLocationScopedProducts = (): Product[] => {
     const normalizedLocation = String(location || '').trim().toLowerCase();
+    const selectedLocation = locations.find(loc => String(loc.name || '').trim().toLowerCase() === normalizedLocation);
     const locationScoped = (!normalizedLocation || !settings.filterProductsByLocation)
       ? products
       : products.filter(p => {
-      const pLoc = String(p.businessLocation || '').trim().toLowerCase();
-      return !pLoc || pLoc === normalizedLocation;
+      return productVisibleAtLocation(p, selectedLocation);
     });
     if (saleLocationPolicy.mode === 'allow_all') return locationScoped;
     return locationScoped.filter((product) => isProductAllowedBySaleLocationPolicy(product, saleLocationPolicy));

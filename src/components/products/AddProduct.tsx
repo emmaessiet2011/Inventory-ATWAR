@@ -46,6 +46,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   const [margin, setMargin] = useState<number>(parseFloat(settings.defaultProfitPercent) || 25);
   const [sellingPrice, setSellingPrice] = useState<number | ''>('');
   const [businessLocation, setBusinessLocation] = useState('');
+  const [availableLocationIds, setAvailableLocationIds] = useState<string[]>([]);
   const [selectedUnit, setSelectedUnit] = useState(settings.defaultUnit || '');
   const [packagingType, setPackagingType] = useState<ProductPackagingType>('Piece');
   const [unitsPerPackage, setUnitsPerPackage] = useState<number | ''>('');
@@ -150,6 +151,14 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   const getLocationRack = (locationId: string) =>
     locationRackDetails[locationId] || { rack: '', row: '', position: '' };
 
+  const toggleAvailableLocation = (locationId: string) => {
+    setAvailableLocationIds(prev => (
+      prev.includes(locationId)
+        ? prev.filter(id => id !== locationId)
+        : [...prev, locationId]
+    ));
+  };
+
   const updateLocationRack = (
     locationId: string,
     field: 'rack' | 'row' | 'position',
@@ -192,6 +201,16 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
         setProductType(p.type);
         setSellingPrice(p.sellingPrice);
         setBusinessLocation(p.businessLocation || '');
+        const selectedLocationIds = Array.isArray(p.availableLocationIds) ? p.availableLocationIds : [];
+        const selectedLocationNames = Array.isArray(p.availableLocations) ? p.availableLocations : [];
+        const legacyLocationId = locations.find(l => l.name === (p.businessLocation || ''))?.id || '';
+        setAvailableLocationIds(
+          selectedLocationIds.length > 0
+            ? selectedLocationIds
+            : locations
+                .filter(location => selectedLocationNames.includes(location.name) || location.id === legacyLocationId)
+                .map(location => location.id)
+        );
         setManageStock(true);
         setPurchasePrice(p.unitPurchasePrice || 0);
         setSelectedUnit(p.unit || '');
@@ -441,6 +460,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
     setProductName(''); setSku(''); setBarcodeType('Code 128 (C128)');
     setPurchasePrice(''); setMargin(defaultMargin); setSellingPrice('');
     setBusinessLocation(''); setSelectedUnit(settings.defaultUnit || '');
+    setAvailableLocationIds([]);
     setPackagingType('Piece'); setUnitsPerPackage('');
     setSelectedBrand(''); setSelectedCategory(''); setSubCategory('');
     setSelectedTax('--'); setTaxType('Exclusive'); setSelectedWarranty('');
@@ -534,6 +554,15 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       addNotification({ title: 'Error', message: 'Business location is required.', type: 'error' });
       return;
     }
+    const primaryLocationId = locations.find(location => location.name === businessLocation.trim())?.id || '';
+    const normalizedAvailableLocationIds = Array.from(new Set([
+      ...availableLocationIds,
+      ...(primaryLocationId ? [primaryLocationId] : []),
+    ])).filter(Boolean);
+    if (locations.length > 0 && normalizedAvailableLocationIds.length === 0) {
+      addNotification({ title: 'Error', message: 'Select at least one location where this product will show.', type: 'error' });
+      return;
+    }
 
     const existingProduct = isEdit && productId ? products.find(p => p.id === productId) : null;
     const autoSku = `${settings.skuPrefix || ''}${Date.now().toString().slice(-6)}`;
@@ -610,6 +639,9 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
 
     const resolvedLocationName = businessLocation.trim();
     const resolvedLocationId = locations.find(l => l.name === resolvedLocationName)?.id;
+    const resolvedAvailableLocations = locations
+      .filter(location => normalizedAvailableLocationIds.includes(location.id))
+      .map(location => location.name);
     const resolvedRackDetail = resolvedLocationId ? locationRackDetails[resolvedLocationId] : undefined;
     const shouldApplyOpeningStock = !isEdit || !existingProduct;
     const normalizedSelectedCategory = selectedCategory.trim();
@@ -638,6 +670,8 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       brand: resolvedBrand.name || existingProduct?.brand || '--',
       tax: selectedTax || existingProduct?.tax || '--',
       businessLocation: resolvedLocationName,
+      availableLocationIds: normalizedAvailableLocationIds,
+      availableLocations: resolvedAvailableLocations,
       unitPurchasePrice: typeof purchasePrice === 'number' ? purchasePrice : 0,
       sellingPrice: productType === 'Combo' ? comboSellingPrice : (Number(sellingPrice) || 0),
       stock: isEdit && existingProduct
@@ -895,12 +929,38 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
               <div className="md:col-span-2">
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">Business Location <Info size={12} className="text-blue-500" /> <span className="text-red-500">*</span></label>
                 <div className="relative">
-                  <select value={businessLocation} onChange={(e) => setBusinessLocation(e.target.value)}
+                  <select value={businessLocation} onChange={(e) => {
+                    const nextLocationName = e.target.value;
+                    setBusinessLocation(nextLocationName);
+                    const nextLocationId = locations.find(loc => loc.name === nextLocationName)?.id;
+                    if (nextLocationId) {
+                      setAvailableLocationIds(prev => prev.includes(nextLocationId) ? prev : [...prev, nextLocationId]);
+                    }
+                  }}
                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium appearance-none cursor-pointer">
                     <option value="">Select Location</option>
                     {locations.map(loc => <option key={loc.id} value={loc.name}>{loc.name}</option>)}
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Show Product In</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {locations.map(loc => {
+                    const checked = availableLocationIds.includes(loc.id);
+                    return (
+                      <label key={loc.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-bold cursor-pointer transition ${checked ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleAvailableLocation(loc.id)}
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="truncate">{loc.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </div>

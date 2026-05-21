@@ -23,6 +23,7 @@ import {
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument } from '@/utils/printUtils';
+import { productVisibleAtLocation } from '@/utils/productVisibility';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
@@ -37,6 +38,28 @@ interface POSProps {
 type CheckoutMode = 'paid' | 'card' | 'credit' | 'multi' | 'draft' | 'quotation' | 'suspend';
 
 const normalizeText = (value?: string) => String(value || '').trim().toLowerCase();
+type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_engine_oil' | 'exclude_engine_oil';
+type SaleLocationCategoryPolicy = { mode: SaleLocationCategoryPolicyMode };
+const isEngineOilCategory = (category: unknown): boolean =>
+  normalizeText(String(category || '')).includes('engine oil');
+const resolveSaleLocationCategoryPolicy = (locationName: unknown): SaleLocationCategoryPolicy => {
+  const normalizedLocation = normalizeText(String(locationName || ''));
+  if (!normalizedLocation) return { mode: 'allow_all' };
+  const compactLocation = normalizedLocation.replace(/\s+/g, '');
+  if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_engine_oil' };
+  const isO2Petshop = normalizedLocation.includes('o2 pet shop') || compactLocation.includes('o2petshop');
+  const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
+  if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_engine_oil' };
+  return { mode: 'allow_all' };
+};
+const isProductAllowedByLocationCategory = (
+  product: Pick<GlobalProduct, 'category'>,
+  policy: SaleLocationCategoryPolicy,
+): boolean => {
+  if (policy.mode === 'allow_all') return true;
+  const isEngineOil = isEngineOilCategory(product.category);
+  return policy.mode === 'only_engine_oil' ? isEngineOil : !isEngineOil;
+};
 
 /** Check if a KeyboardEvent matches a shortcut string like 'f2', 'shift+e', 'ctrl+f4' */
 const matchesShortcut = (e: KeyboardEvent, shortcut: string): boolean => {
@@ -129,11 +152,16 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
 
   const selectedCustomer = customers.find(c => c.id === customerId);
   const selectedLocation = locations.find(loc => loc.id === selectedLocationId);
+  const saleLocationPolicy = useMemo(
+    () => resolveSaleLocationCategoryPolicy(selectedLocation?.name),
+    [selectedLocation?.name],
+  );
   const locationScopedProducts = useMemo(() => {
-    const selectedLocationName = normalizeText(selectedLocation?.name);
-    if (!selectedLocationName) return products;
-    return products.filter(product => normalizeText(product.businessLocation) === selectedLocationName);
-  }, [products, selectedLocation?.name]);
+    if (!selectedLocation) return products;
+    return products
+      .filter(product => productVisibleAtLocation(product, selectedLocation))
+      .filter(product => isProductAllowedByLocationCategory(product, saleLocationPolicy));
+  }, [products, selectedLocation, saleLocationPolicy]);
   const categories = useMemo(
     () => ['All', ...Array.from(new Set(locationScopedProducts.map(product => product.category).filter(Boolean)))],
     [locationScopedProducts]

@@ -19,6 +19,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { formatUnitWithPack } from '@/utils/productPackaging';
 import { buildPaginationItems } from '@/utils/pagination';
+import { productVisibleAtLocation, productVisibleToUser } from '@/utils/productVisibility';
 
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
 const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -177,10 +178,14 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     () => Array.from(new Set([...productBrands.map(b => b.name), ...products.map(p => p.brand)].filter(Boolean))).sort(),
     [productBrands, products]
   );
+  const userVisibleProducts = useMemo(
+    () => products.filter(product => productVisibleToUser(product, currentUser, locations)),
+    [products, currentUser, locations],
+  );
 
   const filteredProducts = useMemo(() => {
     const q = normalize(searchTerm);
-    return products.filter((p) => {
+    return userVisibleProducts.filter((p) => {
       if (q) {
         const hay = [p.name, p.sku, p.category, p.brand, p.businessLocation, p.unit, p.tax].map(normalize);
         if (!hay.some(v => v.includes(q))) return false;
@@ -190,11 +195,14 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       if (filters.unit.length && !filters.unit.includes(p.unit)) return false;
       if (filters.tax.length && !filters.tax.includes(p.tax)) return false;
       if (filters.brand.length && !filters.brand.includes(p.brand)) return false;
-      if (filters.businessLocation.length && !filters.businessLocation.includes(p.businessLocation)) return false;
+      if (filters.businessLocation.length) {
+        const selectedLocations = locations.filter(location => filters.businessLocation.includes(location.name));
+        if (!selectedLocations.some(location => productVisibleAtLocation(p, location))) return false;
+      }
       if (notForSellingOnly && !p.notForSelling) return false;
       return true;
     });
-  }, [products, searchTerm, filters, notForSellingOnly]);
+  }, [userVisibleProducts, searchTerm, filters, notForSellingOnly, locations]);
 
   const soldByProductName = useMemo(() => {
     const map = new Map<string, number>();

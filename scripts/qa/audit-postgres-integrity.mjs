@@ -8,12 +8,18 @@ const rel = (filePath) => path.relative(repoRoot, filePath).replace(/\\/g, '/');
 const srcRoot = path.join(repoRoot, 'src');
 const serverPath = path.join(repoRoot, 'server', 'index.mjs');
 const apiClientPath = path.join(srcRoot, 'utils', 'apiClient.ts');
+const schemaPath = path.join(repoRoot, 'prisma', 'schema.prisma');
+const dropdownSyncPath = path.join(srcRoot, 'utils', 'dropdownSync.ts');
+const legacyMigrationPath = path.join(repoRoot, 'scripts', 'ops', 'migrate-legacy-postgres-storage.mjs');
+const stockTransfersPath = path.join(srcRoot, 'utils', 'stockTransfers.ts');
 
 const failures = [];
 const addFailure = (message) => failures.push(message);
 
 const serverText = read(serverPath);
 const apiClientText = read(apiClientPath);
+const schemaText = read(schemaPath);
+const stockTransfersText = read(stockTransfersPath);
 
 const extractCaseBlock = (resource) => {
   const startToken = `case '${resource}': {`;
@@ -39,6 +45,22 @@ const assertContainsAll = (label, block, expectedTokens) => {
 // --- 1) Ensure old snapshot endpoints remain disabled ---
 if (!serverText.includes("app.get('/api/sync/collection/:key'") || !serverText.includes('sendLegacySnapshotGone')) {
   addFailure("[endpoint] Legacy /api/sync/collection endpoints are expected to stay disabled (410).");
+}
+
+if (fs.existsSync(dropdownSyncPath)) {
+  addFailure('[dropdown] src/utils/dropdownSync.ts must not exist; dropdown/master data must load through typed DB resources.');
+}
+if (fs.existsSync(legacyMigrationPath)) {
+  addFailure('[legacy] Local-to-Postgres seed/migration script must not exist in live DB-source-of-truth mode.');
+}
+if (/model\s+(AppStateSnapshot|OptionCollection)\b/.test(schemaText)) {
+  addFailure('[schema] Legacy snapshot models AppStateSnapshot/OptionCollection must not exist.');
+}
+if (stockTransfersText.includes('Transfer can only move stock to a destination where the product already exists')) {
+  addFailure('[stock-transfer] Transfers must be able to create/persist a destination product row when moving to a new location.');
+}
+if (!stockTransfersText.includes('syncChangedProductsStrict')) {
+  addFailure('[stock-transfer] Product stock/location changes must be persisted through awaited product sync.');
 }
 
 // --- 2) Ensure API fetch path merges canonical row + meta ---

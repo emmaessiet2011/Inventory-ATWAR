@@ -22,6 +22,7 @@ const WRITE_FUNCTIONS = new Set([
   'addRegisterTransaction',
   'deleteRegisterTransaction',
   'applyStockLotAdjustments',
+  'updateCurrentUserPreferences',
 ]);
 
 const rel = (filePath) => path.relative(repoRoot, filePath).replace(/\\/g, '/');

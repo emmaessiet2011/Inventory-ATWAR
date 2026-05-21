@@ -137,7 +137,8 @@ const Sidebar: React.FC<SidebarProps> = ({
       icon: RefreshCw,
       subItems: [
         { title: 'List Stock Transfers', path: 'list-stock-transfers' },
-        { title: 'Add Stock Transfer', path: 'add-stock-transfer' }
+        { title: 'Add Stock Transfer', path: 'add-stock-transfer' },
+        { title: 'Seed Location Stock', path: 'seed-location-stock' }
       ]
     },
     {
@@ -326,6 +327,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           hasRolePermission('Stock Transfer', 'Add stock transfer') ||
           hasRolePermission('Stock Transfer', 'Edit stock transfer') ||
           canManageLegacyStockOperations;
+        const canSeedLocationStock =
+          hasRolePermission('Stock Transfer', 'Seed location stock') ||
+          canManageStockTransfers;
         const canViewStockAdjustments =
           hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
           hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
@@ -337,6 +341,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         subItems = subItems.filter((s) => {
           if (s.path === 'list-stock-transfers') return canViewStockTransfers;
           if (s.path === 'add-stock-transfer') return canManageStockTransfers;
+          if (s.path === 'seed-location-stock') return canSeedLocationStock;
           if (s.path === 'list-stock-adjustments') return canViewStockAdjustments;
           if (s.path === 'add-stock-adjustment') return canAddStockAdjustments;
           return true;

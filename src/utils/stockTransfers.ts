@@ -1,8 +1,13 @@
 import { Product } from '../context/GlobalContext';
 import {
+  ProductLocationInventory,
+  inventoryKey,
+} from './stockLocationInventory';
+import {
   syncDedicatedStrict,
   deleteDedicatedStrict,
   fetchDedicated,
+  syncRecordStrict,
 } from './apiClient';
 
 export type StockTransferStatus = 'Pending' | 'In Transit' | 'Completed';
@@ -47,6 +52,7 @@ export interface StockLedgerEntry {
 
 export interface StockTransferSimulationResult {
   productsAfter: Product[];
+  inventoryAfter: ProductLocationInventory[];
   ledgerEntries: StockLedgerEntry[];
 }
 
@@ -55,6 +61,13 @@ export interface StockLedgerAppendResult {
   status: number;
   error?: string;
   failedEntryId?: string;
+}
+
+export interface ProductSyncResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+  failedProductId?: string;
 }
 
 const STOCK_TRANSFERS_UPDATED_EVENT = 'app:stock-transfers-updated';
@@ -243,6 +256,9 @@ interface SimulateParams {
   transfer: StockTransferRecord;
   direction: 1 | -1;
   products: Product[];
+  inventoryRows?: ProductLocationInventory[];
+  locationFromId?: string;
+  locationToId?: string;
   generateId: (prefix: string) => string;
   actorName: string;
   notePrefix?: string;
@@ -252,17 +268,39 @@ export const simulateStockTransfer = ({
   transfer,
   direction,
   products,
+  inventoryRows = [],
+  locationFromId = '',
+  locationToId = '',
   generateId,
   actorName,
   notePrefix,
 }: SimulateParams): StockTransferSimulationResult => {
   const productById = new Map<string, Product>();
   const skuLocToId = new Map<string, string>();
+  const duplicateSkuLocKeys = new Map<string, string[]>();
   const originalIds = products.map((p) => p.id);
+  const inventoryByKey = new Map<string, ProductLocationInventory>();
+  const inventoryIds = inventoryRows.map((row) => row.id);
+  const createdInventoryIds: string[] = [];
 
   products.forEach((product) => {
     productById.set(product.id, { ...product });
-    skuLocToId.set(skuLocationKey(product.sku, product.businessLocation), product.id);
+    const key = skuLocationKey(product.sku, product.businessLocation);
+    const existingId = skuLocToId.get(key);
+    if (existingId && existingId !== product.id) {
+      duplicateSkuLocKeys.set(key, [...(duplicateSkuLocKeys.get(key) || [existingId]), product.id]);
+    } else {
+      skuLocToId.set(key, product.id);
+    }
+  });
+
+  inventoryRows.forEach((row) => {
+    const key = inventoryKey(row.productId, row.locationId);
+    const existing = inventoryByKey.get(key);
+    if (existing && existing.id !== row.id) {
+      throw new Error(`Duplicate inventory rows found for product "${row.productId}" at one location. Merge duplicates before transfer.`);
+    }
+    inventoryByKey.set(key, { ...row });
   });
 
   const transferDate = toIsoDate(transfer.date);
@@ -271,9 +309,13 @@ export const simulateStockTransfer = ({
   let ledgerSeq = 0;
 
   const getSourceProduct = (item: StockTransferItem): Product => {
+    const sourceKey = skuLocationKey(item.sku, transfer.locationFrom);
+    if (duplicateSkuLocKeys.has(sourceKey)) {
+      throw new Error(`Duplicate product rows found for SKU "${item.sku}" at "${transfer.locationFrom}". Merge duplicates before transfer.`);
+    }
     const idMatch = item.productId ? productById.get(item.productId) : undefined;
     if (idMatch && normalize(idMatch.businessLocation) === normalize(transfer.locationFrom)) return idMatch;
-    const fallbackId = skuLocToId.get(skuLocationKey(item.sku, transfer.locationFrom));
+    const fallbackId = skuLocToId.get(sourceKey);
     if (fallbackId) {
       const fallback = productById.get(fallbackId);
       if (fallback) return fallback;
@@ -281,37 +323,84 @@ export const simulateStockTransfer = ({
     throw new Error(`Source product not found for SKU "${item.sku}" at "${transfer.locationFrom}".`);
   };
 
-  const getTargetProduct = (item: StockTransferItem): Product => {
-    const key = skuLocationKey(item.sku, transfer.locationTo);
-    const targetId = skuLocToId.get(key);
-    if (targetId) {
-      const target = productById.get(targetId);
-      if (target) return target;
+  const getInventoryRecord = (
+    product: Product,
+    locationId: string,
+    locationName: string,
+    allowCreate: boolean,
+  ): ProductLocationInventory => {
+    if (!locationId) {
+      throw new Error(`Location "${locationName}" does not have a database ID.`);
     }
-    throw new Error(
-      `Target product not found for SKU "${item.sku}" at "${transfer.locationTo}". ` +
-      'Transfer can only move stock to a destination where the product already exists.',
-    );
+    const key = inventoryKey(product.id, locationId);
+    const existing = inventoryByKey.get(key);
+    if (existing) return existing;
+    if (!allowCreate) {
+      throw new Error(`Location inventory not found for SKU "${product.sku}" at "${locationName}".`);
+    }
+    const created: ProductLocationInventory = {
+      id: generateId('PINV'),
+      productId: product.id,
+      locationId,
+      locationName,
+      stock: 0,
+      unitCost: round3(Number(product.unitPurchasePrice || 0)),
+    };
+    inventoryByKey.set(key, created);
+    createdInventoryIds.push(created.id);
+    return created;
+  };
+
+  const ensureProductVisibleAtLocation = (product: Product, locationId: string, locationName: string) => {
+    if (!locationId || !locationName) return;
+    const visibilityIds = Array.isArray(product.availableLocationIds) ? product.availableLocationIds : [];
+    const visibilityNames = Array.isArray(product.availableLocations) ? product.availableLocations : [];
+    product.availableLocationIds = Array.from(new Set([...visibilityIds, locationId]));
+    product.availableLocations = Array.from(new Set([...visibilityNames, locationName]));
   };
 
   (transfer.items || []).forEach((item, index) => {
     const qty = round3(Number(item.qty || 0));
     if (!qty) return;
     const source = getSourceProduct(item);
+    const sourceUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationFrom) || !locationFromId;
+    const sourceInventory = sourceUsesProductStock
+      ? null
+      : getInventoryRecord(source, locationFromId, transfer.locationFrom, false);
+    const sourceCurrent = sourceUsesProductStock ? Number(source.stock || 0) : Number(sourceInventory?.stock || 0);
     const deltaOut = round3(-qty * direction);
-    const sourceNext = round3(Number(source.stock || 0) + deltaOut);
+    const sourceNext = round3(sourceCurrent + deltaOut);
     if (sourceNext < -0.0001) {
       throw new Error(`Insufficient stock for "${source.name}" at "${transfer.locationFrom}".`);
     }
-    source.stock = Math.max(0, sourceNext);
+    if (sourceUsesProductStock) {
+      source.stock = Math.max(0, sourceNext);
+    } else if (sourceInventory) {
+      sourceInventory.stock = Math.max(0, sourceNext);
+    }
 
-    const target = getTargetProduct(item);
+    const targetProductMatchId = skuLocToId.get(skuLocationKey(item.sku, transfer.locationTo));
+    if (targetProductMatchId && targetProductMatchId !== source.id) {
+      throw new Error(`Duplicate product row exists for SKU "${item.sku}" at "${transfer.locationTo}". Merge it into the main product before transfer.`);
+    }
+    const targetUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationTo) || !locationToId;
+    if (direction > 0) {
+      ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo);
+    }
+    const targetInventory = targetUsesProductStock
+      ? null
+      : getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
     const deltaIn = round3(qty * direction);
-    const targetNext = round3(Number(target.stock || 0) + deltaIn);
+    const targetCurrent = targetUsesProductStock ? Number(source.stock || 0) : Number(targetInventory?.stock || 0);
+    const targetNext = round3(targetCurrent + deltaIn);
     if (targetNext < -0.0001) {
       throw new Error(`Insufficient stock at target "${transfer.locationTo}" for SKU "${item.sku}".`);
     }
-    target.stock = Math.max(0, targetNext);
+    if (targetUsesProductStock) {
+      source.stock = Math.max(0, targetNext);
+    } else if (targetInventory) {
+      targetInventory.stock = Math.max(0, targetNext);
+    }
 
     const transferNote = `${notePrefix ? `${notePrefix}: ` : ''}${transfer.locationFrom} -> ${transfer.locationTo}`;
     const outType = deltaOut < 0 ? 'Stock Transfer Out' : 'Stock Transfer Reversal In';
@@ -321,7 +410,7 @@ export const simulateStockTransfer = ({
       productId: source.id,
       type: outType,
       change: deltaOut,
-      newQty: source.stock,
+      newQty: sourceUsesProductStock ? source.stock : Number(sourceInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -330,10 +419,10 @@ export const simulateStockTransfer = ({
     });
     ledgerEntries.push({
       id: `STK-TR-${now}-${index}-${ledgerSeq += 1}`,
-      productId: target.id,
+      productId: source.id,
       type: inType,
       change: deltaIn,
-      newQty: target.stock,
+      newQty: targetUsesProductStock ? source.stock : Number(targetInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -348,6 +437,47 @@ export const simulateStockTransfer = ({
       .filter((product): product is Product => !!product),
   ];
 
-  return { productsAfter, ledgerEntries };
+  const allInventory = Array.from(inventoryByKey.values());
+  const inventoryAfter: ProductLocationInventory[] = [
+    ...inventoryIds
+      .map((id) => allInventory.find((row) => row.id === id))
+      .filter((row): row is ProductLocationInventory => !!row),
+    ...createdInventoryIds
+      .map((id) => allInventory.find((row) => row.id === id))
+      .filter((row): row is ProductLocationInventory => !!row),
+  ];
+
+  return { productsAfter, inventoryAfter, ledgerEntries };
+};
+
+export const syncChangedProductsStrict = async (
+  nextProducts: Product[],
+  previousProducts: Product[],
+): Promise<ProductSyncResult> => {
+  const previousById = new Map(previousProducts.map((product) => [product.id, product]));
+  const changedProducts = nextProducts.filter((product) => {
+    const previous = previousById.get(product.id);
+    if (!previous) return true;
+    return (
+      round3(Number(previous.stock || 0)) !== round3(Number(product.stock || 0)) ||
+      normalize(previous.businessLocation) !== normalize(product.businessLocation) ||
+      normalize(previous.sku) !== normalize(product.sku) ||
+      normalize(previous.name) !== normalize(product.name)
+    );
+  });
+
+  for (const product of changedProducts) {
+    const saved = await syncRecordStrict('products', product);
+    if (!saved.ok) {
+      return {
+        ok: false,
+        status: saved.status,
+        error: extractSyncError(saved.error),
+        failedProductId: product.id,
+      };
+    }
+  }
+
+  return { ok: true, status: 200 };
 };
 

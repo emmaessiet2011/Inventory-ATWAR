@@ -1,9 +1,8 @@
 # ATWAR BSS Backend (PostgreSQL)
 
 This backend now supports:
-- Core snapshot sync (backward compatible with current frontend flow)
 - Relational CRUD APIs for module tables
-- Dropdown/master collections sync
+- Atomic typed record sync
 - Bootstrap defaults endpoint
 
 ## 1) Install dependencies
@@ -65,8 +64,8 @@ Bootstrap:
 
 Notes:
 
-- On first frontend load with `VITE_ENABLE_DB_SYNC=true`, typed dropdown/master tables are loaded from PostgreSQL and seeded only through relational resources.
-- Snapshot and option-collection blob storage is no longer a supported business-data path.
+- On first frontend load with `VITE_ENABLE_DB_SYNC=true`, typed master tables are loaded from PostgreSQL through relational resources.
+- Snapshot, option-collection, and browser-local business-data storage are not supported business-data paths.
 
 ## Ops hardening commands
 

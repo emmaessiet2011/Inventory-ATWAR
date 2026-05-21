@@ -3,6 +3,7 @@ import { Image as ImageIcon, Search, X } from 'lucide-react';
 import MultiSelect from '@/components/shared/MultiSelect';
 import ViewProduct from './ViewProduct';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
+import { productVisibleAtLocation } from '@/utils/productVisibility';
 
 interface ProductViewCatalogProps {
   onNavigate?: (page: string) => void;
@@ -11,7 +12,7 @@ interface ProductViewCatalogProps {
 const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 
 const ProductViewCatalog: React.FC<ProductViewCatalogProps> = ({ onNavigate }) => {
-  const { products, formatCurrency, settings } = useGlobalContext();
+  const { products, locations, formatCurrency, settings } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [zoomImage, setZoomImage] = useState<{ src: string; name: string } | null>(null);
@@ -27,8 +28,8 @@ const ProductViewCatalog: React.FC<ProductViewCatalogProps> = ({ onNavigate }) =
   });
 
   const locationOptions = useMemo(
-    () => Array.from(new Set(products.map((product) => product.businessLocation).filter(Boolean))).sort(),
-    [products],
+    () => locations.map((location) => location.name).sort(),
+    [locations],
   );
   const categoryOptions = useMemo(
     () => Array.from(new Set(products.map((product) => product.category).filter(Boolean))).sort(),
@@ -53,12 +54,15 @@ const ProductViewCatalog: React.FC<ProductViewCatalogProps> = ({ onNavigate }) =
         if (!hay.some((value) => value.includes(q))) return false;
       }
 
-      if (filters.location.length > 0 && !filters.location.includes(product.businessLocation)) return false;
+      if (filters.location.length > 0) {
+        const selectedLocations = locations.filter(location => filters.location.includes(location.name));
+        if (!selectedLocations.some(location => productVisibleAtLocation(product, location))) return false;
+      }
       if (filters.category.length > 0 && !filters.category.includes(product.category)) return false;
       if (filters.brand.length > 0 && !filters.brand.includes(product.brand)) return false;
       return true;
     });
-  }, [products, searchTerm, filters]);
+  }, [products, searchTerm, filters, locations]);
 
   useEffect(() => {
     setCurrentPage(1);

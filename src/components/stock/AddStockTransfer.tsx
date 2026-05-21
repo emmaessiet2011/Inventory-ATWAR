@@ -3,6 +3,10 @@ import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, ArrowR
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import {
+  fetchLocationInventoryFromDB,
+  syncChangedLocationInventoryStrict,
+} from '@/utils/stockLocationInventory';
+import {
   StockTransferItem,
   StockTransferRecord,
   StockTransferStatus,
@@ -11,6 +15,7 @@ import {
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
+  syncChangedProductsStrict,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 
@@ -291,19 +296,27 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
 
     try {
       let workingProducts = products.map(product => ({ ...product }));
+      const originalInventory = await fetchLocationInventoryFromDB();
+      let workingInventory = originalInventory.map(row => ({ ...row }));
       const ledgerEntries = [];
       const actorName = currentUser?.name || 'System';
 
       if (editingRecord?.status === 'Completed') {
+        const rollbackSource = resolveLocationRecord(editingRecord.locationFrom) || sourceLocationRecord;
+        const rollbackDestination = resolveLocationRecord(editingRecord.locationTo) || destinationLocationRecord;
         const rollback = simulateStockTransfer({
           transfer: editingRecord,
           direction: -1,
           products: workingProducts,
+          inventoryRows: workingInventory,
+          locationFromId: rollbackSource.id,
+          locationToId: rollbackDestination.id,
           generateId,
           actorName,
           notePrefix: 'Edit rollback',
         });
         workingProducts = rollback.productsAfter;
+        workingInventory = rollback.inventoryAfter;
         ledgerEntries.push(...rollback.ledgerEntries);
       }
 
@@ -312,10 +325,14 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
           transfer: nextRecord,
           direction: 1,
           products: workingProducts,
+          inventoryRows: workingInventory,
+          locationFromId: sourceLocationRecord.id,
+          locationToId: destinationLocationRecord.id,
           generateId,
           actorName,
         });
         workingProducts = applied.productsAfter;
+        workingInventory = applied.inventoryAfter;
         ledgerEntries.push(...applied.ledgerEntries);
       }
 
@@ -323,6 +340,18 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       if (!ledgerSaved.ok) {
         const detail = ledgerSaved.error || `HTTP ${ledgerSaved.status || 0}`;
         throw new Error(`Unable to save stock ledger entries in Postgres. ${detail}`);
+      }
+
+      const productsSaved = await syncChangedProductsStrict(workingProducts, products);
+      if (!productsSaved.ok) {
+        const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
+        throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
+      }
+
+      const inventorySaved = await syncChangedLocationInventoryStrict(workingInventory, originalInventory);
+      if (!inventorySaved.ok) {
+        const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+        throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
       }
 
       const mergedTransfers = editingRecord

@@ -44,6 +44,7 @@ import Discounts from '@/components/pricing/Discounts';
 import ImportSales from '@/components/sales/ImportSales';
 import ListStockTransfers from '@/components/stock/ListStockTransfers';
 import AddStockTransfer from '@/components/stock/AddStockTransfer';
+import SeedLocationStock from '@/components/stock/SeedLocationStock';
 import ListStockAdjustments from '@/components/stock/ListStockAdjustments';
 import AddStockAdjustment from '@/components/stock/AddStockAdjustment';
 import Orders from '@/components/orders/Orders';
@@ -266,6 +267,7 @@ const AppContent: React.FC = () => {
     { label: 'Add Sale', page: 'add-sale' },
     { label: 'List Orders', page: 'list-orders' },
     { label: 'Add Order', page: 'add-order' },
+    { label: 'Seed Location Stock', page: 'seed-location-stock' },
     { label: 'Shipments', page: 'shipments' },
     { label: 'Discounts', page: 'discounts' },
     { label: 'Expenses', page: 'list-expenses' },
@@ -612,6 +614,9 @@ const AppContent: React.FC = () => {
     hasRolePermission('Stock Transfer', 'Add stock transfer') ||
     hasRolePermission('Stock Transfer', 'Edit stock transfer') ||
     canManageLegacyStockOperations;
+  const canSeedLocationStock =
+    hasRolePermission('Stock Transfer', 'Seed location stock') ||
+    canManageStockTransfers;
   const canViewStockAdjustments =
     hasRolePermission('Stock Adjustment', 'View all stock adjustments') ||
     hasRolePermission('Stock Adjustment', 'View own stock adjustments') ||
@@ -1013,6 +1018,10 @@ const AppContent: React.FC = () => {
         if (!settings.enableStockTransfers) return renderModuleDisabled('Stock Transfers');
         if (!canManageStockTransfers) return renderAccessDenied('Stock Transfers');
         return <AddStockTransfer onNavigate={setCurrentPage} />;
+      case 'seed-location-stock':
+        if (!settings.enableStockTransfers) return renderModuleDisabled('Stock Transfers');
+        if (!canSeedLocationStock) return renderAccessDenied('Stock Seed');
+        return <SeedLocationStock onNavigate={setCurrentPage} />;
       case 'list-stock-adjustments':
         if (!settings.enableStockAdjustments) return renderModuleDisabled('Stock Adjustments');
         if (!canViewStockAdjustments) return renderAccessDenied('Stock Adjustments');

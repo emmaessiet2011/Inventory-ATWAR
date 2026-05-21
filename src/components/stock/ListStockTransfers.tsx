@@ -15,6 +15,7 @@ import {
   bootstrapStockTransfersFromDB,
   readStockTransfers,
   simulateStockTransfer,
+  syncChangedProductsStrict,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 
@@ -267,6 +268,10 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         const ledgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
         if (!ledgerSaved) {
           throw new Error('Unable to persist rollback ledger entries in Postgres.');
+        }
+        const productsSaved = await syncChangedProductsStrict(nextProducts, products);
+        if (!productsSaved.ok) {
+          throw new Error(productsSaved.error || 'Unable to save product stock changes in Postgres.');
         }
       }
 

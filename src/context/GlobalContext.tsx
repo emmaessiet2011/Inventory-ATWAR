@@ -63,10 +63,6 @@ import {
   syncStockDeltaStrict,
   fetchDedicated,
 } from '../utils/apiClient';
-import {
-  fetchDropdownCollections,
-  isDropdownSyncEnabled,
-} from '../utils/dropdownSync';
 import { getSellingPriceGroupProductRules } from '../utils/sellingPriceGroups';
 import type { ProductPackagingType } from '../utils/productPackaging';
 
@@ -113,6 +109,8 @@ export interface Product {
   brand: string;
   tax: string;                    // e.g. '--' or 'VAT@5%'
   businessLocation: string;
+  availableLocationIds?: string[];
+  availableLocations?: string[];
   unitPurchasePrice: number;
   sellingPrice: number;
   stock: number;
@@ -2589,7 +2587,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   // Hard-lock business state to DB/API as the only source of truth.
   // Local business-data hydration/writes are intentionally disabled.
-  const dbSourceOfTruth = true;
   const testRuntime = String(import.meta.env.MODE || '').trim().toLowerCase() === 'test';
   const liveSyncRuntime = isLiveSyncEnabled() && !testRuntime;
 
@@ -2864,9 +2861,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const coreSyncReadyRef = useRef(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error' | 'synced'>('idle');
-  const dropdownSyncEnabled = isDropdownSyncEnabled();
-  const dropdownSyncReadyRef = useRef(false);
-  const dropdownSyncApplyingRemoteRef = useRef(false);
   const customerLedgerCarryRef = useRef<Record<string, { due: number; advance: number }>>({});
   const fieldPaymentsCacheRef = useRef<any[]>([]);
 
@@ -3329,153 +3323,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => window.clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (!dropdownSyncEnabled) {
-      dropdownSyncReadyRef.current = true;
-      return;
-    }
-    if (isLiveSyncEnabled() && !hasValidAuthToken()) {
-      dropdownSyncReadyRef.current = false;
-      return;
-    }
-
-    let cancelled = false;
-    const keys = [
-      'roles',
-      'commissionAgents',
-      'printers',
-      'invoiceSchemes',
-      'invoiceLayouts',
-      'barcodeSettings',
-      'customerGroups',
-      'warranties',
-      'productVariations',
-      'sellingPriceGroups',
-      'discounts',
-      'expenseCategories',
-    ];
-
-    const bootstrap = async () => {
-      const remote = await fetchDropdownCollections(keys);
-      if (cancelled) return;
-
-      const hasRemoteKey = (key: string): boolean => Object.prototype.hasOwnProperty.call(remote, key);
-      const getRows = (key: string) => (Array.isArray(remote[key]) ? remote[key] : []);
-
-      const remoteRoles = getRows('roles');
-      if (hasRemoteKey('roles')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setRoles((remoteRoles as Role[]).map(normalizeRoleRecord));
-      }
-
-      const remoteAgents = getRows('commissionAgents');
-      if (hasRemoteKey('commissionAgents')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setCommissionAgents((remoteAgents as CommissionAgent[]).map(normalizeCommissionAgentRecord));
-      }
-
-      const remotePrinters = getRows('printers');
-      if (hasRemoteKey('printers')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setPrinters((remotePrinters as ReceiptPrinter[])
-          .map((row, index) => normalizePrinterRecord(row, initialPrinters[index] || initialPrinters[0]))
-          .filter((row) => row.id && row.name));
-      }
-
-      const remoteInvoiceSchemes = getRows('invoiceSchemes');
-      if (hasRemoteKey('invoiceSchemes')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setInvoiceSchemes(
-          normalizeInvoiceSchemes(
-            (remoteInvoiceSchemes as InvoiceScheme[])
-              .map(normalizeInvoiceSchemeRecord)
-              .filter((row) => row.id && row.name)
-              .filter((row) => !isRemovedInvoiceScheme(row)),
-          ),
-        );
-      }
-
-      const remoteInvoiceLayouts = getRows('invoiceLayouts');
-      if (hasRemoteKey('invoiceLayouts')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setInvoiceLayouts(
-          normalizeInvoiceLayouts(
-            (remoteInvoiceLayouts as InvoiceLayout[])
-              .map(normalizeInvoiceLayoutRecord)
-              .filter((row) => row.id && row.name)
-              .filter((row) => !isRemovedInvoiceLayout(row)),
-          ),
-        );
-      }
-
-      const remoteBarcodeSettings = getRows('barcodeSettings');
-      if (hasRemoteKey('barcodeSettings')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        const normalized = normalizeBarcodeSettings(
-          (remoteBarcodeSettings as BarcodeStickerSetting[])
-            .map((row, index) => normalizeBarcodeSettingRecord(row, initialBarcodeSettings[index] || initialBarcodeSettings[0]))
-            .filter((row) => row.id && row.name)
-        );
-        setBarcodeSettings(normalized);
-      }
-
-      const remoteSellingPriceGroups = getRows('sellingPriceGroups');
-      const normalizedRemoteSellingPriceGroups = (remoteSellingPriceGroups as SellingPriceGroup[])
-        .map(normalizeSellingPriceGroupRecord);
-      if (hasRemoteKey('sellingPriceGroups')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setSellingPriceGroups(normalizedRemoteSellingPriceGroups);
-      }
-
-      const remoteCustomerGroups = getRows('customerGroups');
-      if (hasRemoteKey('customerGroups')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        const availablePriceGroups = hasRemoteKey('sellingPriceGroups')
-          ? normalizedRemoteSellingPriceGroups
-          : sellingPriceGroups;
-        setCustomerGroups((remoteCustomerGroups as CustomerGroup[]).map((group) =>
-          normalizeCustomerGroupRecord(group, availablePriceGroups),
-        ));
-      }
-
-      const remoteWarranties = getRows('warranties');
-      if (hasRemoteKey('warranties')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setWarranties(remoteWarranties as ProductWarranty[]);
-      }
-
-      const remoteProductVariations = getRows('productVariations');
-      if (hasRemoteKey('productVariations')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setProductVariations(remoteProductVariations as ProductVariation[]);
-      }
-
-      const remoteDiscounts = getRows('discounts');
-      if (hasRemoteKey('discounts')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setDiscounts((remoteDiscounts as Discount[]).map((row) => normalizeDiscountRecord(row)));
-      }
-
-      const remoteExpenseCategories = getRows('expenseCategories');
-      if (hasRemoteKey('expenseCategories')) {
-        dropdownSyncApplyingRemoteRef.current = true;
-        setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
-      }
-
-      if (!cancelled) {
-        queueMicrotask(() => {
-          dropdownSyncApplyingRemoteRef.current = false;
-          dropdownSyncReadyRef.current = true;
-        });
-      }
-    };
-
-    void bootstrap();
-    return () => {
-      cancelled = true;
-    };
-  }, [dropdownSyncEnabled, dbSourceOfTruth, currentUser?.id]);
 
   // ============================================================
   //  RUNTIME SETTINGS + AUTH SESSION STORAGE ONLY

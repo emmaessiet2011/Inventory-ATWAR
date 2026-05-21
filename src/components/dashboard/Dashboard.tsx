@@ -210,11 +210,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     const todayStr = new Date().toISOString().split('T')[0];
     return chequeReminderDismissedOn !== todayStr;
   });
-  const dismissChequePopup = () => {
+  const dismissChequePopup = async () => {
     const todayStr = new Date().toISOString().split('T')[0];
     setShowChequePopup(false);
     if (!currentUser?.id) return;
-    void updateCurrentUserPreferences({
+    await updateCurrentUserPreferences({
       dashboard: {
         ...dashboardPreferencesRaw,
         chequeReminderDismissedOn: todayStr,
@@ -249,12 +249,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       nextSticky.endDate === storedSticky.endDate &&
       nextSticky.preset === storedSticky.preset;
     if (stickyAlreadyPersisted) return;
-    void updateCurrentUserPreferences({
-      dashboard: {
-        ...dashboardPreferencesRaw,
-        sticky: nextSticky,
-      },
-    });
+    const persistStickyPreferences = async () => {
+      await updateCurrentUserPreferences({
+        dashboard: {
+          ...dashboardPreferencesRaw,
+          sticky: nextSticky,
+        },
+      });
+    };
+    void persistStickyPreferences();
   }, [
     locationFilter,
     startDate,
@@ -272,12 +275,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   useEffect(() => {
     if (!currentUser?.id) return;
     if (areSameViews(savedViews, storedViews)) return;
-    void updateCurrentUserPreferences({
-      dashboard: {
-        ...dashboardPreferencesRaw,
-        savedViews,
-      },
-    });
+    const persistSavedViews = async () => {
+      await updateCurrentUserPreferences({
+        dashboard: {
+          ...dashboardPreferencesRaw,
+          savedViews,
+        },
+      });
+    };
+    void persistSavedViews();
   }, [savedViews, storedViews, dashboardPreferencesRaw, updateCurrentUserPreferences, currentUser?.id]);
 
   const resetToRoleDefault = () => {
