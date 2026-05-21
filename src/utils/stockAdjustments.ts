@@ -48,6 +48,8 @@ export interface StockAdjustmentRecord {
 export interface StockLedgerEntry {
   id: string;
   productId: string;
+  productName?: string;
+  sku?: string;
   type: string;
   change: number;
   newQty: number;
@@ -326,6 +328,8 @@ export const simulateStockAdjustment = ({
     ledgerEntries.push({
       id: `STK-ADJ-${now}-${index}-${ledgerSeq += 1}`,
       productId: product.id,
+      productName: product.name || item.productName || '',
+      sku: product.sku || item.sku || '',
       type: direction === 1 ? 'Stock Adjustment' : 'Stock Adjustment Reversal',
       change: delta,
       newQty: usesProductStock ? product.stock : Number(inventory?.stock || 0),

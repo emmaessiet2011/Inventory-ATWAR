@@ -64,7 +64,7 @@ if (!stockTransfersText.includes('syncChangedProductsStrict')) {
 }
 
 // --- 2) Ensure API fetch path merges canonical row + meta ---
-if (!apiClientText.includes('return ({ ...row, ...(meta as Record<string, unknown>) } as T);')) {
+if (!apiClientText.includes('return ({ ...(meta as Record<string, unknown>), ...row } as T);')) {
   addFailure('[apiClient] apiFetchAll must merge DB row + meta snapshot to avoid field loss.');
 }
 

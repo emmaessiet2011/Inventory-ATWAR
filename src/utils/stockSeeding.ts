@@ -166,6 +166,8 @@ export const simulateSeedLocationStock = ({
       ledgerEntries.push({
         id: `STK-SEED-${now}-${index}-${ledgerSeq += 1}`,
         productId: source.id,
+        productName: source.name || item.productName || '',
+        sku: source.sku || item.sku || '',
         type: 'Opening Balance',
         change: delta,
         newQty: desiredQty,

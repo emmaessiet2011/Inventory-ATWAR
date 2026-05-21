@@ -111,7 +111,7 @@ export async function apiFetchAll<T>(resource: string): Promise<T[]> {
   return rows.map((row) => {
     const meta = row.meta;
     if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
-      return ({ ...row, ...(meta as Record<string, unknown>) } as T);
+      return ({ ...(meta as Record<string, unknown>), ...row } as T);
     }
     return row as T;
   });

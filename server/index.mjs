@@ -1907,14 +1907,24 @@ app.put('/api/sync/stock-ledger/:id', requireAuth, async (req, res) => {
   const id = String(req.params.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
   const raw = toObject(req.body);
-  const productId = String(raw.productId || '').trim();
+  let productId = String(raw.productId || '').trim();
   if (!productId) return res.status(400).json({ ok: false, error: 'productId is required' });
   try {
-    const productExists = await prisma.product.findUnique({ where: { id: productId }, select: { id: true, name: true, sku: true } });
+    const productExists = await prisma.product.findFirst({
+      where: {
+        OR: [
+          { id: productId },
+          ...(raw.sku ? [{ sku: { equals: String(raw.sku), mode: 'insensitive' } }] : []),
+          ...(raw.productName ? [{ name: { equals: String(raw.productName), mode: 'insensitive' } }] : []),
+        ],
+      },
+      select: { id: true, name: true, sku: true },
+    });
     if (!productExists) {
       const label = [raw.sku, raw.productName, raw.ref].filter(Boolean).join(' / ') || productId;
       return res.status(400).json({ ok: false, error: `Product not found for stock ledger entry: ${label}` });
     }
+    productId = productExists.id;
     const [saleId, locationId] = await Promise.all([
       resolveLookupId(prisma.sale, raw.saleId || raw.parentSaleId, [raw.invoiceNo, raw.ref], ['invoiceNo']),
       resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),

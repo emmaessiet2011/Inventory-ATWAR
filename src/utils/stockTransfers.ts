@@ -40,6 +40,8 @@ export interface StockTransferRecord {
 export interface StockLedgerEntry {
   id: string;
   productId: string;
+  productName?: string;
+  sku?: string;
   type: string;
   change: number;
   newQty: number;
@@ -130,6 +132,8 @@ const normalizeLedgerRows = (raw: unknown): StockLedgerEntry[] => {
     .map((entry: any) => ({
       id: String(entry?.id || ''),
       productId: String(entry?.productId || ''),
+      productName: String(entry?.productName || ''),
+      sku: String(entry?.sku || ''),
       type: String(entry?.type || ''),
       change: round3(Number(entry?.change || 0)),
       newQty: round3(Number(entry?.newQty || 0)),
@@ -424,6 +428,8 @@ export const simulateStockTransfer = ({
     ledgerEntries.push({
       id: `STK-TR-${now}-${index}-${ledgerSeq += 1}`,
       productId: source.id,
+      productName: source.name || item.productName || '',
+      sku: source.sku || item.sku || '',
       type: outType,
       change: deltaOut,
       newQty: sourceUsesProductStock ? source.stock : Number(sourceInventory?.stock || 0),
@@ -436,6 +442,8 @@ export const simulateStockTransfer = ({
     ledgerEntries.push({
       id: `STK-TR-${now}-${index}-${ledgerSeq += 1}`,
       productId: source.id,
+      productName: source.name || item.productName || '',
+      sku: source.sku || item.sku || '',
       type: inType,
       change: deltaIn,
       newQty: targetUsesProductStock ? source.stock : Number(targetInventory?.stock || 0),
