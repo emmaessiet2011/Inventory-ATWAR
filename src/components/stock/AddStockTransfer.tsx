@@ -4,6 +4,8 @@ import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import {
   fetchLocationInventoryFromDB,
+  inventoryKey,
+  ProductLocationInventory,
   syncChangedLocationInventoryStrict,
 } from '@/utils/stockLocationInventory';
 import {
@@ -28,6 +30,25 @@ const STATUS_OPTIONS: StockTransferStatus[] = ['Pending', 'In Transit', 'Complet
 
 const normalize = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
+const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string }) => {
+  const id = normalize(location.id);
+  const joined = normalize(`${location.id || ''} ${location.name || ''} ${location.landmark || ''}`);
+  return (
+    id === 'bl0001' ||
+    joined.includes('atwar al mustaqbal') ||
+    joined.includes('cr:1450968') ||
+    joined.includes('cr 1450968') ||
+    joined.includes('1450968')
+  );
+};
+const productLocationIsWarehouse = (product: Product, locations: Array<{ id?: string; name?: string; landmark?: string }>) => {
+  const productLocation = normalize(product.businessLocation);
+  if (!productLocation) return false;
+  return locations.some((location) => (
+    isWarehouseLocation(location) &&
+    (normalize(location.id) === productLocation || normalize(location.name) === productLocation)
+  ));
+};
 
 const getNowLocalDateTime = () => {
   const now = new Date();
@@ -64,6 +85,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
   const [notes, setNotes] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const [rows, setRows] = useState<StockTransferItem[]>([]);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const activeLocations = useMemo(
     () => locations.filter(location => location.isActive !== false),
@@ -147,10 +169,49 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     };
   }, [defaultUnitLabel, locations, editTransferId]);
 
-  const sourceProducts = useMemo(
-    () => products.filter(product => !locationFrom || resolveLocationIdentity(product.businessLocation) === resolveLocationIdentity(locationFrom)),
-    [products, locationFrom, locations],
-  );
+  useEffect(() => {
+    let isMounted = true;
+    fetchLocationInventoryFromDB()
+      .then((records) => { if (isMounted) setLocationInventory(records); })
+      .catch(() => { if (isMounted) setLocationInventory([]); });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const sourceProducts = useMemo(() => {
+    if (!locationFrom) {
+      const bySku = new Map<string, Product>();
+      products.forEach((product) => {
+        const skuKey = normalize(product.sku);
+        if (!skuKey) return;
+        const existing = bySku.get(skuKey);
+        if (!existing || productLocationIsWarehouse(product, locations)) bySku.set(skuKey, product);
+      });
+      return Array.from(bySku.values());
+    }
+    const sourceLocation = resolveLocationRecord(locationFrom);
+    if (!sourceLocation) return [];
+    const sourceIsWarehouse = isWarehouseLocation(sourceLocation);
+    if (sourceIsWarehouse) {
+      return products.filter(product => productLocationIsWarehouse(product, locations));
+    }
+    const productById = new Map(products.map((product) => [product.id, product]));
+    return locationInventory
+      .filter((record) => normalize(record.locationId) === normalize(sourceLocation.id) && Number(record.stock || 0) > 0)
+      .map((record) => productById.get(record.productId))
+      .filter((product): product is Product => !!product);
+  }, [products, locationFrom, locations, locationInventory]);
+
+  const getAvailableStock = (product: Product) => {
+    const sourceLocation = resolveLocationRecord(locationFrom);
+    if (!sourceLocation) return 0;
+    if (isWarehouseLocation(sourceLocation)) return round3(Number(product.stock || 0));
+    const match = locationInventory.find((record) => (
+      inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, sourceLocation.id)
+    ));
+    return round3(Number(match?.stock || 0));
+  };
 
   const filteredProducts = useMemo(() => {
     const query = normalize(productSearch);
@@ -175,9 +236,10 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
   const handleAddProduct = (product: Product) => {
     setRows((prev) => {
       const existing = prev.find(row => row.productId === product.id);
+      const available = getAvailableStock(product);
       if (existing) {
         return prev.map((row) => row.productId === product.id
-          ? { ...row, qty: round3(Number(row.qty || 0) + 1) }
+          ? { ...row, qty: Math.min(available, round3(Number(row.qty || 0) + 1)) }
           : row);
       }
       return [
@@ -186,7 +248,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
           productId: product.id,
           productName: product.name,
           sku: product.sku,
-          qty: 1,
+          qty: Math.min(1, available),
           unit: product.unit || defaultUnitLabel,
           unitCost: round3(Number(product.unitPurchasePrice || 0)),
         },
@@ -203,9 +265,11 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     const parsed = round3(Number(qty));
     setRows((prev) => prev.map((row) => {
       if (row.productId !== productId) return row;
+      const product = products.find((record) => record.id === productId);
+      const available = product ? getAvailableStock(product) : Number.POSITIVE_INFINITY;
       return {
         ...row,
-        qty: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0,
+        qty: Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, available) : 0,
       };
     }));
   };
@@ -250,6 +314,19 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     }
     if (cleanRows.length === 0) {
       addNotification({ title: 'Validation Error', message: 'Add at least one product with quantity greater than zero.', type: 'error' });
+      return;
+    }
+    const overRequested = cleanRows.find((row) => {
+      const product = products.find((record) => record.id === row.productId);
+      if (!product) return false;
+      return row.qty > getAvailableStock(product) + 0.0001;
+    });
+    if (overRequested) {
+      addNotification({
+        title: 'Validation Error',
+        message: `${overRequested.productName} quantity is higher than stock available at ${resolveLocationName(locationFrom)}.`,
+        type: 'error',
+      });
       return;
     }
 
@@ -508,20 +585,24 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
           />
           {locationFrom && productSearch.trim() && filteredProducts.length > 0 && (
             <div className="absolute left-0 right-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg max-h-64 overflow-y-auto">
-              {filteredProducts.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleAddProduct(product)}
-                  className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-slate-100 last:border-0 transition-colors"
-                >
-                  <div className="text-sm font-bold text-slate-800">{product.name}</div>
-                  <div className="text-[11px] text-slate-500">
-                    SKU: {product.sku} | Stock: {Number(product.stock || 0).toFixed(3)} {product.unit || defaultUnitLabel}
-                  </div>
-                </button>
-              ))}
+              {filteredProducts.map((product) => {
+                const available = getAvailableStock(product);
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleAddProduct(product)}
+                    disabled={available <= 0}
+                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-slate-100 last:border-0 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="text-sm font-bold text-slate-800">{product.name}</div>
+                    <div className="text-[11px] text-slate-500">
+                      SKU: {product.sku} | Available at {resolveLocationName(locationFrom)}: {available.toFixed(3)} {product.unit || defaultUnitLabel}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -543,7 +624,9 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
                   <tr key={row.productId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-800">{row.productName}</div>
-                      <div className="text-[11px] text-slate-500">SKU: {row.sku} {row.unit ? `| ${row.unit}` : ''}</div>
+                      <div className="text-[11px] text-slate-500">
+                        SKU: {row.sku} {row.unit ? `| ${row.unit}` : ''} | Available: {getAvailableStock(products.find((product) => product.id === row.productId) || ({ id: row.productId, name: row.productName, sku: row.sku, stock: 0, unit: row.unit || defaultUnitLabel } as Product)).toFixed(3)}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <input

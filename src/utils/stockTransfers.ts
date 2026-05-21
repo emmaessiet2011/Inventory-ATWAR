@@ -82,6 +82,15 @@ const normalizeStringList = (value: unknown): string => (
     ? value.map((item) => normalize(item)).filter(Boolean).sort().join('|')
     : ''
 );
+const productLooksWarehouseMaster = (product: Product): boolean => {
+  const joined = normalize(`${product.id || ''} ${product.businessLocation || ''}`);
+  return (
+    joined.includes('bl0001') ||
+    joined.includes('warehouse') ||
+    joined.includes('atwar al mustaqbal') ||
+    joined.includes('1450968')
+  );
+};
 const toIsoDate = (value: string): string => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
@@ -325,17 +334,21 @@ export const simulateStockTransfer = ({
 
   const getSourceProduct = (item: StockTransferItem): Product => {
     const sourceKey = skuLocationKey(item.sku, transfer.locationFrom);
+    const skuMatches = skuToProductIds.get(normalize(item.sku)) || [];
+    const warehouseMatch = skuMatches
+      .map((id) => productById.get(id))
+      .find((product): product is Product => !!product && productLooksWarehouseMaster(product));
+    if (warehouseMatch) return warehouseMatch;
+    const idMatch = item.productId ? productById.get(item.productId) : undefined;
+    if (idMatch) return idMatch;
     if (duplicateSkuLocKeys.has(sourceKey)) {
       throw new Error(`Duplicate product rows found for SKU "${item.sku}" at "${transfer.locationFrom}". Merge duplicates before transfer.`);
     }
-    const idMatch = item.productId ? productById.get(item.productId) : undefined;
-    if (idMatch) return idMatch;
     const fallbackId = skuLocToId.get(sourceKey);
     if (fallbackId) {
       const fallback = productById.get(fallbackId);
       if (fallback) return fallback;
     }
-    const skuMatches = skuToProductIds.get(normalize(item.sku)) || [];
     if (skuMatches.length === 1) {
       const match = productById.get(skuMatches[0]);
       if (match) return match;
@@ -404,10 +417,6 @@ export const simulateStockTransfer = ({
       sourceInventory.stock = Math.max(0, sourceNext);
     }
 
-    const targetProductMatchId = skuLocToId.get(skuLocationKey(item.sku, transfer.locationTo));
-    if (targetProductMatchId && targetProductMatchId !== source.id) {
-      throw new Error(`Duplicate product row exists for SKU "${item.sku}" at "${transfer.locationTo}". Merge it into the main product before transfer.`);
-    }
     const targetUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationTo) || !locationToId;
     if (direction > 0) {
       ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo);
