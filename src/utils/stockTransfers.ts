@@ -77,6 +77,11 @@ const STOCK_LEDGER_UPDATED_EVENT = 'app:stock-ledger-updated';
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+const normalizeStringList = (value: unknown): string => (
+  Array.isArray(value)
+    ? value.map((item) => normalize(item)).filter(Boolean).sort().join('|')
+    : ''
+);
 const toIsoDate = (value: string): string => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
@@ -486,7 +491,9 @@ export const syncChangedProductsStrict = async (
       round3(Number(previous.stock || 0)) !== round3(Number(product.stock || 0)) ||
       normalize(previous.businessLocation) !== normalize(product.businessLocation) ||
       normalize(previous.sku) !== normalize(product.sku) ||
-      normalize(previous.name) !== normalize(product.name)
+      normalize(previous.name) !== normalize(product.name) ||
+      normalizeStringList(previous.availableLocationIds) !== normalizeStringList(product.availableLocationIds) ||
+      normalizeStringList(previous.availableLocations) !== normalizeStringList(product.availableLocations)
     );
   });
 
