@@ -187,6 +187,7 @@ const PurchaseRequisition: React.FC<PurchaseRequisitionProps> = ({ onNavigate })
     }
     const rows: RequisitionItemForm[] = products
       .filter(p =>
+        String(p.type || '').trim().toLowerCase() !== 'combo' && 
         normalizeText(p.businessLocation || '') === normalizeText(form.location || '') &&
         (!form.brand || p.brand === form.brand) &&
         (!form.category || p.category === form.category)

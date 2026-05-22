@@ -6,6 +6,7 @@ import {
   Minus, PlusCircle, Calendar, FileText, XCircle,
   Banknote, Wallet, X, ShoppingCart, Undo2, Monitor
 } from 'lucide-react';
+import { fetchLocationInventoryFromDB, ProductLocationInventory, calculateAvailableStock } from '@/utils/stockLocationInventory';
 import { useGlobalContext, Product as GlobalProduct } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { findBestApplicableDiscount, formatDiscountAmount, resolveAppliedDiscount } from '@/utils/discountRules';
@@ -109,6 +110,17 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isStockHistoryOpen, setIsStockHistoryOpen] = useState(false);
   const [stockHistoryProduct, setStockHistoryProduct] = useState<GlobalProduct | null>(null);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchLocationInventoryFromDB().then((records) => {
+      if (isMounted) setLocationInventory(records);
+    }).catch(() => {
+      if (isMounted) setLocationInventory([]);
+    });
+    return () => { isMounted = false; };
+  }, []);
 
   const [discount, setDiscount] = useState<number>(0);
   const [isDiscountManuallyOverridden, setIsDiscountManuallyOverridden] = useState(false);
@@ -315,7 +327,9 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
 
   const canAdjustProductQty = (product: GlobalProduct, desiredQty: number): boolean => {
     if (settings.allowOverselling) return true;
-    return desiredQty <= Number(product.stock || 0);
+    if (!selectedLocation?.id) return false;
+    const available = calculateAvailableStock(product as any, selectedLocation.id, locationInventory);
+    return desiredQty <= available;
   };
 
   const openStockHistory = (product: GlobalProduct, event?: React.MouseEvent) => {
@@ -332,7 +346,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       if (!canAdjustProductQty(product, nextQty)) {
         addNotification({
           title: 'Insufficient stock',
-          message: `${product.name} stock is ${Number(product.stock || 0).toFixed(3)}.`,
+          message: `${product.name} stock is ${selectedLocation ? calculateAvailableStock(product as any, selectedLocation.id, locationInventory) : 0}.`,
           type: 'error',
         });
         return prev;
@@ -355,7 +369,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       if (!canAdjustProductQty(item, newQty)) {
         addNotification({
           title: 'Insufficient stock',
-          message: `${item.name} stock is ${Number(item.stock || 0).toFixed(3)}.`,
+          message: `${item.name} stock is ${selectedLocation ? calculateAvailableStock(item as any, selectedLocation.id, locationInventory) : 0}.`,
           type: 'error',
         });
         return item;
@@ -1418,7 +1432,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                         className="absolute top-2 right-2 bg-slate-900/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full hover:bg-slate-800"
                         title="Open stock history"
                       >
-                        Stock: {product.stock}
+                        Stock: {selectedLocation ? calculateAvailableStock(product as any, selectedLocation.id, locationInventory) : 0}
                       </button>
                     </div>
                     <div className="p-3 flex flex-col flex-1">

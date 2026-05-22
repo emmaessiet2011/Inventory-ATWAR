@@ -79,3 +79,38 @@ export const productVisibleToUser = (
 
   return true;
 };
+
+export const isLocationAccessible = (
+  recordLocationName: string,
+  user: AppUser | null,
+  locations: Location[]
+): boolean => {
+  if (!user) return true;
+  if (normalize(user.role) === 'admin') return true;
+
+  const accessLocationIds = Array.isArray(user.accessLocations)
+    ? user.accessLocations.map(normalize).filter(Boolean)
+    : [];
+
+  if (accessLocationIds.some(value => value === 'all locations' || value === 'all')) {
+    return true;
+  }
+
+  const normalizedRecordLoc = normalize(recordLocationName);
+  if (!normalizedRecordLoc) return true; // Global or unassigned
+
+  if (normalize(user.businessLocation) === normalizedRecordLoc) {
+    return true;
+  }
+
+  const matchingLoc = locations.find(loc => normalize(loc.name) === normalizedRecordLoc);
+  
+  if (matchingLoc) {
+    if (accessLocationIds.includes(normalize(matchingLoc.id))) return true;
+    if (accessLocationIds.includes(normalize(matchingLoc.name))) return true;
+  } else {
+    if (accessLocationIds.includes(normalizedRecordLoc)) return true;
+  }
+
+  return false;
+};

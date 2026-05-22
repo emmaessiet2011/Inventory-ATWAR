@@ -148,6 +148,7 @@ const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => 
     return catalogProducts
       .filter((product) => !selectedIds.has(product.id))
       .filter((product) => {
+        if (String(product.type || '').trim().toLowerCase() === 'combo') return false;
         if (!query) return true;
         return normalize(product.name).includes(query) || normalize(product.sku).includes(query);
       })

@@ -89,6 +89,27 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
   const [totalRecovered, setTotalRecovered] = useState('0');
   const [productSearch, setProductSearch] = useState('');
   const [rows, setRows] = useState<StockAdjustmentItem[]>([]);
+  const [locationInventory, setLocationInventory] = useState<ProductLocationInventory[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchLocationInventoryFromDB().then((records) => {
+      if (isMounted) setLocationInventory(records);
+    }).catch(() => {
+      if (isMounted) setLocationInventory([]);
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const getAvailableStock = (productId: string, locName: string) => {
+    const locId = locations.find(l => normalize(l.name) === normalize(locName))?.id;
+    if (!locId) return 0;
+    const match = locationInventory.find((record) => (
+      inventoryKey(record.productId, record.locationId) === inventoryKey(productId, locId)
+    ));
+    return round3(Number(match?.stock || 0));
+  };
+
   const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
   const [editingStatus, setEditingStatus] = useState<StockAdjustmentStatus>('Pending');
   const [isEditMode, setIsEditMode] = useState(false);
@@ -279,7 +300,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     const q = normalize(productSearch);
     if (!q) return locationProducts.slice(0, 20);
     return locationProducts
-      .filter((product) => normalize(product.name).includes(q) || normalize(product.sku).includes(q))
+      .filter((product) => String(product.type || '').trim().toLowerCase() !== 'combo' && (normalize(product.name).includes(q) || normalize(product.sku).includes(q)))
       .slice(0, 20);
   }, [locationProducts, productSearch]);
 
@@ -308,7 +329,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
           unit: product.unit || '',
           quantity: 0,
           unitCost: round3(Number(product.unitPurchasePrice || 0)),
-          currentStockBefore: round3(Number(product.stock || 0)),
+          currentStockBefore: getAvailableStock(product.id, location),
         },
       ];
     });
@@ -371,7 +392,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
             productName: exact.name,
             sku: exact.sku,
             unit: exact.unit || row.unit,
-            currentStockBefore: round3(Number(exact.stock || 0)),
+            currentStockBefore: getAvailableStock(exact.id, nextLocation),
           };
         }
         const bySku = products.find(
@@ -386,7 +407,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
           productName: bySku.name,
           sku: bySku.sku,
           unit: bySku.unit || row.unit,
-          currentStockBefore: round3(Number(bySku.stock || 0)),
+          currentStockBefore: getAvailableStock(bySku.id, nextLocation),
         };
       })
       .filter((row): row is StockAdjustmentItem => !!row);
@@ -448,7 +469,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
           ...row,
           quantity: round3(Number(row.quantity || 0)),
           unitCost: round3(Number(row.unitCost || 0)),
-          currentStockBefore: round3(Number(latestProduct?.stock ?? row.currentStockBefore ?? 0)),
+          currentStockBefore: latestProduct ? getAvailableStock(latestProduct.id, location) : row.currentStockBefore,
         };
       })
       .filter((row) => row.productId && row.quantity !== 0);
@@ -472,7 +493,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
             productName: exact.name,
             sku: exact.sku,
             unit: exact.unit || row.unit,
-            currentStockBefore: round3(Number(exact.stock || 0)),
+            currentStockBefore: getAvailableStock(exact.id, location),
           };
         }
         const bySku = products.find(
@@ -487,7 +508,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
           productName: bySku.name,
           sku: bySku.sku,
           unit: bySku.unit || row.unit,
-          currentStockBefore: round3(Number(bySku.stock || 0)),
+          currentStockBefore: getAvailableStock(bySku.id, location),
         };
       })
       .filter((row): row is StockAdjustmentItem => !!row);

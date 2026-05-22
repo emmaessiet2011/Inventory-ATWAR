@@ -84,3 +84,28 @@ export const syncChangedLocationInventoryStrict = async (
 
   return { ok: true, status: 200 };
 };
+
+export const calculateAvailableStock = (
+  product: { id: string; type?: string; comboItems?: { productId: string; qty: number }[] },
+  locationId: string,
+  locationInventory: ProductLocationInventory[]
+): number => {
+  if (!locationId) return 0;
+
+  if (String(product.type || '').trim().toLowerCase() === 'combo') {
+    if (!product.comboItems || product.comboItems.length === 0) return 0;
+
+    let maxCombos = Infinity;
+    for (const item of product.comboItems) {
+      if (!item.productId || !item.qty) continue;
+      const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(item.productId, locationId));
+      const physicalStock = Number(match?.stock || 0);
+      const possibleCombos = Math.floor(physicalStock / item.qty);
+      if (possibleCombos < maxCombos) maxCombos = possibleCombos;
+    }
+    return maxCombos === Infinity ? 0 : Math.max(0, maxCombos);
+  } else {
+    const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locationId));
+    return round3(Number(match?.stock || 0));
+  }
+};

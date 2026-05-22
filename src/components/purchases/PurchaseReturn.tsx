@@ -290,7 +290,7 @@ const PurchaseReturn: React.FC<PurchaseReturnProps> = ({ prefillPurchaseId }) =>
   const productMatches = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
     if (!q) return [];
-    return products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 8);
+    return products.filter(p => String(p.type || '').trim().toLowerCase() !== 'combo' && (p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))).slice(0, 8);
   }, [productSearch, products]);
 
   const totals = useMemo(() => {

@@ -196,8 +196,9 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     if (!query) return sourceProducts.slice(0, 20);
     return sourceProducts
       .filter((product) =>
+        String(product.type || '').trim().toLowerCase() !== 'combo' && (
         normalize(product.name).includes(query) ||
-        normalize(product.sku).includes(query),
+        normalize(product.sku).includes(query)),
       )
       .slice(0, 20);
   }, [sourceProducts, productSearch]);
@@ -356,7 +357,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       const ledgerEntries = [];
       const actorName = currentUser?.name || 'System';
 
-      if (editingRecord?.status === 'Completed') {
+      if (editingRecord) {
         const rollbackSource = resolveLocationRecord(editingRecord.locationFrom) || sourceLocationRecord;
         const rollbackDestination = resolveLocationRecord(editingRecord.locationTo) || destinationLocationRecord;
         const rollback = simulateStockTransfer({
@@ -375,7 +376,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         ledgerEntries.push(...rollback.ledgerEntries);
       }
 
-      if (nextRecord.status === 'Completed') {
+      {
         const applied = simulateStockTransfer({
           transfer: nextRecord,
           direction: 1,

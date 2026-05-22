@@ -367,6 +367,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return ms >= startMs && ms <= endMs;
   };
   const matchesLocation = (value?: string) => {
+    if (!isLocationAccessible(value || '', currentUser, locations)) return false;
+
     if (selectedLocationKey === 'all') return true;
     const key = toKey(value);
     if (!key) return false;

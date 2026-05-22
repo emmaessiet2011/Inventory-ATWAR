@@ -19,6 +19,7 @@ import {
   fetchLocationInventoryFromDB,
   inventoryKey,
   ProductLocationInventory,
+  calculateAvailableStock,
 } from '@/utils/stockLocationInventory';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
@@ -203,11 +204,14 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     [locationInventory],
   );
   const getProductStockForList = (product: Product): number => {
-    if (!selectedProductListLocations.length) return Number(product.stock || 0);
+    const locationsToUse = selectedProductListLocations.length > 0 
+      ? selectedProductListLocations 
+      : allowedProductListLocations;
 
-    const selectedStock = selectedProductListLocations.reduce((sum, location) => {
-      const row = locationInventoryByKey.get(inventoryKey(product.id, location.id));
-      return sum + Number(row?.stock || 0);
+    if (!locationsToUse.length) return Number(product.stock || 0);
+
+    const selectedStock = locationsToUse.reduce((sum, location) => {
+      return sum + calculateAvailableStock(product as any, location.id, locationInventory);
     }, 0);
 
     return Number(selectedStock.toFixed(3));

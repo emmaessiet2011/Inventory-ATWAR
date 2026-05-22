@@ -350,13 +350,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
       };
     };
 
-    const rows: StockReportItem[] = products.map((product) => buildRow(
-      product,
-      product.businessLocation || '',
-      Number(product.stock) || 0,
-      Number(product.unitPurchasePrice) || 0,
-      product.id,
-    ));
+    const rows: StockReportItem[] = [];
 
     locationInventory.forEach((inventory) => {
       const product = productById.get(inventory.productId);

@@ -350,7 +350,7 @@ const PurchaseOrder: React.FC<PurchaseOrderProps> = ({ onNavigate, prefillRequis
     const q = productQuickSearch.trim().toLowerCase();
     if (!q) return [];
     return products
-      .filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+      .filter(p => String(p.type || '').trim().toLowerCase() !== 'combo' && (p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)))
       .slice(0, 8);
   }, [products, productQuickSearch]);
 

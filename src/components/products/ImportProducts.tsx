@@ -135,7 +135,7 @@ const columns: ColumnDefinition[] = [
   { key: 'expiryPeriodUnit', name: 'Expiry Period Unit', required: false, instruction: 'days or months', aliases: [] },
   { key: 'applicableTax', name: 'Applicable Tax', required: false, instruction: 'Name of the Tax Rate', aliases: [] },
   { key: 'sellingPriceTaxType', name: 'Selling Price Tax Type', required: true, instruction: 'inclusive or exclusive', aliases: [] },
-  { key: 'productType', name: 'Product Type', required: true, instruction: 'single or variable', aliases: [] },
+  { key: 'productType', name: 'Product Type', required: true, instruction: 'single', aliases: [] },
   { key: 'variationName', name: 'Variation Name', required: 'conditional', instruction: 'Name of the variation (Ex: Size, Color)', aliases: [] },
   { key: 'variationValues', name: 'Variation Values', required: 'conditional', instruction: 'Values separated by |', aliases: [] },
   { key: 'variationSkus', name: 'Variation SKUs', required: false, instruction: 'SKUs of each variation separated by |', aliases: [] },
@@ -427,8 +427,8 @@ const ImportProducts: React.FC = () => {
 
         let type: 'Single' | 'Variable' | 'Combo' | '' = '';
         if (productTypeRaw === 'single') type = 'Single';
-        else if (productTypeRaw === 'variable') type = 'Variable';
-        else if (productTypeRaw === 'combo') type = 'Combo';
+        // Variable/Combo completely blocked from import
+        else if (productTypeRaw === 'variable' || productTypeRaw === 'combo') type = '';
 
         let unitPurchasePrice = Number.isFinite(purchaseExcludingTax) ? purchaseExcludingTax : 0;
         if (unitPurchasePrice <= 0 && Number.isFinite(purchaseIncludingTax)) unitPurchasePrice = purchaseIncludingTax;

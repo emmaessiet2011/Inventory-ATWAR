@@ -416,7 +416,7 @@ export const simulateStockTransfer = ({
     const qty = round3(Number(item.qty || 0));
     if (!qty) return;
     const source = getSourceProduct(item);
-    const sourceInventory = getInventoryRecord(source, locationFromId, transfer.locationFrom, false);
+    const sourceInventory = getInventoryRecord(source, locationFromId, transfer.locationFrom, direction < 0);
     const sourceCurrent = Number(sourceInventory?.stock || 0);
     const deltaOut = round3(-qty * direction);
     const sourceNext = round3(sourceCurrent + deltaOut);

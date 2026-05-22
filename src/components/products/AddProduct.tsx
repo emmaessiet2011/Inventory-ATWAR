@@ -643,6 +643,10 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       .filter(location => normalizedAvailableLocationIds.includes(location.id))
       .map(location => location.name);
     const resolvedRackDetail = resolvedLocationId ? locationRackDetails[resolvedLocationId] : undefined;
+    
+    // PM RULE: Opening stock must ALWAYS go to the warehouse.
+    const warehouseLocation = locations.find(l => l.name.toLowerCase().includes('atwar')) || locations[0];
+    const warehouseLocationName = warehouseLocation?.name || '';
     const shouldApplyOpeningStock = !isEdit || !existingProduct;
     const normalizedSelectedCategory = selectedCategory.trim();
     const matchedCategory = normalizedSelectedCategory
@@ -704,7 +708,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
         ? (typeof openingStock === 'number' ? openingStock : undefined)
         : existingProduct?.openingStock,
       openingStockLocation: shouldApplyOpeningStock
-        ? (resolvedLocationName || existingProduct?.openingStockLocation)
+        ? (warehouseLocationName || existingProduct?.openingStockLocation)
         : existingProduct?.openingStockLocation,
       variationRows: productType === 'Variable' ? normalizedVariationRows : undefined,
       comboItems: productType === 'Combo' ? activeComboItems : undefined,
@@ -1178,7 +1182,6 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                   <select value={productType} onChange={(e) => setProductType(e.target.value as 'Single' | 'Variable' | 'Combo')}
                     className="w-full px-4 py-3 rounded-xl bg-amber-50 border-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all text-sm font-bold text-amber-900 appearance-none cursor-pointer">
                     <option value="Single">Single</option>
-                    <option value="Variable">Variable</option>
                     <option value="Combo">Combo</option>
                   </select>
                   <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-amber-500 pointer-events-none" size={16} />

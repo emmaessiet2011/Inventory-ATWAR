@@ -4668,6 +4668,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return result;
     }
+
+    if (normalized.openingStock && normalized.openingStock > 0 && normalized.openingStockLocation) {
+      await applyStockDelta(
+        { [normalized.id]: normalized.openingStock },
+        normalized.openingStockLocation
+      );
+    }
+
     setProducts(prev => [...prev, normalized]);
     recordActivity({
       action: 'Created',
@@ -5061,9 +5069,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const buildSaleStockDelta = (sale: Sale, multiplier: number): Record<string, number> => {
     const delta: Record<string, number> = {};
     (sale.items || []).forEach(item => {
-      const key = String(item.id || '').trim();
+      const key = String((item as any).productId || item.id || '').trim();
       if (!key) return;
-      delta[key] = (delta[key] || 0) + (multiplier * (item.qty || 0));
+      
+      const qty = multiplier * (item.qty || 0);
+      const product = products.find(p => p.id === key || p.sku === key);
+      
+      if (product && String(product.type || '').trim().toLowerCase() === 'combo' && product.comboItems && product.comboItems.length > 0) {
+        product.comboItems.forEach(cItem => {
+          const cKey = String(cItem.productId || '').trim();
+          if (cKey) {
+            delta[cKey] = (delta[cKey] || 0) + (qty * (cItem.qty || 1));
+          }
+        });
+      } else {
+        delta[key] = (delta[key] || 0) + qty;
+      }
     });
     return delta;
   };
@@ -5487,9 +5508,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     (sellReturn.items || []).forEach(item => {
       const key = String(item.productId || '').trim();
       if (!key) return;
-      const qty = Number(item.qty || 0);
+      const qty = multiplier * Number(item.qty || 0);
       if (!qty) return;
-      delta[key] = (delta[key] || 0) + (multiplier * qty);
+
+      const product = products.find(p => p.id === key);
+      if (product && String(product.type || '').trim().toLowerCase() === 'combo' && product.comboItems && product.comboItems.length > 0) {
+        product.comboItems.forEach(cItem => {
+          const cKey = String(cItem.productId || '').trim();
+          if (cKey) {
+            delta[cKey] = (delta[cKey] || 0) + (qty * (cItem.qty || 1));
+          }
+        });
+      } else {
+        delta[key] = (delta[key] || 0) + qty;
+      }
     });
     return delta;
   };
@@ -5901,6 +5933,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const lotSaved = await applyStockLotAdjustments(lotAdjustments);
         if (!lotSaved) return false;
       }
+
+      const purchaseStockDelta: Record<string, number> = {};
+      purchase.items.forEach(item => {
+        const qty = Number(item.qty || 0) * factor;
+        const linkedProduct = products.find(p => p.id === item.id || normalizeName(p.name) === normalizeName(item.name));
+        const key = String(item.id || linkedProduct?.id || '').trim();
+        if (key && qty) {
+          purchaseStockDelta[key] = (purchaseStockDelta[key] || 0) + qty;
+        }
+      });
+      if (Object.keys(purchaseStockDelta).length > 0) {
+        const stockResult = await applyStockDelta(purchaseStockDelta, purchase.location);
+        if (!stockResult.ok) return false;
+      }
     }
 
     const dueAmount = purchase.paymentStatus !== 'Paid' ? Number(purchase.paymentDue || 0) : 0;
@@ -6038,6 +6084,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (lotAdjustments.length > 0) {
         const lotSaved = await applyStockLotAdjustments(lotAdjustments);
         if (!lotSaved) return false;
+      }
+
+      const returnStockDelta: Record<string, number> = {};
+      purchaseReturn.items.forEach(item => {
+        const qty = Number(item.quantity || 0) * -factor;
+        const linkedProduct = products.find(p => p.id === item.productId || normalizeName(p.name) === normalizeName(item.productName));
+        const key = String(item.productId || linkedProduct?.id || '').trim();
+        if (key && qty) {
+          returnStockDelta[key] = (returnStockDelta[key] || 0) + qty;
+        }
+      });
+      if (Object.keys(returnStockDelta).length > 0) {
+        const stockResult = await applyStockDelta(returnStockDelta, purchaseReturn.location);
+        if (!stockResult.ok) return false;
       }
     }
     return true;

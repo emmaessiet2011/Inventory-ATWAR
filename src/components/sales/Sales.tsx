@@ -291,6 +291,8 @@ const Sales: React.FC<SalesProps> = ({
     const owner = String(currentUser?.name || '').trim().toLowerCase();
     return owner.length > 0 && String(sale.addedBy || '').trim().toLowerCase() === owner;
   };
+
+  const canViewLocation = (sale: any) => isLocationAccessible(sale.location || '', currentUser, locations);
   const isQuotationList = statusFilter === 'Quotation';
   const canAddInCurrentList = !isQuotationList || canCreateQuotations;
 
@@ -827,6 +829,7 @@ const Sales: React.FC<SalesProps> = ({
       if (statusFilter === 'Quotation') {
         const isQuotationRecord = normalizedStatus === 'Quotation' || normalizedStatus === 'Proforma';
         if (!canViewAllQuotations && !canViewOwnQuotations) return false;
+        if (!canViewLocation(s)) return false;
         if (!isQuotationRecord) return false;
         if (!canViewAllQuotations && canViewOwnQuotations) {
           const owner = String(currentUser?.name || '').trim().toLowerCase();

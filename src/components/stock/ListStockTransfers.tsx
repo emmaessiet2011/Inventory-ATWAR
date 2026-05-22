@@ -18,6 +18,7 @@ import {
   syncChangedProductsStrict,
   writeStockTransfers,
 } from '@/utils/stockTransfers';
+import { fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
 
 interface ListStockTransfersProps {
   onNavigate: (page: string) => void;
@@ -262,10 +263,13 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         if (!fromLoc) throw new Error(`Cannot resolve ID for source location: ${transfer.locationFrom}`);
         if (!toLoc) throw new Error(`Cannot resolve ID for destination location: ${transfer.locationTo}`);
         
+        const workingInventory = await fetchLocationInventoryFromDB();
+        
         const rollback = simulateStockTransfer({
           transfer,
           direction: -1,
           products,
+          inventoryRows: workingInventory,
           locationFromId: fromLoc.id,
           locationToId: toLoc.id,
           generateId,

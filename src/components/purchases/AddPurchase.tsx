@@ -228,7 +228,7 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
   const quickProductMatches = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
     if (!q) return [];
-    return products.filter(item => item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q)).slice(0, 8);
+    return products.filter(item => String(item.type || '').trim().toLowerCase() !== 'combo' && (item.name.toLowerCase().includes(q) || item.sku.toLowerCase().includes(q))).slice(0, 8);
   }, [productSearch, products]);
 
   const subTotal = useMemo(() => rows.reduce((sum, row) => sum + toNumber(row.lineTotal), 0), [rows]);

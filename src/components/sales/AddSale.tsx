@@ -31,7 +31,7 @@ import {
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 import { productVisibleAtLocation } from '@/utils/productVisibility';
-import { fetchLocationInventoryFromDB, ProductLocationInventory, inventoryKey } from '@/utils/stockLocationInventory';
+import { fetchLocationInventoryFromDB, ProductLocationInventory, calculateAvailableStock } from '@/utils/stockLocationInventory';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
@@ -236,6 +236,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
   const [selectedCustomerObj, setSelectedCustomerObj] = useState<any>(null);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
+  const hasPrefilled = useRef<string | null>(null);
 
   // Real customers from GlobalContext — active only, for the dropdown
   const customerList = useMemo(() => (
@@ -795,6 +796,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   // Pre-fill logic
   useEffect(() => {
+    const prefillKey = fromOrder
+      ? `order-${sourceOrderId}`
+      : isEdit
+        ? `edit-${saleId}`
+        : 'new';
+
+    if (hasPrefilled.current === prefillKey) {
+      return;
+    }
+
     if (fromOrder) {
         const selectedOrderId = String(sourceOrderId || '').trim();
         const sourceOrder = selectedOrderId ? orders.find(o => o.id === selectedOrderId) : undefined;
@@ -926,11 +937,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
             setSaleType('Paid');
             setAmount(isPrepaidOrder ? formatPaymentAmount(sourceOrder.total || 0) : '0.000');
           }
+          hasPrefilled.current = prefillKey;
         } else if (!sourceOrderId) {
           setSourceOrderNumber('');
           if (defaultLocationName && !location) {
             setLocation(defaultLocationName);
           }
+          hasPrefilled.current = prefillKey;
         }
     } else if (isEdit && saleId) {
         // Pre-fill for editing an existing sale from GlobalContext
@@ -1017,9 +1030,13 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           setPayTermNumber(num || '');
           setPayTermUnit(unit || 'Days');
         }
+        hasPrefilled.current = prefillKey;
     } else if (defaultLocationName && !location) {
         // Default to first location if adding new sale
         setLocation(defaultLocationName);
+        if (defaultLocationName) {
+          hasPrefilled.current = prefillKey;
+        }
     }
   }, [
     fromOrder,

@@ -53,7 +53,7 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
   restrictToAddedById = '',
   restrictToAddedByName = '',
 }) => {
-  const { expenses, expenseCategories, deleteExpense, formatCurrency, settings, currentUser, payments, deletePayment } = useGlobalContext();
+  const { expenses, expenseCategories, deleteExpense, formatCurrency, settings, currentUser, payments, deletePayment, locations } = useGlobalContext();
   const { addNotification } = useNotifications();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -134,12 +134,14 @@ const ListExpenses: React.FC<ListExpensesProps> = ({
 
   const filteredExpenses = useMemo(() => {
     const query = normalize(searchTerm);
+    const canViewLocation = (expense: any) => isLocationAccessible(expense.location || '', currentUser, locations);
     const startMs = range.startDate ? new Date(range.startDate.getFullYear(), range.startDate.getMonth(), range.startDate.getDate(), 0, 0, 0, 0).getTime() : null;
     const endMs = range.endDate ? new Date(range.endDate.getFullYear(), range.endDate.getMonth(), range.endDate.getDate(), 23, 59, 59, 999).getTime() : null;
 
     return expenses
       .filter((expense) => {
         if (!isOwnerMatch(expense, ownerIdFilter, ownerNameFilter)) return false;
+        if (!canViewLocation(expense)) return false;
         if (query) {
           const hay = [expense.refNo, expense.category, expense.subCategory, expense.contact, expense.expenseFor, expense.location, expense.note, expense.addedBy].map(normalize);
           if (!hay.some((v) => v.includes(query))) return false;
