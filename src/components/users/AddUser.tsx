@@ -131,7 +131,7 @@ interface AddUserProps {
 
 const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
   const { addNotification } = useNotifications();
-  const { users, addUser, updateUser, locations, roles, currentUser } = useGlobalContext();
+  const { users, addUser, updateUser, locations, roles, currentUser, productCategories } = useGlobalContext();
   const availableRoleNames = useMemo(() => {
     const roleNames = roles.map((role: any) => String(role?.name || '').trim()).filter(Boolean);
     const uniqueRoleNames = Array.from(new Set(roleNames));
@@ -165,6 +165,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     confirmPassword: '',
     role: 'Admin',
     accessLocations: ['All Locations'],
+    accessCategories: ['All Categories'],
     commissionPercent: '',
     maxDiscountPercent: '',
     allowSelectedContacts: false,
@@ -211,6 +212,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
           maxDiscountPercent: u.maxDiscountPercent?.toString() || '',
           allowSelectedContacts: u.allowSelectedContacts || false,
           accessLocations: u.accessLocations || ['All Locations'],
+          accessCategories: u.accessCategories || ['All Categories'],
           mobile: u.mobile || '',
           altContact: u.altContact || '',
           familyContact: u.familyContact || '',
@@ -249,20 +251,36 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
           newLocations = [];
         }
       } else {
-        // Remove 'All Locations' if a specific location is checked/unchecked
         newLocations = newLocations.filter(id => id !== 'All Locations');
-        
         if (checked) {
           if (!newLocations.includes(locId)) newLocations.push(locId);
         } else {
           newLocations = newLocations.filter(id => id !== locId);
         }
-        
-        // If all specific locations are checked, maybe switch to 'All Locations'? 
-        // For simplicity, just let them be individual.
       }
-      
       return { ...prev, accessLocations: newLocations };
+    });
+  };
+
+  const handleCategoryChange = (catName: string, checked: boolean) => {
+    setFormData(prev => {
+      let newCategories = [...(prev.accessCategories || [])];
+      
+      if (catName === 'All Categories') {
+        if (checked) {
+          newCategories = ['All Categories'];
+        } else {
+          newCategories = [];
+        }
+      } else {
+        newCategories = newCategories.filter(id => id !== 'All Categories');
+        if (checked) {
+          if (!newCategories.includes(catName)) newCategories.push(catName);
+        } else {
+          newCategories = newCategories.filter(id => id !== catName);
+        }
+      }
+      return { ...prev, accessCategories: newCategories };
     });
   };
 
@@ -405,6 +423,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
       maxDiscountPercent: maxDiscountPercent === undefined ? undefined : Number(maxDiscountPercent.toFixed(2)),
       allowSelectedContacts: formData.allowSelectedContacts,
       accessLocations: Array.isArray(formData.accessLocations) ? formData.accessLocations : [],
+      accessCategories: Array.isArray(formData.accessCategories) ? formData.accessCategories : [],
       allowLogin: formData.allowLogin,
       enableServiceStaffPin: formData.enableServiceStaffPin,
       prefix: formData.prefix || undefined,
@@ -591,12 +610,50 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
                         {loc.name} ({loc.id})
                       </span>
                     </label>
-                  ))}
+                    ))}
+                  </div>
+                </div>
+
+                <div className="lg:col-span-2 space-y-4">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider ml-1">Access Categories</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative flex items-center">
+                        <input 
+                          type="checkbox" 
+                          checked={formData.accessCategories?.includes('All Categories')}
+                          onChange={(e) => handleCategoryChange('All Categories', e.target.checked)}
+                          className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-blue-600 checked:border-indigo-600 transition-all"
+                        />
+                        <Check className="absolute left-1 top-1 h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                      </div>
+                      <span className="text-xs font-bold text-slate-700 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                        All Categories
+                        <Info size={12} className="text-slate-400" />
+                      </span>
+                    </label>
+                    
+                    {productCategories.map(cat => (
+                      <label key={cat.id} className="flex items-center gap-3 cursor-pointer group">
+                        <div className="relative flex items-center">
+                          <input 
+                            type="checkbox" 
+                            checked={formData.accessCategories?.includes('All Categories') || formData.accessCategories?.includes(cat.name)}
+                            onChange={(e) => handleCategoryChange(cat.name, e.target.checked)}
+                            className="peer h-5 w-5 cursor-pointer appearance-none rounded border-2 border-slate-200 bg-white checked:bg-blue-600 checked:border-indigo-600 transition-all"
+                          />
+                          <Check className="absolute left-1 top-1 h-3 w-3 text-white opacity-0 peer-checked:opacity-100 transition-opacity" strokeWidth={4} />
+                        </div>
+                        <span className="text-xs font-bold text-slate-700 group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                          {cat.name}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
         {/* Sales */}
         <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden p-10 relative">

@@ -350,6 +350,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         allowLogin: user?.allowLogin !== false ? 'Yes' : 'No',
         serviceStaffPin: user?.enableServiceStaffPin ? 'Enabled' : 'Disabled',
         accessLocations: (user?.accessLocations && user.accessLocations.length > 0) ? user.accessLocations.join(', ') : 'All Locations',
+        accessCategories: (user?.accessCategories && user.accessCategories.length > 0) ? user.accessCategories.join(', ') : 'All Categories',
         dob: user?.dob || '',
         gender: user?.gender || '',
         maritalStatus: user?.maritalStatus || '',
@@ -490,6 +491,10 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
                                         <div className="flex items-center gap-2 md:col-span-2">
                                             <span className="text-sm font-black text-slate-900">Access Locations:</span>
                                             <span className="text-sm text-slate-600">{userData.accessLocations}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 md:col-span-2">
+                                            <span className="text-sm font-black text-slate-900">Access Categories:</span>
+                                            <span className="text-sm text-slate-600">{userData.accessCategories}</span>
                                         </div>
                                     </div>
 

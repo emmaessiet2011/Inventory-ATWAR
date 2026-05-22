@@ -689,6 +689,7 @@ export interface AppUser {
   maxDiscountPercent?: number;
   businessLocation?: string;
   accessLocations?: string[];
+  accessCategories?: string[];
   allowSelectedContacts?: boolean;
   allowLogin?: boolean;
   enableServiceStaffPin?: boolean;

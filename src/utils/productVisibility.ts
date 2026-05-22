@@ -21,6 +21,7 @@ export const productVisibleAtLocation = (
   if (!location) return true;
   const locationId = normalize(location.id);
   const locationName = normalize(location.name);
+
   const selectedIds = getProductLocationIds(product).map(normalize);
   const selectedNames = getProductLocationNames(product).map(normalize);
 
@@ -44,17 +45,37 @@ export const productVisibleToUser = (
     ? user.accessLocations.map(normalize).filter(Boolean)
     : [];
   const hasAllLocations = accessLocationIds.some(value => value === 'all locations' || value === 'all');
-  if (hasAllLocations) return true;
 
-  const locationMatches = locations.filter(location => (
-    accessLocationIds.includes(normalize(location.id)) ||
-    accessLocationIds.includes(normalize(location.name)) ||
-    normalize(location.name) === normalize(user.businessLocation)
-  ));
+  let locMatch = false;
+  if (hasAllLocations) {
+    locMatch = true;
+  } else {
+    const locationMatches = locations.filter(location => (
+      accessLocationIds.includes(normalize(location.id)) ||
+      accessLocationIds.includes(normalize(location.name)) ||
+      normalize(location.name) === normalize(user.businessLocation)
+    ));
 
-  if (locationMatches.length === 0 && user.businessLocation) {
-    return !normalize(product.businessLocation) || normalize(product.businessLocation) === normalize(user.businessLocation);
+    if (locationMatches.length === 0 && user.businessLocation) {
+      locMatch = !normalize(product.businessLocation) || normalize(product.businessLocation) === normalize(user.businessLocation);
+    } else {
+      locMatch = locationMatches.some(location => productVisibleAtLocation(product, location));
+    }
   }
 
-  return locationMatches.some(location => productVisibleAtLocation(product, location));
+  if (!locMatch) return false;
+
+  // Category restriction (if defined)
+  const accessCategories = Array.isArray(user.accessCategories)
+    ? user.accessCategories.map(normalize).filter(Boolean)
+    : [];
+  
+  if (accessCategories.length > 0 && !accessCategories.includes('all categories') && !accessCategories.includes('all')) {
+    const productCat = normalize(product.category);
+    if (!accessCategories.includes(productCat)) {
+      return false;
+    }
+  }
+
+  return true;
 };
