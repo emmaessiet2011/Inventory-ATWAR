@@ -65,7 +65,6 @@ import {
   syncRecordStrict,
   deleteRecordStrict,
   syncDedicatedStrict,
-  syncStockDeltaStrict,
   fetchDedicated,
 } from '../utils/apiClient';
 import { getSellingPriceGroupProductRules } from '../utils/sellingPriceGroups';

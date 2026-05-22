@@ -108,6 +108,7 @@ export const simulateSeedLocationStock = ({
   if (!cleanLocation) throw new Error('Select a location before seeding stock.');
   const cleanLocationId = String(locationId || '').trim();
   if (!cleanLocationId) throw new Error('Selected location does not have a database ID.');
+  const duplicate = findDuplicateSkuLocation(products);
   if (duplicate) {
     throw new Error(`Duplicate product rows found for SKU "${duplicate.sku}" at "${duplicate.location}". Merge duplicates before seeding.`);
   }
