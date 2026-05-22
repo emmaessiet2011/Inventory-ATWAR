@@ -16,11 +16,11 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_PASSWORD }}
           port: 22
           script: |
-            # Navigate to your app directory (UPDATE THIS PATH to match your VPS)
-            cd /var/www/erp.atwarbss.com
+            # Navigate to the correct app directory on your VPS
+            cd /opt/ATWARBSS-main
             
             # Pull the latest code
             git pull
@@ -31,5 +31,5 @@ jobs:
             # Build the React app
             npm run build
             
-            # If you are running a Node backend with PM2, uncomment the line below:
-            # pm2 restart all
+            # Restart the PM2 API process
+            pm2 restart atwar-api
