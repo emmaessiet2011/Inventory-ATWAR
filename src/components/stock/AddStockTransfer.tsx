@@ -30,25 +30,7 @@ const STATUS_OPTIONS: StockTransferStatus[] = ['Pending', 'In Transit', 'Complet
 
 const normalize = (value: unknown) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
-const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string }) => {
-  const id = normalize(location.id);
-  const joined = normalize(`${location.id || ''} ${location.name || ''} ${location.landmark || ''}`);
-  return (
-    id === 'bl0001' ||
-    joined.includes('atwar al mustaqbal') ||
-    joined.includes('cr:1450968') ||
-    joined.includes('cr 1450968') ||
-    joined.includes('1450968')
-  );
-};
-const productLocationIsWarehouse = (product: Product, locations: Array<{ id?: string; name?: string; landmark?: string }>) => {
-  const productLocation = normalize(product.businessLocation);
-  if (!productLocation) return false;
-  return locations.some((location) => (
-    isWarehouseLocation(location) &&
-    (normalize(location.id) === productLocation || normalize(location.name) === productLocation)
-  ));
-};
+// isWarehouseLocation and productLocationIsWarehouse removed for unified architecture
 
 const getNowLocalDateTime = () => {
   const now = new Date();
@@ -186,16 +168,13 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         const skuKey = normalize(product.sku);
         if (!skuKey) return;
         const existing = bySku.get(skuKey);
-        if (!existing || productLocationIsWarehouse(product, locations)) bySku.set(skuKey, product);
+        if (!existing) bySku.set(skuKey, product);
       });
       return Array.from(bySku.values());
     }
     const sourceLocation = resolveLocationRecord(locationFrom);
     if (!sourceLocation) return [];
-    const sourceIsWarehouse = isWarehouseLocation(sourceLocation);
-    if (sourceIsWarehouse) {
-      return products.filter(product => productLocationIsWarehouse(product, locations));
-    }
+    
     const productById = new Map(products.map((product) => [product.id, product]));
     return locationInventory
       .filter((record) => normalize(record.locationId) === normalize(sourceLocation.id) && Number(record.stock || 0) > 0)
@@ -206,7 +185,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
   const getAvailableStock = (product: Product) => {
     const sourceLocation = resolveLocationRecord(locationFrom);
     if (!sourceLocation) return 0;
-    if (isWarehouseLocation(sourceLocation)) return round3(Number(product.stock || 0));
     const match = locationInventory.find((record) => (
       inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, sourceLocation.id)
     ));

@@ -5085,21 +5085,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       .filter((entry): entry is { id: string; delta: number } => !!entry);
     if (perProductDeltas.length === 0) return okResult(200);
 
-    const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string } | null) => {
-      if (!location) return true;
-      const id = String(location.id || '').trim().toLowerCase();
-      const joined = `${id} ${String(location.name || '').trim().toLowerCase()} ${String(location.landmark || '').trim().toLowerCase()}`;
-      return (
-        id === 'bl0001' ||
-        joined.includes('atwar al mustaqbal') ||
-        joined.includes('cr:1450968') ||
-        joined.includes('cr 1450968') ||
-        joined.includes('1450968')
-      );
-    };
-
     const linkedLocation = locationName ? resolveLocationRecordByName(locationName) : null;
-    const usesBranchInventory = locationName && linkedLocation && !isWarehouseLocation(linkedLocation);
+    const usesBranchInventory = !!linkedLocation;
 
     if (usesBranchInventory) {
       try {
@@ -5128,32 +5115,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (!syncResult.ok) {
            return toCrudResult(syncResult);
         }
+
+        // Also proactively update the global products array in React state to reflect the new global sum
+        // The Postgres trigger automatically updates the DB `Product.stock`, but we need to update UI.
+        const deltaById = new Map<string, number>(perProductDeltas.map((entry) => [entry.id, entry.delta]));
+        setProducts(prevProducts => prevProducts.map((product) => {
+          const delta = deltaById.get(product.id) || 0;
+          if (!delta) return product;
+          return { ...product, stock: Math.max(0, product.stock + delta) };
+        }));
+
         return okResult(200);
       } catch (error) {
         return failResult(500, String(error));
       }
     }
 
-    const deltaById = new Map<string, number>(perProductDeltas.map((entry) => [entry.id, entry.delta]));
-    setProducts(prevProducts => prevProducts.map((product) => {
-      const delta = deltaById.get(product.id) || 0;
-      if (!delta) return product;
-      return { ...product, stock: Math.max(0, product.stock + delta) };
-    }));
-
-    let firstFailure: CrudMutationResult | null = null;
-    for (const entry of perProductDeltas) {
-      const outcome = await syncStockDeltaStrict(entry.id, entry.delta);
-      if (outcome.ok) continue;
-      setProducts(prev => prev.map(row => (
-        row.id === entry.id ? { ...row, stock: Math.max(0, row.stock - entry.delta) } : row
-      )));
-      if (!firstFailure) {
-        firstFailure = toCrudResult(outcome);
-      }
-    }
-
-    return firstFailure || okResult(200);
+    // Fallback if no location was provided: just return ok (stock changes MUST have a location now).
+    // In legacy cases, we don't update anything if we don't know where it happened.
+    console.warn('applyStockDelta: No location provided, skipping stock update.');
+    return okResult(200);
   };
 
   const refreshSalesFromServer = async (): Promise<void> => {

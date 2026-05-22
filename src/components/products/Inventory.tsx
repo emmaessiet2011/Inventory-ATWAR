@@ -28,16 +28,7 @@ import { productVisibleAtLocation, productVisibleToUser } from '@/utils/productV
 
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
 const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
-const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string } | undefined): boolean => {
-  const hay = normalize(`${location?.id || ''} ${location?.name || ''} ${location?.landmark || ''}`);
-  return hay.includes('atwar') || hay.includes('1450968') || hay.includes('warehouse') || hay.includes('bl0001');
-};
-const productBelongsToLocation = (product: Product, location: { name?: string; landmark?: string } | undefined): boolean => {
-  const productLocation = normalize(product.businessLocation);
-  const locationName = normalize(location?.name);
-  const locationLandmark = normalize(location?.landmark);
-  return !!productLocation && (productLocation === locationName || (!!locationLandmark && productLocation === locationLandmark));
-};
+// isWarehouseLocation and productBelongsToLocation removed for unified architecture
 
 const downloadFile = (filename: string, content: string, type: string) => {
   const blob = new Blob([content], { type });
@@ -215,11 +206,6 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     if (!selectedProductListLocations.length) return Number(product.stock || 0);
 
     const selectedStock = selectedProductListLocations.reduce((sum, location) => {
-      if (isWarehouseLocation(location)) {
-        return sum + (productBelongsToLocation(product, location) || isWarehouseLocation({ name: product.businessLocation })
-          ? Number(product.stock || 0)
-          : 0);
-      }
       const row = locationInventoryByKey.get(inventoryKey(product.id, location.id));
       return sum + Number(row?.stock || 0);
     }, 0);

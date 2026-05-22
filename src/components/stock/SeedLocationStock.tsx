@@ -60,29 +60,7 @@ const toIso = (value: string) => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 };
 
-const isWarehouseLocation = (location: { id?: string; name?: string; landmark?: string }) => {
-  const id = normalize(location.id);
-  const joined = normalize(`${location.id || ''} ${location.name || ''} ${location.landmark || ''}`);
-  return (
-    id === 'bl0001' ||
-    joined.includes('atwar al mustaqbal') ||
-    joined.includes('cr:1450968') ||
-    joined.includes('cr 1450968') ||
-    joined.includes('1450968')
-  );
-};
-
-const productLocationIsWarehouse = (
-  product: Product,
-  locationRecords: Array<{ id?: string; name?: string; landmark?: string }>,
-) => {
-  const productLocation = normalize(product.businessLocation);
-  if (!productLocation) return false;
-  return locationRecords.some((record) => (
-    isWarehouseLocation(record) &&
-    (normalize(record.id) === productLocation || normalize(record.name) === productLocation)
-  ));
-};
+// isWarehouseLocation and productLocationIsWarehouse removed for unified architecture
 
 const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => {
   const {
@@ -131,8 +109,7 @@ const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => 
   );
 
   const secondaryLocations = useMemo(() => {
-    const filtered = activeLocations.filter((record) => !isWarehouseLocation(record));
-    return filtered.length > 0 ? filtered : activeLocations.slice(1);
+    return activeLocations;
   }, [activeLocations]);
 
   const selectedLocation = useMemo(
@@ -154,11 +131,7 @@ const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => 
     products.forEach((product) => {
       const skuKey = normalize(product.sku);
       if (!skuKey) return;
-      const score = productLocationIsWarehouse(product, locations)
-        ? 100
-        : normalize(product.businessLocation) === normalize(location)
-          ? 10
-          : 1;
+      const score = normalize(product.businessLocation) === normalize(location) ? 10 : 1;
       const existing = bySku.get(skuKey);
       if (!existing || score > existing.score) {
         bySku.set(skuKey, { product, score });
@@ -295,10 +268,7 @@ const SeedLocationStock: React.FC<SeedLocationStockProps> = ({ onNavigate }) => 
       addNotification({ title: 'Validation Error', message: 'Select an active secondary location.', type: 'error' });
       return;
     }
-    if (isWarehouseLocation(selectedLocation)) {
-      addNotification({ title: 'Validation Error', message: 'Opening seed is only for shop or secondary locations.', type: 'error' });
-      return;
-    }
+    // Allowed to seed any active location
 
     const cleanRows = rows
       .map((row) => ({

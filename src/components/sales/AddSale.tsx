@@ -521,21 +521,8 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     return () => { isMounted = false; };
   }, []);
 
-  const isWarehouseLocation = (locName: string) => {
-    const locId = normalizeLocationKey(locations.find(l => l.name === locName)?.id);
-    const joined = normalizeLocationKey(`${locId} ${locName}`);
-    return (
-      locId === 'bl0001' ||
-      joined.includes('atwar al mustaqbal') ||
-      joined.includes('cr:1450968') ||
-      joined.includes('cr 1450968') ||
-      joined.includes('1450968')
-    );
-  };
-
   const getAvailableStock = (product: Product) => {
     if (!location) return 0;
-    if (isWarehouseLocation(location)) return Number(product.stock || 0);
     const locId = locations.find(l => l.name === location)?.id;
     if (!locId) return 0;
     const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locId));

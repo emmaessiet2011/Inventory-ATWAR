@@ -416,40 +416,26 @@ export const simulateStockTransfer = ({
     const qty = round3(Number(item.qty || 0));
     if (!qty) return;
     const source = getSourceProduct(item);
-    const sourceUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationFrom) || !locationFromId;
-    const sourceInventory = sourceUsesProductStock
-      ? null
-      : getInventoryRecord(source, locationFromId, transfer.locationFrom, false);
-    const sourceCurrent = sourceUsesProductStock ? Number(source.stock || 0) : Number(sourceInventory?.stock || 0);
+    const sourceInventory = getInventoryRecord(source, locationFromId, transfer.locationFrom, false);
+    const sourceCurrent = Number(sourceInventory?.stock || 0);
     const deltaOut = round3(-qty * direction);
     const sourceNext = round3(sourceCurrent + deltaOut);
     if (sourceNext < -0.0001) {
       throw new Error(`Insufficient stock for "${source.name}" at "${transfer.locationFrom}".`);
     }
-    if (sourceUsesProductStock) {
-      source.stock = Math.max(0, sourceNext);
-    } else if (sourceInventory) {
-      sourceInventory.stock = Math.max(0, sourceNext);
-    }
+    sourceInventory.stock = Math.max(0, sourceNext);
 
-    const targetUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationTo) || !locationToId;
     if (direction > 0) {
       ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo, locationFromId, transfer.locationFrom);
     }
-    const targetInventory = targetUsesProductStock
-      ? null
-      : getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
+    const targetInventory = getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
     const deltaIn = round3(qty * direction);
-    const targetCurrent = targetUsesProductStock ? Number(source.stock || 0) : Number(targetInventory?.stock || 0);
+    const targetCurrent = Number(targetInventory?.stock || 0);
     const targetNext = round3(targetCurrent + deltaIn);
     if (targetNext < -0.0001) {
       throw new Error(`Insufficient stock at target "${transfer.locationTo}" for SKU "${item.sku}".`);
     }
-    if (targetUsesProductStock) {
-      source.stock = Math.max(0, targetNext);
-    } else if (targetInventory) {
-      targetInventory.stock = Math.max(0, targetNext);
-    }
+    targetInventory.stock = Math.max(0, targetNext);
 
     const transferNote = `${notePrefix ? `${notePrefix}: ` : ''}${transfer.locationFrom} -> ${transfer.locationTo}`;
     const outType = deltaOut < 0 ? 'Stock Transfer Out' : 'Stock Transfer Reversal In';
@@ -461,7 +447,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: outType,
       change: deltaOut,
-      newQty: sourceUsesProductStock ? source.stock : Number(sourceInventory?.stock || 0),
+      newQty: Number(sourceInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -475,7 +461,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: inType,
       change: deltaIn,
-      newQty: targetUsesProductStock ? source.stock : Number(targetInventory?.stock || 0),
+      newQty: Number(targetInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
