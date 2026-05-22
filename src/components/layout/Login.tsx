@@ -212,7 +212,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           await updateUser(result.user);
           setCurrentUser(result.user);
           void requestBrowserPasswordSave(formRef.current);
-          onLogin();
+          setTimeout(() => onLogin(), 100);
           return;
         }
         clearAuthToken();
@@ -254,7 +254,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       await updateUser(updated);
       setCurrentUser(updated);
       void requestBrowserPasswordSave(formRef.current);
-      onLogin();
+      setTimeout(() => onLogin(), 100);
     } finally {
       setIsSubmitting(false);
     }
@@ -303,7 +303,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="mt-2 text-slate-500">Please enter your details to sign in.</p>
           </div>
 
-          <form ref={formRef} className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on" name="login-form">
+          <form ref={formRef} className="mt-8 space-y-6" onSubmit={handleSubmit} autoComplete="on" name="login-form" action="#">
             {error && (
                 <div className="p-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium">
                     {error}
