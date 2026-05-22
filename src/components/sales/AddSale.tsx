@@ -1311,11 +1311,10 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const getLocationScopedProducts = (): Product[] => {
     const normalizedLocation = String(location || '').trim().toLowerCase();
     const selectedLocation = locations.find(loc => String(loc.name || '').trim().toLowerCase() === normalizedLocation);
-    const locationScoped = (!normalizedLocation || !settings.filterProductsByLocation)
-      ? products
-      : products.filter(p => {
-      return productVisibleAtLocation(p, selectedLocation);
-    });
+    
+    if (!selectedLocation) return products;
+    
+    const locationScoped = products.filter(p => productVisibleAtLocation(p, selectedLocation));
     if (saleLocationPolicy.mode === 'allow_all') return locationScoped;
     return locationScoped.filter((product) => isProductAllowedBySaleLocationPolicy(product, saleLocationPolicy));
   };
@@ -1362,16 +1361,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     setIsStockHistoryOpen(true);
   };
 
-  const applyProductLocation = (product: any) => {
-    if (settings.filterProductsByLocation) return; // strict mode — location drives products
-    const productLoc = String(product.businessLocation || '').trim();
-    if (!productLoc) return;
-    const matched = locations.find(l => l.name.trim().toLowerCase() === productLoc.toLowerCase());
-    if (matched) setLocation(matched.name);
-  };
-
   const handleProductSelectForRow = (rowId: number, product: any) => {
-    applyProductLocation(product);
     setRows(prev => prev.map(row => {
       if (row.id === rowId) {
         const groupedPrice = getGroupedProductPrice(product);
@@ -1396,7 +1386,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   };
 
   const handleTopProductSelect = (product: any, qtyOverride?: number) => {
-    applyProductLocation(product);
     const price = getGroupedProductPrice(product);
     const newId = Date.now();
     const qty = Math.max(1, toIntegerQuantity(qtyOverride || 1));
@@ -1425,8 +1414,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   };
 
   const handleBulkAddProducts = (selectedProducts: any[]) => {
-    // Auto-set location from the first product that has one
-    if (selectedProducts.length > 0) applyProductLocation(selectedProducts[0]);
     const baseTime = Date.now();
     const newRowData = selectedProducts.map((product, index) => {
       const id = baseTime + index;

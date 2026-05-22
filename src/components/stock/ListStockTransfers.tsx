@@ -256,10 +256,18 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
     try {
       let nextProducts = products;
       if (transfer.status === 'Completed') {
+        const fromLoc = locations.find(l => l.name.trim().toLowerCase() === transfer.locationFrom.trim().toLowerCase());
+        const toLoc = locations.find(l => l.name.trim().toLowerCase() === transfer.locationTo.trim().toLowerCase());
+        
+        if (!fromLoc) throw new Error(`Cannot resolve ID for source location: ${transfer.locationFrom}`);
+        if (!toLoc) throw new Error(`Cannot resolve ID for destination location: ${transfer.locationTo}`);
+        
         const rollback = simulateStockTransfer({
           transfer,
           direction: -1,
           products,
+          locationFromId: fromLoc.id,
+          locationToId: toLoc.id,
           generateId,
           actorName: currentUser?.name || 'System',
           notePrefix: 'Delete rollback',
