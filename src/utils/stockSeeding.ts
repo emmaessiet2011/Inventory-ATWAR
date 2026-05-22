@@ -175,12 +175,17 @@ export const simulateSeedLocationStock = ({
     const newVisibilityIds = [...visibilityIds, cleanLocationId];
     const newVisibilityNames = [...visibilityNames, cleanLocation];
     
-    if (visibilityIds.length === 0 && visibilityNames.length === 0 && source.businessLocation) {
-      newVisibilityNames.push(source.businessLocation);
+    if (visibilityIds.length === 0 && visibilityNames.length === 0) {
+      if (source.businessLocation) {
+        newVisibilityNames.push(source.businessLocation);
+      }
+      // Ensure it's never accidentally hidden from the default warehouse
+      newVisibilityIds.push('BL0001');
+      newVisibilityNames.push('Warehouse', 'atwar al mustaqbal');
     }
     
-    source.availableLocationIds = Array.from(new Set(newVisibilityIds));
-    source.availableLocations = Array.from(new Set(newVisibilityNames));
+    source.availableLocationIds = Array.from(new Set(newVisibilityIds.filter(Boolean)));
+    source.availableLocations = Array.from(new Set(newVisibilityNames.filter(Boolean)));
     productById.set(source.id, source);
 
     const target: ProductLocationInventory = existingTarget || {

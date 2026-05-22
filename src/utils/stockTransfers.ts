@@ -389,7 +389,7 @@ export const simulateStockTransfer = ({
     return created;
   };
 
-  const ensureProductVisibleAtLocation = (product: Product, locationId: string, locationName: string) => {
+  const ensureProductVisibleAtLocation = (product: Product, locationId: string, locationName: string, sourceLocationId?: string, sourceLocationName?: string) => {
     if (!locationId || !locationName) return;
     const visibilityIds = Array.isArray(product.availableLocationIds) ? product.availableLocationIds : [];
     const visibilityNames = Array.isArray(product.availableLocations) ? product.availableLocations : [];
@@ -397,12 +397,19 @@ export const simulateStockTransfer = ({
     const newVisibilityIds = [...visibilityIds, locationId];
     const newVisibilityNames = [...visibilityNames, locationName];
     
-    if (visibilityIds.length === 0 && visibilityNames.length === 0 && product.businessLocation) {
-      newVisibilityNames.push(product.businessLocation);
+    if (visibilityIds.length === 0 && visibilityNames.length === 0) {
+      if (product.businessLocation) {
+        newVisibilityNames.push(product.businessLocation);
+      }
+      if (sourceLocationId) newVisibilityIds.push(sourceLocationId);
+      if (sourceLocationName) newVisibilityNames.push(sourceLocationName);
+      // Ensure it's never accidentally hidden from the default warehouse
+      newVisibilityIds.push('BL0001');
+      newVisibilityNames.push('Warehouse', 'atwar al mustaqbal');
     }
     
-    product.availableLocationIds = Array.from(new Set(newVisibilityIds));
-    product.availableLocations = Array.from(new Set(newVisibilityNames));
+    product.availableLocationIds = Array.from(new Set(newVisibilityIds.filter(Boolean)));
+    product.availableLocations = Array.from(new Set(newVisibilityNames.filter(Boolean)));
   };
 
   (transfer.items || []).forEach((item, index) => {
@@ -427,7 +434,7 @@ export const simulateStockTransfer = ({
 
     const targetUsesProductStock = normalize(source.businessLocation) === normalize(transfer.locationTo) || !locationToId;
     if (direction > 0) {
-      ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo);
+      ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo, locationFromId, transfer.locationFrom);
     }
     const targetInventory = targetUsesProductStock
       ? null
