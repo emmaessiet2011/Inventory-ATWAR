@@ -1,3 +1,4 @@
+import { ProductLocationInventory, fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, SlidersHorizontal } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
@@ -105,7 +106,7 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     const locId = locations.find(l => normalize(l.name) === normalize(locName))?.id;
     if (!locId) return 0;
     const match = locationInventory.find((record) => (
-      inventoryKey(record.productId, record.locationId) === inventoryKey(productId, locId)
+      record.productId === productId && record.locationId === locId
     ));
     return round3(Number(match?.stock || 0));
   };

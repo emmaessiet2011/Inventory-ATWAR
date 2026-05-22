@@ -7,6 +7,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
 import { formatExpenseDateTime, parseExpenseDateToMs } from '@/utils/expenses';
 import { formatDateBySettings } from '@/utils/dateTime';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ListExpensesProps {
   onNavigate: (page: string) => void;

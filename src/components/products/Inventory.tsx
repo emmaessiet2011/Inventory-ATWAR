@@ -17,7 +17,6 @@ import {
 } from '@/utils/stockTransfers';
 import {
   fetchLocationInventoryFromDB,
-  inventoryKey,
   ProductLocationInventory,
   calculateAvailableStock,
 } from '@/utils/stockLocationInventory';
@@ -199,14 +198,11 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     () => locations.filter(location => filters.businessLocation.includes(location.name)),
     [locations, filters.businessLocation],
   );
-  const locationInventoryByKey = useMemo(
-    () => new Map(locationInventory.map(row => [inventoryKey(row.productId, row.locationId), row])),
-    [locationInventory],
-  );
+  
   const getProductStockForList = (product: Product): number => {
     const locationsToUse = selectedProductListLocations.length > 0 
       ? selectedProductListLocations 
-      : allowedProductListLocations;
+      : selectedProductListLocations;
 
     if (!locationsToUse.length) return Number(product.stock || 0);
 

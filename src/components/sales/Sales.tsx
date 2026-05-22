@@ -22,6 +22,7 @@ import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument, paymentBadge, statusBadge } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
+import { isLocationAccessible } from '@/utils/productVisibility';
 import {
   formatDueMonthLabel,
   formatSalePaymentStatusLabel,

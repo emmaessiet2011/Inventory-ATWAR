@@ -31,7 +31,7 @@ import {
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 import { productVisibleAtLocation } from '@/utils/productVisibility';
-import { fetchLocationInventoryFromDB, ProductLocationInventory, calculateAvailableStock } from '@/utils/stockLocationInventory';
+import { fetchLocationInventoryFromDB, ProductLocationInventory } from '@/utils/stockLocationInventory';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
@@ -526,7 +526,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     if (!location) return 0;
     const locId = locations.find(l => l.name === location)?.id;
     if (!locId) return 0;
-    const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locId));
+    const match = locationInventory.find(record => record.productId === product.id && record.locationId === locId);
     return Number(match?.stock || 0);
   };
 

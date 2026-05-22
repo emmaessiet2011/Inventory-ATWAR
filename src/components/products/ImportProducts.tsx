@@ -425,7 +425,7 @@ const ImportProducts: React.FC = () => {
         ));
         const location = locationNames[0] || locationNameLookup.get(openingStockLocation.toLowerCase()) || defaultLocation;
 
-        let type: 'Single' | 'Variable' | 'Combo' | '' = '';
+        let type: 'Single' | 'Variable' | 'Combo' | '' = '' as 'Single' | 'Variable' | 'Combo' | '';
         if (productTypeRaw === 'single') type = 'Single';
         // Variable/Combo completely blocked from import
         else if (productTypeRaw === 'variable' || productTypeRaw === 'combo') type = '';

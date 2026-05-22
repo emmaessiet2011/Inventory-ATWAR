@@ -50,6 +50,7 @@ import { fetchDedicated } from '@/utils/apiClient';
 import { formatDateBySettings } from '@/utils/dateTime';
 import SafeResponsiveContainer from '@/components/shared/SafeResponsiveContainer';
 import ConfirmDialog from '@/components/shared/ConfirmDialog';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface DashboardProps {
   onNavigate?: (page: string) => void;

@@ -6,8 +6,6 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { useGlobalContext, Product } from '@/context/GlobalContext';
-import { fetchLocationInventoryFromDB, ProductLocationInventory, calculateAvailableStock } from '@/utils/stockLocationInventory';
-import { productVisibleAtLocation, productVisibleToUser } from '@/utils/productVisibility';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
@@ -406,7 +404,7 @@ const Products: React.FC = () => {
     const lines = rows.map(p => [
       `"${p.name}"`, `"${p.sku}"`, p.type, `"${p.category}"`, `"${p.brand}"`,
       p.unit, Number(p.unitPurchasePrice || 0).toFixed(3), Number(p.sellingPrice || 0).toFixed(3),
-      getProductStockForList(p).toFixed(3), p.tax, `"${p.businessLocation}"`,
+      Number(p.stock || 0).toFixed(3), p.tax, `"${p.businessLocation}"`,
     ].join(','));
     const csv = [headers.join(','), ...lines].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -422,7 +420,7 @@ const Products: React.FC = () => {
     const headers = ['Name', 'SKU', 'Type', 'Category', 'Brand', 'Unit', 'Purchase Price', 'Selling Price', 'Stock', 'Tax', 'Location'];
     const lines = rows.map(p => [
       p.name, p.sku, p.type, p.category, p.brand, p.unit,
-      Number(p.unitPurchasePrice || 0).toFixed(3), Number(p.sellingPrice || 0).toFixed(3), getProductStockForList(p).toFixed(3),
+      Number(p.unitPurchasePrice || 0).toFixed(3), Number(p.sellingPrice || 0).toFixed(3), Number(p.stock || 0).toFixed(3),
       p.tax, p.businessLocation,
     ].join('\t'));
     const tsv = [headers.join('\t'), ...lines].join('\n');
@@ -441,7 +439,7 @@ const Products: React.FC = () => {
       <tr>
         <td>${p.name}</td><td>${p.sku}</td><td>${p.type}</td><td>${p.category}</td><td>${p.brand}</td>
         <td>${p.unit}</td><td>${formatCurrency(p.unitPurchasePrice || 0)}</td><td>${formatCurrency(p.sellingPrice || 0)}</td>
-        <td>${getProductStockForList(p).toFixed(3)}</td><td>${p.tax}</td><td>${p.businessLocation}</td>
+        <td>${Number(p.stock || 0).toFixed(3)}</td><td>${p.tax}</td><td>${p.businessLocation}</td>
       </tr>
     `).join('');
     const w = window.open('', '_blank', 'width=1200,height=800');
@@ -465,13 +463,13 @@ const Products: React.FC = () => {
     w.document.close();
   };
 
-  const totalStockQty = filteredProducts.reduce((sum, p) => sum + getProductStockForList(p), 0);
+  const totalStockQty = filteredProducts.reduce((sum, p) => sum + Number(p.stock || 0), 0);
   const totalPurchaseStockValue = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * getProductStockForList(p)),
+    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * Number(p.stock || 0)),
     0
   );
   const totalSellingStockValue = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.sellingPrice || 0) * getProductStockForList(p)),
+    (sum, p) => sum + (Number(p.sellingPrice || 0) * Number(p.stock || 0)),
     0
   );
   const productPrintFilterParts = [
@@ -515,7 +513,7 @@ const Products: React.FC = () => {
         p.unit || '--',
         formatCurrency(p.unitPurchasePrice || 0),
         formatCurrency(p.sellingPrice || 0),
-        getProductStockForList(p).toFixed(3),
+        Number(p.stock || 0).toFixed(3),
         p.tax || '--',
         p.businessLocation || '--',
       ]),
@@ -780,8 +778,8 @@ const Products: React.FC = () => {
                         else if (col.key === 'unitPurchasePrice') cell = <span className="font-medium">{formatCurrency(product.unitPurchasePrice || 0)}</span>;
                         else if (col.key === 'sellingPrice') cell = <span className="font-medium">{formatCurrency(product.sellingPrice)}</span>;
                         else if (col.key === 'stock') cell = (
-                          <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${getProductStockForList(product) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            {getProductStockForList(product).toFixed(3)} {product.unit}
+                          <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${Number(product.stock || 0) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                            {Number(product.stock || 0).toFixed(3)} {product.unit}
                           </span>
                         );
                         else if (col.key === 'type') cell = (
