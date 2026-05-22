@@ -109,6 +109,18 @@ export const simulateSeedLocationStock = ({
   const cleanLocationId = String(locationId || '').trim();
   if (!cleanLocationId) throw new Error('Selected location does not have a database ID.');
 
+  const isWarehouse = (() => {
+    const id = cleanLocationId.toLowerCase();
+    const joined = `${id} ${cleanLocation.toLowerCase()}`;
+    return (
+      id === 'bl0001' ||
+      joined.includes('atwar al mustaqbal') ||
+      joined.includes('cr:1450968') ||
+      joined.includes('cr 1450968') ||
+      joined.includes('1450968')
+    );
+  })();
+
   const duplicate = findDuplicateSkuLocation(products);
   if (duplicate) {
     throw new Error(`Duplicate product rows found for SKU "${duplicate.sku}" at "${duplicate.location}". Merge duplicates before seeding.`);
@@ -188,36 +200,56 @@ export const simulateSeedLocationStock = ({
     source.availableLocations = Array.from(new Set(newVisibilityNames.filter(Boolean)));
     productById.set(source.id, source);
 
-    const target: ProductLocationInventory = existingTarget || {
-      id: generateId('PINV'),
-      productId: source.id,
-      locationId: cleanLocationId,
-      locationName: cleanLocation,
-      stock: 0,
-      unitCost: round3(Number(source.unitPurchasePrice || 0)),
-    };
+    let previousQty = 0;
+    let delta = 0;
+    let existingTargetExists = false;
 
-    const previousQty = round3(Number(target.stock || 0));
-    const delta = round3(desiredQty - previousQty);
+    if (isWarehouse) {
+      previousQty = round3(Number(source.stock || 0));
+      delta = round3(desiredQty - previousQty);
+      source.stock = desiredQty;
+      if (Number.isFinite(Number(item.unitCost || 0)) && Number(item.unitCost || 0) > 0) {
+        source.unitPurchasePrice = round3(Number(item.unitCost || 0));
+      }
+      productById.set(source.id, source);
 
-    target.stock = desiredQty;
-    if (Number.isFinite(Number(item.unitCost || 0)) && Number(item.unitCost || 0) > 0) {
-      target.unitCost = round3(Number(item.unitCost || 0));
-    }
-
-    if (!existingTarget) {
-      inventoryByKey.set(targetKey, target);
-      createdInventoryIds.push(target.id);
-      createdCount += 1;
-    } else if (delta !== 0) {
-      inventoryByKey.set(targetKey, target);
-      updatedCount += 1;
+      if (delta !== 0) updatedCount += 1;
+      else unchangedCount += 1;
+      existingTargetExists = true; // Warehouse product always exists
     } else {
-      inventoryByKey.set(targetKey, target);
-      unchangedCount += 1;
+      const target: ProductLocationInventory = existingTarget || {
+        id: generateId('PINV'),
+        productId: source.id,
+        locationId: cleanLocationId,
+        locationName: cleanLocation,
+        stock: 0,
+        unitCost: round3(Number(source.unitPurchasePrice || 0)),
+      };
+
+      previousQty = round3(Number(target.stock || 0));
+      delta = round3(desiredQty - previousQty);
+
+      target.stock = desiredQty;
+      if (Number.isFinite(Number(item.unitCost || 0)) && Number(item.unitCost || 0) > 0) {
+        target.unitCost = round3(Number(item.unitCost || 0));
+      }
+
+      existingTargetExists = !!existingTarget;
+
+      if (!existingTarget) {
+        inventoryByKey.set(targetKey, target);
+        createdInventoryIds.push(target.id);
+        createdCount += 1;
+      } else if (delta !== 0) {
+        inventoryByKey.set(targetKey, target);
+        updatedCount += 1;
+      } else {
+        inventoryByKey.set(targetKey, target);
+        unchangedCount += 1;
+      }
     }
 
-    if (delta !== 0 || !existingTarget) {
+    if (delta !== 0 || !existingTargetExists) {
       ledgerEntries.push({
         id: `STK-SEED-${now}-${index}-${ledgerSeq += 1}`,
         productId: source.id,
