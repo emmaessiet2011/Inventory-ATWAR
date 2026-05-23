@@ -341,6 +341,17 @@ export const simulateStockTransfer = ({
   const now = Date.now();
   const ledgerEntries: StockLedgerEntry[] = [];
   let ledgerSeq = 0;
+  const syncWarehouseMirrorInventory = (
+    product: Product,
+    locationId: string,
+    nextQty: number,
+  ) => {
+    if (!locationId) return;
+    const key = inventoryKey(product.id, locationId);
+    const existing = inventoryByKey.get(key);
+    if (!existing) return;
+    existing.stock = Math.max(0, round3(nextQty));
+  };
 
   const getSourceProduct = (item: StockTransferItem): Product => {
     const sourceKey = skuLocationKey(item.sku, transfer.locationFrom);
@@ -440,6 +451,7 @@ export const simulateStockTransfer = ({
     }
     if (sourceUsesProductStock) {
       source.stock = Math.max(0, sourceNext);
+      syncWarehouseMirrorInventory(source, locationFromId, source.stock);
     } else if (sourceInventory) {
       sourceInventory.stock = Math.max(0, sourceNext);
     }
@@ -461,6 +473,7 @@ export const simulateStockTransfer = ({
     }
     if (targetUsesProductStock) {
       source.stock = Math.max(0, targetNext);
+      syncWarehouseMirrorInventory(source, locationToId, source.stock);
     } else if (targetInventory) {
       targetInventory.stock = Math.max(0, targetNext);
     }

@@ -147,4 +147,41 @@ describe('location stock quantity rules', () => {
     expect(result.inventoryAfter.find(row => row.locationId === 'LOC-BARKA')?.stock).toBe(3);
     expect(result.ledgerEntries.map(entry => entry.change)).toEqual([-1, 1]);
   });
+
+  it('keeps warehouse inventory row in sync when warehouse stock is transferred out', () => {
+    const source = product();
+    const inventoryRows: ProductLocationInventory[] = [
+      {
+        id: 'PINV-WH',
+        productId: source.id,
+        locationId: 'BL0001',
+        locationName: 'Atwar Al Mustaqbal Business, CR:1450968',
+        stock: 50,
+        unitCost: 10,
+      },
+      {
+        id: 'PINV-MOWALAH',
+        productId: source.id,
+        locationId: 'LOC-MOWALAH',
+        locationName: 'O2 Pet Shop Mowalah',
+        stock: 1,
+        unitCost: 10,
+      },
+    ];
+
+    const result = simulateStockTransfer({
+      transfer: transfer(),
+      direction: 1,
+      products: [source],
+      inventoryRows,
+      locationFromId: 'BL0001',
+      locationToId: 'LOC-MOWALAH',
+      generateId,
+      actorName: 'Admin',
+    });
+
+    expect(result.productsAfter[0].stock).toBe(49);
+    expect(result.inventoryAfter.find(row => row.locationId === 'BL0001')?.stock).toBe(49);
+    expect(result.inventoryAfter.find(row => row.locationId === 'LOC-MOWALAH')?.stock).toBe(2);
+  });
 });
