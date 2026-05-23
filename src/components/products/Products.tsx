@@ -68,31 +68,6 @@ const Products: React.FC = () => {
     sellingPrice: '',
   });
 
-  useEffect(() => {
-    const autoRecover = async () => {
-      if (localStorage.getItem('ATWAR_PHASE9_RECOVERY_DONE')) return;
-      if (!products || products.length === 0) return;
-
-      const bugged = products.filter(p => {
-        const locs = Array.isArray(p.availableLocations) ? p.availableLocations : [];
-        return locs.length > 0 && locs.length <= 4 && locs.some(l => l.toLowerCase() === 'warehouse' || l.toLowerCase() === 'atwar al mustaqbal') && !p.businessLocation;
-      });
-
-      if (bugged.length > 0) {
-        let count = 0;
-        for (const p of bugged) {
-          const res = await updateProduct({ ...p, availableLocations: [], availableLocationIds: [] });
-          if (res && res.ok) count++;
-        }
-        console.log(`Phase 9 Auto-Recovery: Recovered ${count} products.`);
-      }
-      localStorage.setItem('ATWAR_PHASE9_RECOVERY_DONE', 'true');
-    };
-    
-    const timer = setTimeout(() => void autoRecover(), 2000);
-    return () => clearTimeout(timer);
-  }, [products, updateProduct]);
-
   const resetForm = () => {
     setFormData({
       name: '', sku: '', barcodeType: 'Code 128 (C128)', unit: '', brand: '',

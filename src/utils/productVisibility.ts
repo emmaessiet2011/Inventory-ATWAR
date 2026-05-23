@@ -15,57 +15,23 @@ export const getProductLocationNames = (product: Product): string[] => (
 );
 
 export const productVisibleAtLocation = (
-  product: Product,
-  location?: Pick<Location, 'id' | 'name'> | null,
+  _product: Product,
+  _location?: Pick<Location, 'id' | 'name'> | null,
 ): boolean => {
-  if (!location) return true;
-  const locationId = normalize(location.id);
-  const locationName = normalize(location.name);
-
-  const selectedIds = getProductLocationIds(product).map(normalize);
-  const selectedNames = getProductLocationNames(product).map(normalize);
-
-  if (selectedIds.length > 0 || selectedNames.length > 0) {
-    return selectedIds.includes(locationId) || selectedNames.includes(locationName);
-  }
-
-  const legacyLocation = normalize(product.businessLocation);
-  return !legacyLocation || legacyLocation === locationName;
+  // FORCE GLOBAL CATALOG: All products are visible everywhere. 
+  // Stock availability per location naturally dictates what can be sold.
+  return true;
 };
 
 export const productVisibleToUser = (
   product: Product,
   user: AppUser | null,
-  locations: Location[],
+  _locations: Location[],
 ): boolean => {
   if (!user) return true;
   if (normalize(user.role) === 'admin') return true;
 
-  const accessLocationIds = Array.isArray(user.accessLocations)
-    ? user.accessLocations.map(normalize).filter(Boolean)
-    : [];
-  const hasAllLocations = accessLocationIds.some(value => value === 'all locations' || value === 'all');
-
-  let locMatch = false;
-  if (hasAllLocations) {
-    locMatch = true;
-  } else {
-    const locationMatches = locations.filter(location => (
-      accessLocationIds.includes(normalize(location.id)) ||
-      accessLocationIds.includes(normalize(location.name)) ||
-      normalize(location.name) === normalize(user.businessLocation)
-    ));
-
-    if (locationMatches.length === 0 && user.businessLocation) {
-      locMatch = !normalize(product.businessLocation) || normalize(product.businessLocation) === normalize(user.businessLocation);
-    } else {
-      locMatch = locationMatches.some(location => productVisibleAtLocation(product, location));
-    }
-  }
-
-  if (!locMatch) return false;
-
-  // Category restriction (if defined)
+  // Category restriction (if defined by user role permissions)
   const accessCategories = Array.isArray(user.accessCategories)
     ? user.accessCategories.map(normalize).filter(Boolean)
     : [];
@@ -77,6 +43,7 @@ export const productVisibleToUser = (
     }
   }
 
+  // Location filters bypassed: enforce global product visibility.
   return true;
 };
 
