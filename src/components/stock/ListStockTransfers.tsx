@@ -19,6 +19,7 @@ import {
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 import { fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ListStockTransfersProps {
   onNavigate: (page: string) => void;
@@ -108,6 +109,10 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         if (filters.locationFrom.length > 0 && !filters.locationFrom.includes(transfer.locationFrom)) return false;
         if (filters.locationTo.length > 0 && !filters.locationTo.includes(transfer.locationTo)) return false;
         if (filters.status.length > 0 && !filters.status.includes(transfer.status)) return false;
+
+        const fromAccessible = isLocationAccessible(transfer.locationFrom, currentUser, locations);
+        const toAccessible = isLocationAccessible(transfer.locationTo, currentUser, locations);
+        if (!fromAccessible && !toAccessible) return false;
         if (startMs != null || endMs != null) {
           const transferMs = Date.parse(transfer.date);
           if (!Number.isFinite(transferMs)) return false;

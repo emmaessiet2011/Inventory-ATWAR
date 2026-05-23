@@ -3,6 +3,7 @@ import {
   fetchLocationInventoryFromDB,
   LOCATION_INVENTORY_UPDATED_EVENT,
 } from '@/utils/stockLocationInventory';
+import { isLocationAccessible } from '@/utils/productVisibility';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, SlidersHorizontal } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
@@ -139,17 +140,18 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     [activeLocations, isAdminUser, locations],
   );
   const selectableLocations = useMemo(() => {
-    if (!location) return locationPool;
-    const current = locations.find(row => normalize(row.name) === normalize(location));
-    if (
-      current &&
-      current.isActive === false &&
-      !locationPool.some(row => normalize(row.name) === normalize(current.name))
-    ) {
-      return [current, ...locationPool];
-    }
-    return locationPool;
-  }, [locationPool, locations, location]);
+      let filteredPool = locationPool.filter(loc => isLocationAccessible(loc.name, currentUser, locations));
+      if (!location) return filteredPool;
+      const current = locations.find(loc => normalize(loc.name) === normalize(location));
+      if (
+        current &&
+        current.isActive === false &&
+        !filteredPool.some(loc => normalize(loc.id) === normalize(current.id))
+      ) {
+        return [current, ...filteredPool];
+      }
+      return filteredPool;
+    }, [locationPool, locations, location, currentUser]);
   const sellableDamageLocations = useMemo(
     () => activeLocations.filter((row) => normalize(row.name) !== normalize(location)),
     [activeLocations, location],

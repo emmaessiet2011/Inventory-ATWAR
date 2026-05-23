@@ -1,3 +1,4 @@
+import { isLocationAccessible } from '@/utils/productVisibility';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, ArrowRightLeft } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
@@ -93,17 +94,18 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
     return matched ? `id:${normalize(matched.id)}` : `name:${normalize(value)}`;
   };
   const selectableSourceLocations = useMemo(() => {
-    if (!locationFrom) return activeLocations;
+    const baseLocations = activeLocations.filter(loc => isLocationAccessible(loc.name, currentUser, locations));
+    if (!locationFrom) return baseLocations;
     const current = resolveLocationRecord(locationFrom);
     if (
       current &&
       current.isActive === false &&
-      !activeLocations.some(location => normalize(location.id) === normalize(current.id))
+      !baseLocations.some(location => normalize(location.id) === normalize(current.id))
     ) {
-      return [current, ...activeLocations];
+      return [current, ...baseLocations];
     }
-    return activeLocations;
-  }, [activeLocations, locationFrom, locations]);
+    return baseLocations;
+  }, [activeLocations, locationFrom, locations, currentUser]);
   const selectableDestinationLocations = useMemo(() => {
     if (!locationTo) return activeLocations;
     const current = resolveLocationRecord(locationTo);

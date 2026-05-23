@@ -32,6 +32,7 @@ import {
   writeStockAdjustments,
 } from '@/utils/stockAdjustments';
 import { deleteDedicatedStrict } from '@/utils/apiClient';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ListStockAdjustmentsProps {
   onNavigate: (page: string) => void;
@@ -240,6 +241,8 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         if (filters.adjustmentType.length > 0 && !filters.adjustmentType.includes(adjustment.adjustmentType)) return false;
         if (filters.status.length > 0 && !filters.status.includes(normalizeStockAdjustmentStatus(adjustment.status))) return false;
         if (filters.user.length > 0 && !filters.user.includes(adjustment.addedBy)) return false;
+        
+        if (!isLocationAccessible(adjustment.location, currentUser, locations)) return false;
         if (startMs != null || endMs != null) {
           const adjustmentMs = Date.parse(adjustment.date);
           if (!Number.isFinite(adjustmentMs)) return false;

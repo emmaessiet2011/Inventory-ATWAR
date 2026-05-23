@@ -415,6 +415,11 @@ export const simulateStockTransfer = ({
     const visibilityIds = Array.isArray(product.availableLocationIds) ? product.availableLocationIds : [];
     const visibilityNames = Array.isArray(product.availableLocations) ? product.availableLocations : [];
     
+    // Phase 9 Fix: If the product is globally visible (empty arrays and no legacy location), DO NOT restrict it!
+    if (visibilityIds.length === 0 && visibilityNames.length === 0 && !product.businessLocation) {
+      return;
+    }
+    
     const newVisibilityIds = [...visibilityIds, locationId];
     const newVisibilityNames = [...visibilityNames, locationName];
     
