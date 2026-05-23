@@ -350,7 +350,7 @@ async function main() {
           meta: { source: 'ops-reset-seed-location-stock-from-xlsx', sku: target.sku, row: target.row },
         });
       }
-    } else if (desiredQty > 0) {
+    } else {
       const id = makeId('PINV');
       createRows.push({
         id,
@@ -359,28 +359,28 @@ async function main() {
         stock: desiredQty,
         unitCost: target.unitCost,
       });
-      ledgerRows.push({
-        id: makeId('STK-SEED'),
-        productId: target.productId,
-        locationId: location.id,
-        entryType: 'Opening Balance',
-        changeQty: desiredQty,
-        newQty: desiredQty,
-        date: new Date(nowIso),
-        ref: refNo,
-        party: args.actor,
-        note,
-        meta: { source: 'ops-reset-seed-location-stock-from-xlsx', sku: target.sku, row: target.row },
-      });
+      if (desiredQty !== 0) {
+        ledgerRows.push({
+          id: makeId('STK-SEED'),
+          productId: target.productId,
+          locationId: location.id,
+          entryType: 'Opening Balance',
+          changeQty: desiredQty,
+          newQty: desiredQty,
+          date: new Date(nowIso),
+          ref: refNo,
+          party: args.actor,
+          note,
+          meta: { source: 'ops-reset-seed-location-stock-from-xlsx', sku: target.sku, row: target.row },
+        });
+      }
     }
 
-    if (desiredQty > 0) {
-      const product = products.find((row) => row.id === target.productId);
-      if (product) {
-        const visibility = includeLocationVisibility(product, location);
-        if (visibility.changed) {
-          visibilityUpdates.push({ id: product.id, meta: visibility.meta });
-        }
+    const product = products.find((row) => row.id === target.productId);
+    if (product) {
+      const visibility = includeLocationVisibility(product, location);
+      if (visibility.changed) {
+        visibilityUpdates.push({ id: product.id, meta: visibility.meta });
       }
     }
   });
@@ -440,6 +440,9 @@ async function main() {
     }, { timeout: 180_000 });
   }
 
+  const desiredRowsByFile = desiredByProductId.size;
+  const projectedRowsAtLocationAfterApply = currentInventory.length + createRows.length;
+
   const report = {
     generatedAt: nowIso,
     mode: args.apply ? 'apply' : 'preview',
@@ -456,6 +459,9 @@ async function main() {
       zeroRows: zeroRows.length,
       ledgerRows: ledgerRows.length,
       visibilityUpdates: visibilityUpdates.length,
+      currentInventoryRowsAtLocation: currentInventory.length,
+      desiredRowsByFile,
+      projectedInventoryRowsAtLocationAfterApply: projectedRowsAtLocationAfterApply,
     },
     missingSkus: missingSkus.map((row) => ({ sku: row.sku, row: row.row })),
     preview: {
