@@ -1,0 +1,88 @@
+name: OPS - Reset & Seed Kennol Stock
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_path:
+        description: "Absolute XLSX path on VPS (already uploaded)"
+        required: true
+        default: "/opt/ATWARBSS-main/uploads/product-stock-kennol.xlsx"
+        type: string
+      sheet:
+        description: "Sheet name (leave empty to use first sheet)"
+        required: false
+        default: ""
+        type: string
+      location:
+        description: "Target location name"
+        required: true
+        default: "Kennol Workshop"
+        type: string
+      actor:
+        description: "Actor name for ledger entries"
+        required: true
+        default: "ATWAR Ops"
+        type: string
+      apply:
+        description: "Apply changes to DB (false = preview only)"
+        required: true
+        default: false
+        type: boolean
+      allow_missing_sku:
+        description: "Allow SKUs in file that don't exist in products"
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  run-stock-reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run stock reset/seed on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          APP_PATH: ${{ secrets.VPS_APP_PATH }}
+          FILE_PATH: ${{ inputs.file_path }}
+          SHEET: ${{ inputs.sheet }}
+          LOCATION: ${{ inputs.location }}
+          ACTOR: ${{ inputs.actor }}
+          APPLY: ${{ inputs.apply }}
+          ALLOW_MISSING_SKU: ${{ inputs.allow_missing_sku }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          port: 22
+          envs: APP_PATH,FILE_PATH,SHEET,LOCATION,ACTOR,APPLY,ALLOW_MISSING_SKU
+          script: |
+            set -e
+            APP_ROOT="${APP_PATH:-/opt/ATWARBSS-main}"
+            cd "$APP_ROOT"
+
+            echo "[ops] app path: $APP_ROOT"
+            echo "[ops] file: $FILE_PATH"
+            echo "[ops] location: $LOCATION"
+            echo "[ops] actor: $ACTOR"
+            echo "[ops] apply: $APPLY"
+            echo "[ops] allow_missing_sku: $ALLOW_MISSING_SKU"
+
+            git fetch origin
+            git checkout main
+            git pull --ff-only origin main
+
+            npm ci || npm install
+
+            EXTRA_ARGS=""
+            if [ -n "$SHEET" ]; then
+              EXTRA_ARGS="$EXTRA_ARGS --sheet \"$SHEET\""
+            fi
+            if [ "$APPLY" = "true" ]; then
+              EXTRA_ARGS="$EXTRA_ARGS --apply"
+            fi
+            if [ "$ALLOW_MISSING_SKU" = "true" ]; then
+              EXTRA_ARGS="$EXTRA_ARGS --allow-missing-sku"
+            fi
+
+            CMD="npm run ops:stock:reset-seed-location -- --file \"$FILE_PATH\" --location \"$LOCATION\" --actor \"$ACTOR\" $EXTRA_ARGS"
+            echo "[ops] executing: $CMD"
+            eval "$CMD"

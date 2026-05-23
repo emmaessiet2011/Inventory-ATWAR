@@ -34,6 +34,7 @@
     "ops:go-live": "npm run ops:go-live:checklist",
     "ops:move:products-location": "node scripts/ops/move-products-to-location.mjs",
     "ops:merge:duplicate-products": "node scripts/ops/merge-location-duplicate-products.mjs",
+    "ops:stock:reset-seed-location": "node scripts/ops/reset-seed-location-stock-from-xlsx.mjs",
     "ops:import:price-lists": "node scripts/ops/import-selling-price-lists.mjs",
     "test:unit": "vitest run",
     "test:context": "vitest run tests/context/global-context.integration.test.tsx",
@@ -55,7 +56,8 @@
     "lucide-react": "^0.563.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "recharts": "^3.7.0"
+    "recharts": "^3.7.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
