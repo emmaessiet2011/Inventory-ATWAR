@@ -227,10 +227,15 @@ async function main() {
   const location = resolveLocation(locations, args.location);
 
   const productsBySku = new Map();
+  const productsByName = new Map();
   products.forEach((product) => {
     const key = normalize(product.sku);
     if (!key) return;
     productsBySku.set(key, [...(productsBySku.get(key) || []), product]);
+    const nameKey = normalize(product.name);
+    if (nameKey) {
+      productsByName.set(nameKey, [...(productsByName.get(nameKey) || []), product]);
+    }
   });
 
   const missingSkus = [];
@@ -238,7 +243,11 @@ async function main() {
   const desiredByProductId = new Map();
 
   desiredBySku.forEach((payload, skuNorm) => {
-    const matches = productsBySku.get(skuNorm) || [];
+    let matches = productsBySku.get(skuNorm) || [];
+    if (matches.length === 0 && payload.name) {
+      const byName = productsByName.get(normalize(payload.name)) || [];
+      matches = byName;
+    }
     if (matches.length === 0) {
       missingSkus.push(payload);
       return;
