@@ -6,7 +6,12 @@ import {
   Minus, PlusCircle, Calendar, FileText, XCircle,
   Banknote, Wallet, X, ShoppingCart, Undo2, Monitor
 } from 'lucide-react';
-import { fetchLocationInventoryFromDB, ProductLocationInventory, calculateAvailableStock } from '@/utils/stockLocationInventory';
+import {
+  fetchLocationInventoryFromDB,
+  ProductLocationInventory,
+  calculateAvailableStock,
+  LOCATION_INVENTORY_UPDATED_EVENT,
+} from '@/utils/stockLocationInventory';
 import { useGlobalContext, Product as GlobalProduct } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { findBestApplicableDiscount, formatDiscountAmount, resolveAppliedDiscount } from '@/utils/discountRules';
@@ -114,12 +119,20 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
 
   useEffect(() => {
     let isMounted = true;
-    fetchLocationInventoryFromDB().then((records) => {
-      if (isMounted) setLocationInventory(records);
-    }).catch(() => {
-      if (isMounted) setLocationInventory([]);
-    });
-    return () => { isMounted = false; };
+    const refreshInventory = () => {
+      fetchLocationInventoryFromDB().then((records) => {
+        if (isMounted) setLocationInventory(records);
+      }).catch(() => {
+        if (isMounted) setLocationInventory([]);
+      });
+    };
+    refreshInventory();
+    const onInventoryUpdated = () => { refreshInventory(); };
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    };
   }, []);
 
   const [discount, setDiscount] = useState<number>(0);

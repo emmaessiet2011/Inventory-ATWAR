@@ -31,7 +31,11 @@ import {
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 import { productVisibleAtLocation } from '@/utils/productVisibility';
-import { fetchLocationInventoryFromDB, ProductLocationInventory } from '@/utils/stockLocationInventory';
+import {
+  fetchLocationInventoryFromDB,
+  LOCATION_INVENTORY_UPDATED_EVENT,
+  ProductLocationInventory,
+} from '@/utils/stockLocationInventory';
 
 interface AddSaleProps {
     onNavigate?: (page: string) => void;
@@ -514,12 +518,20 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   useEffect(() => {
     let isMounted = true;
-    fetchLocationInventoryFromDB().then((records) => {
-      if (isMounted) setLocationInventory(records);
-    }).catch(() => {
-      if (isMounted) setLocationInventory([]);
-    });
-    return () => { isMounted = false; };
+    const refreshInventory = () => {
+      fetchLocationInventoryFromDB().then((records) => {
+        if (isMounted) setLocationInventory(records);
+      }).catch(() => {
+        if (isMounted) setLocationInventory([]);
+      });
+    };
+    refreshInventory();
+    const onInventoryUpdated = () => { refreshInventory(); };
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    };
   }, []);
 
   const getAvailableStock = (product: Product) => {

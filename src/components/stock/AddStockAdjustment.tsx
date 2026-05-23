@@ -1,4 +1,8 @@
-import { ProductLocationInventory, fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
+import {
+  ProductLocationInventory,
+  fetchLocationInventoryFromDB,
+  LOCATION_INVENTORY_UPDATED_EVENT,
+} from '@/utils/stockLocationInventory';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Calendar, Search, Trash2, Info, ChevronDown, Save, X, SlidersHorizontal } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
@@ -94,12 +98,20 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
 
   useEffect(() => {
     let isMounted = true;
-    fetchLocationInventoryFromDB().then((records) => {
-      if (isMounted) setLocationInventory(records);
-    }).catch(() => {
-      if (isMounted) setLocationInventory([]);
-    });
-    return () => { isMounted = false; };
+    const refreshInventory = () => {
+      fetchLocationInventoryFromDB().then((records) => {
+        if (isMounted) setLocationInventory(records);
+      }).catch(() => {
+        if (isMounted) setLocationInventory([]);
+      });
+    };
+    refreshInventory();
+    const onInventoryUpdated = () => { refreshInventory(); };
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    return () => {
+      isMounted = false;
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
+    };
   }, []);
 
   const getAvailableStock = (productId: string, locName: string) => {

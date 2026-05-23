@@ -96,6 +96,16 @@ const toIsoDate = (value: string): string => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 };
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
+const isWarehouseLocationForProduct = (product: Product, locationId: string, locationName: string): boolean => {
+  const normalizedLocationId = normalize(locationId);
+  const normalizedLocationName = normalize(locationName);
+  const normalizedProductLocation = normalize(product.businessLocation);
+  if (normalizedLocationId === 'bl0001') return true;
+  if (normalizedProductLocation && normalizedLocationName === normalizedProductLocation) return true;
+  if (normalizedLocationName.includes('warehouse')) return true;
+  if (normalizedLocationName.includes('1450968') && productLooksWarehouseMaster(product)) return true;
+  return false;
+};
 
 let stockTransfersCache: StockTransferRecord[] = [];
 let stockLedgerCache: StockLedgerEntry[] = [];
@@ -416,26 +426,44 @@ export const simulateStockTransfer = ({
     const qty = round3(Number(item.qty || 0));
     if (!qty) return;
     const source = getSourceProduct(item);
-    const sourceInventory = getInventoryRecord(source, locationFromId, transfer.locationFrom, direction < 0);
-    const sourceCurrent = Number(sourceInventory?.stock || 0);
+    const sourceUsesProductStock = isWarehouseLocationForProduct(source, locationFromId, transfer.locationFrom);
+    const sourceInventory = sourceUsesProductStock
+      ? null
+      : getInventoryRecord(source, locationFromId, transfer.locationFrom, direction < 0);
+    const sourceCurrent = sourceUsesProductStock
+      ? Number(source.stock || 0)
+      : Number(sourceInventory?.stock || 0);
     const deltaOut = round3(-qty * direction);
     const sourceNext = round3(sourceCurrent + deltaOut);
     if (sourceNext < -0.0001) {
       throw new Error(`Insufficient stock for "${source.name}" at "${transfer.locationFrom}".`);
     }
-    sourceInventory.stock = Math.max(0, sourceNext);
+    if (sourceUsesProductStock) {
+      source.stock = Math.max(0, sourceNext);
+    } else if (sourceInventory) {
+      sourceInventory.stock = Math.max(0, sourceNext);
+    }
 
     if (direction > 0) {
       ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo, locationFromId, transfer.locationFrom);
     }
-    const targetInventory = getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
+    const targetUsesProductStock = isWarehouseLocationForProduct(source, locationToId, transfer.locationTo);
+    const targetInventory = targetUsesProductStock
+      ? null
+      : getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
     const deltaIn = round3(qty * direction);
-    const targetCurrent = Number(targetInventory?.stock || 0);
+    const targetCurrent = targetUsesProductStock
+      ? Number(source.stock || 0)
+      : Number(targetInventory?.stock || 0);
     const targetNext = round3(targetCurrent + deltaIn);
     if (targetNext < -0.0001) {
       throw new Error(`Insufficient stock at target "${transfer.locationTo}" for SKU "${item.sku}".`);
     }
-    targetInventory.stock = Math.max(0, targetNext);
+    if (targetUsesProductStock) {
+      source.stock = Math.max(0, targetNext);
+    } else if (targetInventory) {
+      targetInventory.stock = Math.max(0, targetNext);
+    }
 
     const transferNote = `${notePrefix ? `${notePrefix}: ` : ''}${transfer.locationFrom} -> ${transfer.locationTo}`;
     const outType = deltaOut < 0 ? 'Stock Transfer Out' : 'Stock Transfer Reversal In';
@@ -447,7 +475,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: outType,
       change: deltaOut,
-      newQty: Number(sourceInventory?.stock || 0),
+      newQty: sourceUsesProductStock ? Number(source.stock || 0) : Number(sourceInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -461,7 +489,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: inType,
       change: deltaIn,
-      newQty: Number(targetInventory?.stock || 0),
+      newQty: targetUsesProductStock ? Number(source.stock || 0) : Number(targetInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',

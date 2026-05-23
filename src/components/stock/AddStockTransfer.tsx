@@ -5,6 +5,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import {
   fetchLocationInventoryFromDB,
   inventoryKey,
+  LOCATION_INVENTORY_UPDATED_EVENT,
   ProductLocationInventory,
   syncChangedLocationInventoryStrict,
 } from '@/utils/stockLocationInventory';
@@ -153,11 +154,17 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
 
   useEffect(() => {
     let isMounted = true;
-    fetchLocationInventoryFromDB()
-      .then((records) => { if (isMounted) setLocationInventory(records); })
-      .catch(() => { if (isMounted) setLocationInventory([]); });
+    const refreshInventory = () => {
+      fetchLocationInventoryFromDB()
+        .then((records) => { if (isMounted) setLocationInventory(records); })
+        .catch(() => { if (isMounted) setLocationInventory([]); });
+    };
+    refreshInventory();
+    const onInventoryUpdated = () => { refreshInventory(); };
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     return () => {
       isMounted = false;
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     };
   }, []);
 

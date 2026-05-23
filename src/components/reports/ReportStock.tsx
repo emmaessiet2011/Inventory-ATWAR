@@ -17,6 +17,7 @@ import { printActiveReportTable } from '@/utils/printUtils';
 import { bootstrapStockTransfersFromDB, readStockLedger } from '@/utils/stockTransfers';
 import {
   fetchLocationInventoryFromDB,
+  LOCATION_INVENTORY_UPDATED_EVENT,
   ProductLocationInventory,
 } from '@/utils/stockLocationInventory';
 
@@ -163,14 +164,17 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
     const onFocus = () => { void refreshLedger(); };
     const onTransfersUpdated = () => { void refreshLedger(); };
     const onLedgerUpdated = () => { void refreshLedger(); };
+    const onInventoryUpdated = () => { void refreshLedger(); };
     window.addEventListener('focus', onFocus);
     window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
     window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     return () => {
       cancelled = true;
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
       window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     };
   }, []);
 

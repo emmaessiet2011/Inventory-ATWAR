@@ -24,6 +24,12 @@ export interface LocationInventorySyncResult {
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+export const LOCATION_INVENTORY_UPDATED_EVENT = 'app:location-inventory-updated';
+
+const notifyInventoryUpdated = () => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(LOCATION_INVENTORY_UPDATED_EVENT));
+};
 
 export const inventoryKey = (productId: unknown, locationId: unknown): string => (
   `${normalize(productId)}@@${normalize(locationId)}`
@@ -80,6 +86,10 @@ export const syncChangedLocationInventoryStrict = async (
         failedInventoryId: row.id,
       };
     }
+  }
+
+  if (changedRows.length > 0) {
+    notifyInventoryUpdated();
   }
 
   return { ok: true, status: 200 };

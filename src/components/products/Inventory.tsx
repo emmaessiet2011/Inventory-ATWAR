@@ -19,6 +19,7 @@ import {
   fetchLocationInventoryFromDB,
   ProductLocationInventory,
   calculateAvailableStock,
+  LOCATION_INVENTORY_UPDATED_EVENT,
 } from '@/utils/stockLocationInventory';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument } from '@/utils/printUtils';
@@ -159,14 +160,17 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     const onFocus = () => { void refreshFromDB(); };
     const onTransfersUpdated = () => { void refreshFromDB(); };
     const onLedgerUpdated = () => { void refreshFromDB(); };
+    const onInventoryUpdated = () => { void refreshFromDB(); };
     window.addEventListener('focus', onFocus);
     window.addEventListener('app:stock-transfers-updated', onTransfersUpdated);
     window.addEventListener('app:stock-ledger-updated', onLedgerUpdated);
+    window.addEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     return () => {
       isMounted = false;
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('app:stock-transfers-updated', onTransfersUpdated);
       window.removeEventListener('app:stock-ledger-updated', onLedgerUpdated);
+      window.removeEventListener(LOCATION_INVENTORY_UPDATED_EVENT, onInventoryUpdated);
     };
   }, []);
 
