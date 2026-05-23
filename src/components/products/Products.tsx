@@ -68,31 +68,6 @@ const Products: React.FC = () => {
     sellingPrice: '',
   });
 
-  useEffect(() => {
-    const autoRecover = async () => {
-      if (localStorage.getItem('ATWAR_PHASE9_RECOVERY_DONE')) return;
-      if (!products || products.length === 0) return;
-
-      const bugged = products.filter(p => {
-        const locs = Array.isArray(p.availableLocations) ? p.availableLocations : [];
-        return locs.length > 0 && locs.length <= 4 && locs.some(l => l.toLowerCase() === 'warehouse' || l.toLowerCase() === 'atwar al mustaqbal') && !p.businessLocation;
-      });
-
-      if (bugged.length > 0) {
-        let count = 0;
-        for (const p of bugged) {
-          const res = await updateProduct({ ...p, availableLocations: [], availableLocationIds: [] });
-          if (res && res.ok) count++;
-        }
-        console.log(`Phase 9 Auto-Recovery: Recovered ${count} products.`);
-      }
-      localStorage.setItem('ATWAR_PHASE9_RECOVERY_DONE', 'true');
-    };
-    
-    const timer = setTimeout(() => void autoRecover(), 2000);
-    return () => clearTimeout(timer);
-  }, [products, updateProduct]);
-
   const resetForm = () => {
     setFormData({
       name: '', sku: '', barcodeType: 'Code 128 (C128)', unit: '', brand: '',
@@ -694,24 +669,6 @@ const Products: React.FC = () => {
 
                 {/* Export Buttons */}
                 <div className="flex flex-wrap justify-center gap-2 w-full xl:w-auto relative">
-                  <button onClick={async () => {
-                    const bugged = products.filter(p => {
-                      const locs = Array.isArray(p.availableLocations) ? p.availableLocations : [];
-                      return locs.length > 0 && locs.length <= 4 && !p.businessLocation;
-                    });
-                    if (bugged.length === 0) {
-                      alert('No bugged products found!');
-                      return;
-                    }
-                    if (!window.confirm(`Found ${bugged.length} products that are restricted. Reset them to global visibility?`)) return;
-                    for (const p of bugged) {
-                      await updateProduct({ ...p, availableLocations: [], availableLocationIds: [] });
-                    }
-                    alert(`Successfully recovered ${bugged.length} products!`);
-                  }}
-                    className="flex items-center gap-2 px-3 py-2 bg-rose-600 border border-rose-600 rounded-lg text-xs font-bold text-white hover:bg-rose-700 transition shadow-sm whitespace-nowrap">
-                    Recover Hidden Products
-                  </button>
                   <button onClick={exportCSV}
                     className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition shadow-sm whitespace-nowrap">
                     <FileText size={14} /> CSV

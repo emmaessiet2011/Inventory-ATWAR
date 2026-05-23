@@ -25,10 +25,37 @@
       "payment-account-report/"
     ],
     "unknownNavigationTargets": 0,
-    "deadOnClickHandlers": 0,
-    "bannedCalls": 0
+    "deadOnClickHandlers": 1,
+    "bannedCalls": 4
   },
   "unknownNavigationTargets": [],
-  "deadOnClickHandlers": [],
-  "bannedCalls": []
+  "deadOnClickHandlers": [
+    {
+      "file": "src/components/products/Products.tsx",
+      "line": 697,
+      "snippet": "onClick={async () => {\n                    const cebican = products.find(p => p.name.toLowerCase().includes('cebican kit"
+    }
+  ],
+  "bannedCalls": [
+    {
+      "file": "src/components/products/Products.tsx",
+      "line": 87,
+      "call": "console.log"
+    },
+    {
+      "file": "src/components/products/Products.tsx",
+      "line": 700,
+      "call": "console.log"
+    },
+    {
+      "file": "src/components/products/Products.tsx",
+      "line": 714,
+      "call": "alert"
+    },
+    {
+      "file": "src/components/products/Products.tsx",
+      "line": 723,
+      "call": "alert"
+    }
+  ]
 }
