@@ -72,12 +72,6 @@ jobs:
             echo "[ops] apply: $APPLY"
             echo "[ops] allow_missing_sku: $ALLOW_MISSING_SKU"
 
-            if [ -n "$FILE_BASE64" ]; then
-              echo "[ops] writing provided base64 file content to: $FILE_PATH"
-              mkdir -p "$(dirname "$FILE_PATH")"
-              printf "%s" "$FILE_BASE64" | base64 -d > "$FILE_PATH"
-            fi
-
             git fetch origin
             git checkout main
             if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -87,6 +81,12 @@ jobs:
             git pull --ff-only origin main
 
             npm ci || npm install
+
+            if [ -n "$FILE_BASE64" ]; then
+              echo "[ops] writing provided base64 file content to: $FILE_PATH"
+              mkdir -p "$(dirname "$FILE_PATH")"
+              printf "%s" "$FILE_BASE64" | base64 -d > "$FILE_PATH"
+            fi
 
             EXTRA_ARGS=""
             if [ -n "$SHEET" ]; then
