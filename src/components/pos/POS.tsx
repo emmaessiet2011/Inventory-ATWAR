@@ -44,27 +44,29 @@ interface POSProps {
 type CheckoutMode = 'paid' | 'card' | 'credit' | 'multi' | 'draft' | 'quotation' | 'suspend';
 
 const normalizeText = (value?: string) => String(value || '').trim().toLowerCase();
-type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_engine_oil' | 'exclude_engine_oil';
+type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_workshop_categories' | 'exclude_workshop_categories';
 type SaleLocationCategoryPolicy = { mode: SaleLocationCategoryPolicyMode };
-const isEngineOilCategory = (category: unknown): boolean =>
-  normalizeText(String(category || '')).includes('engine oil');
+const isWorkshopCategory = (category: unknown): boolean => {
+  const cat = normalizeText(String(category || ''));
+  return cat.includes('engine oil') || cat.includes('break oil') || cat.includes('brake oil') || cat.includes('windshield') || cat.includes('brake fluid');
+};
 const resolveSaleLocationCategoryPolicy = (locationName: unknown): SaleLocationCategoryPolicy => {
   const normalizedLocation = normalizeText(String(locationName || ''));
   if (!normalizedLocation) return { mode: 'allow_all' };
   const compactLocation = normalizedLocation.replace(/\s+/g, '');
-  if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_engine_oil' };
+  if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_workshop_categories' };
   const isO2Petshop = normalizedLocation.includes('o2 pet shop') || compactLocation.includes('o2petshop');
   const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
-  if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_engine_oil' };
+  if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_workshop_categories' };
   return { mode: 'allow_all' };
 };
 const isProductAllowedByLocationCategory = (
-  product: Pick<GlobalProduct, 'category'>,
+  product: Pick<GlobalProduct, 'category'> | null | undefined,
   policy: SaleLocationCategoryPolicy,
 ): boolean => {
   if (policy.mode === 'allow_all') return true;
-  const isEngineOil = isEngineOilCategory(product.category);
-  return policy.mode === 'only_engine_oil' ? isEngineOil : !isEngineOil;
+  const isWorkshop = isWorkshopCategory(product?.category);
+  return policy.mode === 'only_workshop_categories' ? isWorkshop : !isWorkshop;
 };
 
 /** Check if a KeyboardEvent matches a shortcut string like 'f2', 'shift+e', 'ctrl+f4' */
