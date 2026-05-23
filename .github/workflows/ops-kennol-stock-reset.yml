@@ -80,6 +80,10 @@ jobs:
 
             git fetch origin
             git checkout main
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "[ops] local git changes detected on VPS, stashing before pull"
+              git stash push --include-untracked -m "ops-kennol-stock-reset-$(date +%Y%m%d-%H%M%S)" || true
+            fi
             git pull --ff-only origin main
 
             npm ci || npm install
