@@ -203,6 +203,9 @@ async function main() {
     const qty = round3(parseNumber(row[qtyKey]));
     const name = nameKey ? String(row[nameKey] || '').trim() : '';
     if (desiredBySku.has(skuNorm)) {
+      const existing = desiredBySku.get(skuNorm);
+      existing.qty = round3(Number(existing.qty || 0) + qty);
+      if (!existing.name && name) existing.name = name;
       duplicateSkus.push({ sku, row: index + 2 });
       return;
     }
@@ -210,9 +213,6 @@ async function main() {
     lineItems.push({ sku, qty, name, row: index + 2 });
   });
 
-  if (duplicateSkus.length > 0) {
-    throw new Error(`Duplicate SKU(s) in file: ${duplicateSkus.map((row) => `${row.sku} (row ${row.row})`).join(', ')}`);
-  }
   if (lineItems.length === 0) {
     throw new Error('No valid SKU rows found in sheet.');
   }
@@ -462,6 +462,7 @@ async function main() {
       currentInventoryRowsAtLocation: currentInventory.length,
       desiredRowsByFile,
       projectedInventoryRowsAtLocationAfterApply: projectedRowsAtLocationAfterApply,
+      mergedDuplicateSkuRows: duplicateSkus.length,
     },
     missingSkus: missingSkus.map((row) => ({ sku: row.sku, row: row.row })),
     preview: {
