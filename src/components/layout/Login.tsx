@@ -219,7 +219,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setError(
           result.payload?.error
             || (result.shouldRetry
-              ? 'Server is waking up. Please wait a few seconds and sign in again.'
+              ? 'Server connection failed or timed out. Please check if the backend service is running on your VPS.'
               : 'Invalid email or password. Please try again.'),
         );
         return;
