@@ -49,25 +49,22 @@ interface AddSaleProps {
 
 const normalizeLocationKey = (value: unknown): string => String(value || '').trim().toLowerCase();
 const DEFAULT_VATIN_NUMBER = 'OM1100399470';
-type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_engine_oil' | 'exclude_engine_oil';
+type SaleLocationCategoryPolicyMode = 'allow_all' | 'only_workshop_categories' | 'exclude_workshop_categories';
 type SaleLocationCategoryPolicy = { mode: SaleLocationCategoryPolicyMode };
 const normalizePolicyText = (value: unknown): string =>
   String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-const isEngineOilCategory = (category: unknown): boolean =>
-  normalizePolicyText(category).includes('engine oil');
+const isWorkshopCategory = (category: unknown): boolean => {
+  const cat = normalizePolicyText(category);
+  return cat.includes('engine oil') || cat.includes('break oil') || cat.includes('brake oil') || cat.includes('windshield') || cat.includes('brake fluid');
+};
 const resolveSaleLocationCategoryPolicy = (locationName: unknown): SaleLocationCategoryPolicy => {
   const normalizedLocation = normalizePolicyText(locationName);
   if (!normalizedLocation) return { mode: 'allow_all' };
   const compactLocation = normalizedLocation.replace(/\s+/g, '');
-
-  if (normalizedLocation.includes('kennol workshop')) {
-    return { mode: 'only_engine_oil' };
-  }
+  if (normalizedLocation.includes('kennol workshop')) return { mode: 'only_workshop_categories' };
   const isO2Petshop = normalizedLocation.includes('o2 pet shop') || compactLocation.includes('o2petshop');
   const isBarkaOrMowalah = normalizedLocation.includes('barka') || normalizedLocation.includes('mowalah');
-  if (isO2Petshop && isBarkaOrMowalah) {
-    return { mode: 'exclude_engine_oil' };
-  }
+  if (isO2Petshop && isBarkaOrMowalah) return { mode: 'exclude_workshop_categories' };
   return { mode: 'allow_all' };
 };
 const isProductAllowedBySaleLocationPolicy = (
@@ -75,9 +72,9 @@ const isProductAllowedBySaleLocationPolicy = (
   policy: SaleLocationCategoryPolicy
 ): boolean => {
   if (policy.mode === 'allow_all') return true;
-  const isEngineOil = isEngineOilCategory(product?.category);
-  if (policy.mode === 'only_engine_oil') return isEngineOil;
-  return !isEngineOil;
+  const isWorkshop = isWorkshopCategory(product?.category);
+  if (policy.mode === 'only_workshop_categories') return isWorkshop;
+  return !isWorkshop;
 };
 
 const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId: sourceOrderIdParam, isEdit, saleId, initialStatus, strictInitialStatus = false }) => {
@@ -1842,9 +1839,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       );
       if (blockedRows.length > 0) {
         const locationLabel = location || 'Selected location';
-        const ruleMessage = saleLocationPolicy.mode === 'only_engine_oil'
-          ? `${locationLabel} can only sell products in the Engine Oil category.`
-          : `${locationLabel} cannot sell products in the Engine Oil category.`;
+        const ruleMessage = saleLocationPolicy.mode === 'only_workshop_categories'
+          ? `${locationLabel} can only sell Workshop items (Engine Oil, Brake Oil, Windshield).`
+          : `${locationLabel} cannot sell Workshop items.`;
         addNotification({
           title: 'Restricted Products',
           message: `${ruleMessage} Remove: ${blockedRows.slice(0, 5).join(', ')}${blockedRows.length > 5 ? ' ...' : ''}`,
