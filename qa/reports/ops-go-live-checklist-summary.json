@@ -1,0 +1,35 @@
+{
+  "generatedAt": "2026-05-23T08:23:26.098Z",
+  "durationMs": 3563,
+  "status": "failed",
+  "steps": [
+    {
+      "id": "health-alerts",
+      "label": "Infra health checks (VPS API + PostgreSQL)",
+      "command": "npm.cmd run ops:health:alerts",
+      "startedAt": "2026-05-23T08:23:22.537Z",
+      "durationMs": 2732,
+      "exitCode": 0,
+      "signal": null,
+      "status": "passed"
+    },
+    {
+      "id": "postgres-reconcile",
+      "label": "Postgres reconciliation snapshot",
+      "command": "npm.cmd run ops:reconcile",
+      "startedAt": "2026-05-23T08:23:25.270Z",
+      "durationMs": 828,
+      "exitCode": 1,
+      "signal": null,
+      "status": "failed"
+    }
+  ],
+  "failedStepIds": [
+    "postgres-reconcile"
+  ],
+  "env": {
+    "apiBase": "https://api.erp.atwarbss.com",
+    "smokeRequired": false,
+    "neonDirectEnabled": true
+  }
+}
