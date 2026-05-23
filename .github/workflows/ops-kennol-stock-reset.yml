@@ -3,6 +3,11 @@ name: OPS - Reset & Seed Kennol Stock
 on:
   workflow_dispatch:
     inputs:
+      file_base64:
+        description: "Optional: base64 content of XLSX file (workflow writes it to file_path on VPS)"
+        required: false
+        default: ""
+        type: string
       file_path:
         description: "Absolute XLSX path on VPS (already uploaded)"
         required: true
@@ -42,6 +47,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           APP_PATH: ${{ secrets.VPS_APP_PATH }}
+          FILE_BASE64: ${{ inputs.file_base64 }}
           FILE_PATH: ${{ inputs.file_path }}
           SHEET: ${{ inputs.sheet }}
           LOCATION: ${{ inputs.location }}
@@ -53,7 +59,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           password: ${{ secrets.VPS_PASSWORD }}
           port: 22
-          envs: APP_PATH,FILE_PATH,SHEET,LOCATION,ACTOR,APPLY,ALLOW_MISSING_SKU
+          envs: APP_PATH,FILE_BASE64,FILE_PATH,SHEET,LOCATION,ACTOR,APPLY,ALLOW_MISSING_SKU
           script: |
             set -e
             APP_ROOT="${APP_PATH:-/opt/ATWARBSS-main}"
@@ -65,6 +71,12 @@ jobs:
             echo "[ops] actor: $ACTOR"
             echo "[ops] apply: $APPLY"
             echo "[ops] allow_missing_sku: $ALLOW_MISSING_SKU"
+
+            if [ -n "$FILE_BASE64" ]; then
+              echo "[ops] writing provided base64 file content to: $FILE_PATH"
+              mkdir -p "$(dirname "$FILE_PATH")"
+              printf "%s" "$FILE_BASE64" | base64 -d > "$FILE_PATH"
+            fi
 
             git fetch origin
             git checkout main
