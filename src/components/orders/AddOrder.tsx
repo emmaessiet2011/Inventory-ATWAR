@@ -6,6 +6,7 @@ import {
 import { useGlobalContext, GlobalOrder, OrderItem } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
+import { getAccessibleActiveLocations } from '@/utils/productVisibility';
 import {
   fromPieceQuantity,
   getAvailableQuantityModes,
@@ -111,8 +112,8 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
     [customers]
   );
   const activeLocations = useMemo(
-    () => locations.filter(location => location.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
   const selectableCustomers = useMemo(() => {
     if (!customerId) return activeCustomers;
@@ -127,8 +128,8 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
     return activeCustomers;
   }, [activeCustomers, customers, customerId]);
   const defaultLocationName = useMemo(
-    () => activeLocations[0]?.name || locations[0]?.name || '',
-    [activeLocations, locations]
+    () => activeLocations[0]?.name || '',
+    [activeLocations]
   );
   const selectableLocations = useMemo(() => {
     if (!businessLocation) return activeLocations;
@@ -589,7 +590,7 @@ const AddOrder: React.FC<AddOrderProps> = ({ isEdit, onNavigate, orderId }) => {
       addNotification({ title: 'Validation Error', message: 'Business location is required.', type: 'error' });
       return;
     }
-    const selectedLocationRecord = locations.find(loc => loc.name === businessLocation);
+    const selectedLocationRecord = activeLocations.find(loc => loc.name === businessLocation);
     if (!selectedLocationRecord || selectedLocationRecord.isActive === false) {
       addNotification({ title: 'Validation Error', message: 'Selected business location is inactive.', type: 'error' });
       return;

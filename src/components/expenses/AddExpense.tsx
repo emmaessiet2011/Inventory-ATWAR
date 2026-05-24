@@ -3,6 +3,7 @@ import { useGlobalContext, Expense, Payment } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { Save, Calendar, Upload, Info, CreditCard, RefreshCw, MapPin, Tag, X, ArrowLeft, Receipt } from 'lucide-react';
 import { toExpenseDateTimeInput, toExpenseIsoDateTime } from '@/utils/expenses';
+import { getAccessibleActiveLocations } from '@/utils/productVisibility';
 import {
   addRegisterTransaction,
   bootstrapRegisterFromDB,
@@ -116,8 +117,8 @@ const AddExpense: React.FC<AddExpenseProps> = ({
   const [payNote, setPayNote] = useState('');
   const [attachmentName, setAttachmentName] = useState('');
   const activeLocations = useMemo(
-    () => locations.filter(location => location.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
   const currencyBadge = String(settings.currencySymbol || settings.currency || 'OMR').trim() || 'OMR';
 

@@ -211,7 +211,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
           commissionPercent: u.commissionPercent?.toString() || '',
           maxDiscountPercent: u.maxDiscountPercent?.toString() || '',
           allowSelectedContacts: u.allowSelectedContacts || false,
-          accessLocations: u.accessLocations || ['All Locations'],
+          accessLocations: Array.isArray(u.accessLocations) ? u.accessLocations : [],
           accessCategories: u.accessCategories || ['All Categories'],
           mobile: u.mobile || '',
           altContact: u.altContact || '',

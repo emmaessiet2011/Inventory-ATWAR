@@ -51,7 +51,7 @@ const downloadBlob = (filename: string, content: string, type: string) => {
 };
 
 const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
-    const { users, updateUser, currentUser, activityLogs, settings } = useGlobalContext();
+    const { users, updateUser, currentUser, activityLogs, settings, locations } = useGlobalContext();
     const { addNotification } = useNotifications();
     const [activeTab, setActiveTab] = useState('user_info');
     const [selectedUserId, setSelectedUserId] = useState(userId);
@@ -337,6 +337,30 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         doc.save(`user-${selectedUserId}-activities.pdf`);
     };
 
+    const locationNameById = useMemo(() => {
+        const map = new Map<string, string>();
+        locations.forEach((location) => {
+            const id = String(location.id || '').trim();
+            const name = String(location.name || '').trim();
+            if (id && name) {
+                map.set(id.toLowerCase(), name);
+            }
+        });
+        return map;
+    }, [locations]);
+
+    const accessLocationLabel = useMemo(() => {
+        const source = Array.isArray(user?.accessLocations)
+            ? user.accessLocations.map((entry) => String(entry || '').trim()).filter(Boolean)
+            : [];
+        if (source.length === 0) return 'Not Assigned';
+        if (source.some((entry) => normalizeText(entry) === 'all locations' || normalizeText(entry) === 'all')) {
+            return 'All Locations';
+        }
+        const labels = source.map((entry) => locationNameById.get(entry.toLowerCase()) || entry);
+        return Array.from(new Set(labels)).join(', ');
+    }, [locationNameById, user?.accessLocations]);
+
     const userData = {
         id: user?.id || userId,
         name: user?.name || 'Unknown User',
@@ -349,7 +373,7 @@ const ViewUser: React.FC<ViewUserProps> = ({ userId, onNavigate }) => {
         allowedContacts: user?.allowSelectedContacts ? 'Selected' : 'All',
         allowLogin: user?.allowLogin !== false ? 'Yes' : 'No',
         serviceStaffPin: user?.enableServiceStaffPin ? 'Enabled' : 'Disabled',
-        accessLocations: (user?.accessLocations && user.accessLocations.length > 0) ? user.accessLocations.join(', ') : 'All Locations',
+        accessLocations: accessLocationLabel,
         accessCategories: (user?.accessCategories && user.accessCategories.length > 0) ? user.accessCategories.join(', ') : 'All Categories',
         dob: user?.dob || '',
         gender: user?.gender || '',

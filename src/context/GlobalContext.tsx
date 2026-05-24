@@ -1465,6 +1465,30 @@ const normalizeUserEmail = (value: unknown): string => String(value || '').trim(
 const isCriticalAdminUser = (user: Partial<AppUser> | null | undefined): boolean =>
   normalizeUserEmail(user?.email) === CRITICAL_ADMIN_EMAIL;
 
+const normalizeAccessLocations = (
+  user: AppUser,
+  userMeta: Record<string, unknown>,
+): string[] => {
+  const fromUser = Array.isArray(user.accessLocations) ? user.accessLocations : [];
+  const fromMeta = Array.isArray((userMeta as any).accessLocations)
+    ? ((userMeta as any).accessLocations as unknown[])
+    : [];
+  const combined = (fromUser.length > 0 ? fromUser : fromMeta)
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  if (combined.length > 0) {
+    return Array.from(new Set(combined));
+  }
+  const defaultLocation = String(
+    user.businessLocation
+    || (user as any).location
+    || (userMeta as any).businessLocation
+    || (userMeta as any).location
+    || '',
+  ).trim();
+  return defaultLocation ? [defaultLocation] : [];
+};
+
 const normalizeActiveState = (status: unknown, isActiveFallback?: unknown): 'Active' | 'Inactive' => {
   const normalizedStatus = String(status || '').trim().toLowerCase();
   if (normalizedStatus === 'inactive') return 'Inactive';
@@ -1547,7 +1571,7 @@ const normalizeUserRecord = (user: AppUser): AppUser => {
     passwordHash: hasCredential ? passwordHash : undefined,
     passwordSalt: hasCredential ? passwordSalt : undefined,
     passwordUpdatedAt: hasCredential ? (passwordUpdatedAt || new Date().toISOString()) : undefined,
-    accessLocations: Array.isArray(user.accessLocations) ? user.accessLocations : ['All Locations'],
+    accessLocations: normalizeAccessLocations(user, userMeta),
     allowLogin,
     enableServiceStaffPin: user.enableServiceStaffPin ?? false,
     preferences: normalizedPreferences,

@@ -7,6 +7,7 @@ import {
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { addRegisterTransaction, bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
+import { getAccessibleActiveLocations } from '@/utils/productVisibility';
 import {
   buildPaymentAccountOptions,
   PAYMENT_ACCOUNTS_UPDATED_EVENT,
@@ -82,8 +83,8 @@ const NewPayment: React.FC<NewPaymentProps> = ({ onNavigate }) => {
   const [chequeBankName, setChequeBankName] = useState('');
   const [chequeDrawerName, setChequeDrawerName] = useState('');
   const activeLocations = useMemo(
-    () => locations.filter(location => location.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
 
   useEffect(() => {

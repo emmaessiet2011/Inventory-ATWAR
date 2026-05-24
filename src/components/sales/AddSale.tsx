@@ -30,7 +30,7 @@ import {
   getSellingPriceGroupRuleSignature,
 } from '@/utils/sellingPriceGroups';
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
-import { productVisibleAtLocation } from '@/utils/productVisibility';
+import { getAccessibleActiveLocations, productVisibleAtLocation } from '@/utils/productVisibility';
 import {
   fetchLocationInventoryFromDB,
   LOCATION_INVENTORY_UPDATED_EVENT,
@@ -204,16 +204,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     [activeCommissionAgents, selectedCommissionAgentId]
   );
   const activeLocations = useMemo(
-    () => locations.filter(loc => loc.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
   const saleLocationPolicy = useMemo(
     () => resolveSaleLocationCategoryPolicy(location),
     [location]
   );
   const defaultLocationName = useMemo(
-    () => activeLocations[0]?.name || locations[0]?.name || '',
-    [activeLocations, locations]
+    () => activeLocations[0]?.name || '',
+    [activeLocations]
   );
   const selectableLocations = useMemo(() => {
     const active = activeLocations;
@@ -1792,7 +1792,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           addNotification({ title: 'Error', message: 'Please select a Business Location.', type: 'error' });
           return;
       }
-      const selectedLocationRecord = locations.find(loc => loc.name === location);
+      const selectedLocationRecord = activeLocations.find(loc => loc.name === location);
       if (!selectedLocationRecord || selectedLocationRecord.isActive === false) {
           addNotification({ title: 'Error', message: 'Selected business location is inactive.', type: 'error' });
           return;

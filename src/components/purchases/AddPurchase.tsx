@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Save, Plus, Search, Trash2, Upload, PackageCheck } from 'lucide-react';
 import { useNotifications } from '@/context/NotificationContext';
 import { useGlobalContext } from '@/context/GlobalContext';
+import { getAccessibleActiveLocations } from '@/utils/productVisibility';
 
 interface AddPurchaseProps {
   onNavigate?: (page: string) => void;
@@ -121,8 +122,8 @@ const AddPurchase: React.FC<AddPurchaseProps> = ({ onNavigate, prefillOrderId })
   const linkedOrder = useMemo(() => purchaseOrders.find(order => order.id === linkedPurchaseOrderId) || null, [purchaseOrders, linkedPurchaseOrderId]);
   const activeSuppliers = useMemo(() => suppliers.filter(s => s.status === 'Active'), [suppliers]);
   const activeLocations = useMemo(
-    () => locations.filter(location => location.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
   const locationOptions = useMemo(
     () => Array.from(new Set(activeLocations.map(location => location.name).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)),

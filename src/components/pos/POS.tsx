@@ -29,7 +29,7 @@ import {
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument } from '@/utils/printUtils';
-import { productVisibleAtLocation } from '@/utils/productVisibility';
+import { getAccessibleActiveLocations, productVisibleAtLocation } from '@/utils/productVisibility';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
@@ -157,12 +157,12 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     [customers]
   );
   const activeLocations = useMemo(
-    () => locations.filter(location => location.isActive !== false),
-    [locations]
+    () => getAccessibleActiveLocations(locations, currentUser),
+    [locations, currentUser]
   );
   const defaultLocationId = useMemo(
-    () => activeLocations[0]?.id || locations[0]?.id || '',
-    [activeLocations, locations]
+    () => activeLocations[0]?.id || '',
+    [activeLocations]
   );
   const selectableLocations = useMemo(() => {
     if (!selectedLocationId) return activeLocations;

@@ -81,3 +81,21 @@ export const isLocationAccessible = (
 
   return false;
 };
+
+export const getAccessibleActiveLocations = (
+  locations: Location[],
+  user: AppUser | null,
+): Location[] => {
+  const activeLocations = locations.filter((location) => location.isActive !== false);
+  if (!user) return activeLocations;
+  if (normalize(user.role) === 'admin') return activeLocations;
+
+  const scoped = activeLocations.filter((location) => isLocationAccessible(location.name, user, locations));
+  if (scoped.length > 0) return scoped;
+
+  const fallbackLocation = normalize(user.businessLocation);
+  if (!fallbackLocation) return [];
+  return activeLocations.filter((location) =>
+    normalize(location.name) === fallbackLocation || normalize(location.id) === fallbackLocation,
+  );
+};
