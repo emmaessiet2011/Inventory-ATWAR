@@ -2996,6 +2996,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteSuppliers,
           remoteSales,
           remotePayments,
+          remoteRoles,
           remoteUsers,
           remoteLocations,
           remoteSettings,
@@ -3019,6 +3020,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<Supplier>('suppliers'),
           apiFetchAllWithRetry<Sale>('sales'),
           apiFetchAllWithRetry<Payment>('payments'),
+          apiFetchAllWithRetry<Role>('roles'),
           apiFetchAllWithRetry<AppUser>('users'),
           apiFetchAllWithRetry<Location>('locations'),
           apiFetchAllWithRetry<AppSettings>('settings'),
@@ -3046,6 +3048,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteSuppliers,
           remoteSales,
           remotePayments,
+          remoteRoles,
           remoteUsers,
           remoteLocations,
           remoteSettings,
@@ -3089,6 +3092,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (remotePayments) {
           setPayments((remotePayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
+        }
+        if (remoteRoles) {
+          setRoles(ensureRequiredRoles((remoteRoles as Role[]).map(normalizeRoleRecord)));
         }
         if (remoteUsers) setUsers(remoteUsers.map(normalizeUserRecord));
         if (remoteLocations) {
@@ -3235,6 +3241,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const [
           freshProducts, freshSales, freshPayments, freshCustomers, freshLocations,
+          freshRoles,
           freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
           freshTaxRates, freshProductCategories, freshProductBrands, freshProductUnits,
           freshCustomerGroups, freshSellingPriceGroups,
@@ -3244,6 +3251,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<Payment>('payments').catch(() => null),
           apiFetchAll<Customer>('customers').catch(() => null),
           apiFetchAll<Location>('locations').catch(() => null),
+          apiFetchAll<Role>('roles').catch(() => null),
           apiFetchAll<Expense>('expenses').catch(() => null),
           apiFetchAll<Purchase>('purchases').catch(() => null),
           apiFetchAll<SellReturn>('sellReturns').catch(() => null),
@@ -3271,6 +3279,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (freshPayments) {
           setPayments((freshPayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
+        }
+        if (freshRoles) {
+          setRoles(ensureRequiredRoles((freshRoles as Role[]).map(normalizeRoleRecord)));
         }
         if (freshCustomers) {
           const availableCustomerGroups = (freshCustomerGroups as CustomerGroup[] | null) ?? customerGroups;
