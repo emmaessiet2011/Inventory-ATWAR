@@ -1,6 +1,52 @@
 import type { AppUser, Location, Product } from '@/context/GlobalContext';
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+const toRecord = (value: unknown): Record<string, unknown> =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+const isMeaningfulToken = (value: unknown): boolean => {
+  const token = String(value ?? '').trim();
+  if (!token) return false;
+  const lowered = token.toLowerCase();
+  return lowered !== '[object object]' && lowered !== 'undefined' && lowered !== 'null';
+};
+const extractLocationTokens = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => extractLocationTokens(item));
+  }
+  if (value && typeof value === 'object') {
+    const record = toRecord(value);
+    return [
+      String(record.id || '').trim(),
+      String(record.name || '').trim(),
+      String(record.locationId || '').trim(),
+      String(record.locationName || '').trim(),
+      String(record.location || '').trim(),
+      String(record.businessLocation || '').trim(),
+    ].filter(isMeaningfulToken);
+  }
+  const token = String(value ?? '').trim();
+  return isMeaningfulToken(token) ? [token] : [];
+};
+const getUserLocationTokens = (user: AppUser | null): string[] => {
+  if (!user) return [];
+  const unsafeUser = user as any;
+  const meta = toRecord(unsafeUser.meta);
+  const tokens = [
+    ...extractLocationTokens(user.accessLocations),
+    ...extractLocationTokens(unsafeUser.locationId),
+    ...extractLocationTokens(unsafeUser.location),
+    ...extractLocationTokens(unsafeUser.locationName),
+    ...extractLocationTokens(user.businessLocation),
+    ...extractLocationTokens(meta.accessLocations),
+    ...extractLocationTokens(meta.locationId),
+    ...extractLocationTokens(meta.location),
+    ...extractLocationTokens(meta.locationName),
+    ...extractLocationTokens(meta.businessLocation),
+  ];
+  return Array.from(new Set(tokens.map((token) => token.trim()).filter(isMeaningfulToken)));
+};
 
 export const getProductLocationIds = (product: Product): string[] => (
   Array.isArray(product.availableLocationIds)
@@ -55,9 +101,7 @@ export const isLocationAccessible = (
   if (!user) return true;
   if (normalize(user.role) === 'admin') return true;
 
-  const accessLocationIds = Array.isArray(user.accessLocations)
-    ? user.accessLocations.map(normalize).filter(Boolean)
-    : [];
+  const accessLocationIds = getUserLocationTokens(user).map(normalize).filter(Boolean);
 
   if (accessLocationIds.some(value => value === 'all locations' || value === 'all')) {
     return true;
@@ -93,9 +137,11 @@ export const getAccessibleActiveLocations = (
   const scoped = activeLocations.filter((location) => isLocationAccessible(location.name, user, locations));
   if (scoped.length > 0) return scoped;
 
-  const fallbackLocation = normalize(user.businessLocation);
-  if (!fallbackLocation) return [];
+  const fallbackLocationTokens = getUserLocationTokens(user).map(normalize).filter(Boolean);
+  if (fallbackLocationTokens.length === 0) return [];
+  if (fallbackLocationTokens.some((value) => value === 'all locations' || value === 'all')) return activeLocations;
   return activeLocations.filter((location) =>
-    normalize(location.name) === fallbackLocation || normalize(location.id) === fallbackLocation,
+    fallbackLocationTokens.includes(normalize(location.name)) ||
+    fallbackLocationTokens.includes(normalize(location.id)),
   );
 };

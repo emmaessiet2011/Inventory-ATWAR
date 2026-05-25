@@ -1469,24 +1469,48 @@ const normalizeAccessLocations = (
   user: AppUser,
   userMeta: Record<string, unknown>,
 ): string[] => {
-  const fromUser = Array.isArray(user.accessLocations) ? user.accessLocations : [];
-  const fromMeta = Array.isArray((userMeta as any).accessLocations)
-    ? ((userMeta as any).accessLocations as unknown[])
-    : [];
-  const combined = (fromUser.length > 0 ? fromUser : fromMeta)
-    .map((value) => String(value || '').trim())
-    .filter(Boolean);
-  if (combined.length > 0) {
-    return Array.from(new Set(combined));
-  }
-  const defaultLocation = String(
-    user.businessLocation
-    || (user as any).location
-    || (userMeta as any).businessLocation
-    || (userMeta as any).location
-    || '',
-  ).trim();
-  return defaultLocation ? [defaultLocation] : [];
+  const isMeaningfulToken = (value: unknown): boolean => {
+    const token = String(value || '').trim();
+    if (!token) return false;
+    const lowered = token.toLowerCase();
+    return lowered !== '[object object]' && lowered !== 'undefined' && lowered !== 'null';
+  };
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const extractTokens = (value: unknown): string[] => {
+    if (Array.isArray(value)) return value.flatMap((item) => extractTokens(item));
+    if (value && typeof value === 'object') {
+      const record = asRecord(value);
+      return [
+        String(record.id || '').trim(),
+        String(record.name || '').trim(),
+        String(record.locationId || '').trim(),
+        String(record.locationName || '').trim(),
+        String(record.location || '').trim(),
+        String(record.businessLocation || '').trim(),
+      ].filter(isMeaningfulToken);
+    }
+    const token = String(value || '').trim();
+    return isMeaningfulToken(token) ? [token] : [];
+  };
+
+  const unsafeUser = user as any;
+  const locationTokens = [
+    ...extractTokens(user.accessLocations),
+    ...extractTokens((userMeta as any).accessLocations),
+    ...extractTokens(user.businessLocation),
+    ...extractTokens(unsafeUser.locationId),
+    ...extractTokens(unsafeUser.locationName),
+    ...extractTokens(unsafeUser.location),
+    ...extractTokens((userMeta as any).locationId),
+    ...extractTokens((userMeta as any).locationName),
+    ...extractTokens((userMeta as any).location),
+    ...extractTokens((userMeta as any).businessLocation),
+  ];
+
+  return Array.from(new Set(locationTokens.map((value) => String(value || '').trim()).filter(isMeaningfulToken)));
 };
 
 const normalizeActiveState = (status: unknown, isActiveFallback?: unknown): 'Active' | 'Inactive' => {

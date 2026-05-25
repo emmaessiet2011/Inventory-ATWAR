@@ -331,6 +331,19 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
       });
       return;
     }
+    if (!isAdminRole(normalizedRole)) {
+      const selectedLocations = Array.isArray(formData.accessLocations)
+        ? formData.accessLocations.map((value) => String(value || '').trim()).filter(Boolean)
+        : [];
+      if (selectedLocations.length === 0) {
+        addNotification({
+          title: 'Validation Error',
+          message: 'Please assign at least one business location for this user.',
+          type: 'error',
+        });
+        return;
+      }
+    }
     if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
       addNotification({
         title: 'Validation Error',
