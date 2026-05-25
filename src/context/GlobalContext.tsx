@@ -1142,6 +1142,7 @@ interface GlobalContextType {
   addProduct: (product: Product) => Promise<CrudMutationResult>;
   updateProduct: (product: Product) => Promise<CrudMutationResult>;
   deleteProduct: (id: string) => Promise<CrudMutationResult>;
+  refreshProductsFromServer: () => Promise<void>;
 
   // --- Customers ---
   customers: Customer[];
@@ -5214,14 +5215,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
            return toCrudResult(syncResult);
         }
 
-        // Also proactively update the global products array in React state to reflect the new global sum
-        // The Postgres trigger automatically updates the DB `Product.stock`, but we need to update UI.
-        const deltaById = new Map<string, number>(perProductDeltas.map((entry) => [entry.id, entry.delta]));
-        setProducts(prevProducts => prevProducts.map((product) => {
-          const delta = deltaById.get(product.id) || 0;
-          if (!delta) return product;
-          return { ...product, stock: Math.max(0, product.stock + delta) };
-        }));
+        // Fetch the perfectly accurate stock calculations from the DB instead of using optimistic delta math
+        void refreshProductsFromServer();
 
         return okResult(200);
       } catch (error) {
@@ -5240,6 +5235,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const freshSales = await apiFetchAll<Sale>('sales').catch(() => null);
     if (!freshSales) return;
     setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)));
+  };
+
+  const refreshProductsFromServer = async (): Promise<void> => {
+    if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
+    const freshProducts = await apiFetchAllWithRetry<Product>('products').catch(() => null);
+    if (!freshProducts) return;
+    setProducts((freshProducts as Product[]).map((record) => normalizeProductRecord(record, productCategories, productBrands, warranties)));
   };
 
   const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
@@ -5511,16 +5513,35 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const hasLinkedSellReturn = (saleId: string) =>
       sellReturns.some(ret => String(ret.parentSaleId || '').trim() === saleId);
     if (hasLinkedSellReturn(normalizedSaleId)) return failResult(409, 'Sale has linked sell return.');
-    const existingSale = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
+        const existingSale = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
+    
+    // CASCADE DELETE: Find payments associated with this sale
+    const invoiceNoLower = String(existingSale?.invoiceNo || '').trim().toLowerCase();
+    const associatedPayments = invoiceNoLower ? payments.filter(p => {
+      const linked = (p.linkedInvoices || []).some(inv => inv.trim().toLowerCase() === invoiceNoLower);
+      const refHit = String(p.referenceNo || '').toLowerCase().includes(invoiceNoLower);
+      const noteHit = String(p.note || '').toLowerCase().includes(invoiceNoLower);
+      return linked || refHit || noteHit;
+    }) : [];
+
     const deleteOutcome = await deleteRecordStrict('sales', normalizedSaleId);
     if (!deleteOutcome.ok) {
       recordActivity({
         action: 'Blocked',
         module: 'Sales',
-        description: `Failed to delete sale ${existingSale?.invoiceNo || normalizedSaleId} from Postgres (${deleteOutcome.status || 0}).`,
+        description: `Failed to delete sale \ from Postgres (\).`,
       });
       return toCrudResult(deleteOutcome);
     }
+    
+    // Perform cascading delete for payments
+    if (associatedPayments.length > 0) {
+      for (const p of associatedPayments) {
+        await deleteRecordStrict('payments', p.id);
+      }
+      setPayments(prev => prev.filter(p => !associatedPayments.some(ap => ap.id === p.id)));
+    }
+
     const saleToDelete = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
     let stockSyncFailure: CrudMutationResult | null = null;
     if (saleToDelete) {
@@ -9776,7 +9797,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   return (
     <GlobalContext.Provider value={{
-      products, setProducts, addProduct, updateProduct, deleteProduct,
+      products, setProducts, addProduct, updateProduct, deleteProduct, refreshProductsFromServer,
       customers, setCustomers, addCustomer, updateCustomer, deleteCustomer, addCustomerRewardPoints, redeemCustomerRewardPoints,
       suppliers, setSuppliers, addSupplier, updateSupplier, deleteSupplier,
       contacts, setContacts, addContact, updateContact, deleteContact,
@@ -9825,3 +9846,4 @@ export const useGlobalContext = () => {
   }
   return context;
 };
+

@@ -11,6 +11,7 @@ import { printDocument } from '@/utils/printUtils';
 import { buildPaginationItems } from '@/utils/pagination';
 import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 import ViewProduct from './ViewProduct';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 const Products: React.FC = () => {
   const {
@@ -343,7 +344,8 @@ const Products: React.FC = () => {
   };
 
   // ── Row selection ─────────────────────────────────────────────
-  const filteredProducts = products.filter(p => {
+  const locationFilteredProducts = products.filter(p => isLocationAccessible(p.businessLocation || '', currentUser, locations));
+  const filteredProducts = locationFilteredProducts.filter(p => {
     const q = searchTerm.toLowerCase();
     if (q && !p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;
     if (filterType && p.type !== filterType) return false;
@@ -1133,3 +1135,4 @@ const Products: React.FC = () => {
 };
 
 export default Products;
+

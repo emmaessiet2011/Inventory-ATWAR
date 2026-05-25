@@ -14,7 +14,7 @@ import {
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
-  syncChangedProductsStrict,
+  
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 import {
@@ -109,7 +109,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
   const {
     locations,
     products,
-    setProducts,
+    refreshProductsFromServer,
     currentUser,
     formatCurrency,
     addActivityLog,
@@ -702,13 +702,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         row.id === approvedRecord.id ? approvedRecord : row
       ));
       const sorted = sortAdjustments(nextAdjustments);
-      if (nextProductsAfter) {
-        const productsSaved = await syncChangedProductsStrict(nextProductsAfter, products);
-        if (!productsSaved.ok) {
-          const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
-          throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
-        }
-      }
+      /* We rely on background product refresh instead of syncing products directly */
       if (nextInventoryAfter && originalInventoryRows) {
         const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
         if (!inventorySaved.ok) {
@@ -720,9 +714,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       if (!adjustmentSaved) {
         throw new Error('Unable to save approved stock adjustment in Postgres.');
       }
-      if (nextProductsAfter) {
-        setProducts(nextProductsAfter);
-      }
+      void refreshProductsFromServer();
       setAdjustments(sorted);
       addNotification({
         title: 'Adjustment Approved',
@@ -877,13 +869,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       }
 
       const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
-      if (nextProductsAfter) {
-        const productsSaved = await syncChangedProductsStrict(nextProductsAfter, products);
-        if (!productsSaved.ok) {
-          const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
-          throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
-        }
-      }
+      /* We rely on background product refresh instead of syncing products directly */
       if (nextInventoryAfter && originalInventoryRows) {
         const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
         if (!inventorySaved.ok) {
@@ -899,9 +885,7 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       if (!deleted.ok) {
         throw new Error('Unable to delete stock adjustment from Postgres.');
       }
-      if (nextProductsAfter) {
-        setProducts(nextProductsAfter);
-      }
+      void refreshProductsFromServer();
       setAdjustments(nextAdjustments);
       if (viewAdjustmentId === adjustment.id) setViewAdjustmentId(null);
       setActiveActionId(null);
@@ -1296,3 +1280,5 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 };
 
 export default ListStockAdjustments;
+
+
