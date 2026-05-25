@@ -351,7 +351,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry, index) => {
+              {entries.map((entry) => {
                 const isOpening = entry.type === 'Opening Stock';
                 return (
                 <tr key={entry.id} className="bg-white shadow-sm ring-1 ring-slate-100 rounded-xl">
