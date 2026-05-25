@@ -260,7 +260,6 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
   const executeDeleteTransfer = async (transfer: StockTransferRecord) => {
     if (!canManage) return;
     try {
-      let nextProducts = products;
       if (transfer.status === 'Completed') {
         const fromLoc = locations.find(l => l.name.trim().toLowerCase() === transfer.locationFrom.trim().toLowerCase());
         const toLoc = locations.find(l => l.name.trim().toLowerCase() === transfer.locationTo.trim().toLowerCase());
@@ -281,7 +280,6 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
           actorName: currentUser?.name || 'System',
           notePrefix: 'Delete rollback',
         });
-        nextProducts = rollback.productsAfter;
         const ledgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
         if (!ledgerSaved) {
           throw new Error('Unable to persist rollback ledger entries in Postgres.');
@@ -613,4 +611,5 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
 };
 
 export default ListStockTransfers;
+
 
