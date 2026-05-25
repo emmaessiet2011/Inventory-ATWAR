@@ -101,13 +101,19 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
             };
           });
 
-          if (mappedEntries.length === 0 && Number(product.openingStock) > 0) {
+          const ledgerOpeningQty = mappedEntries
+            .filter(e => e.type === 'Opening Stock')
+            .reduce((sum, e) => sum + Number(e.originalQty), 0);
+            
+          const legacyDiff = Number(product.openingStock || 0) - ledgerOpeningQty;
+
+          if (legacyDiff > 0) {
             mappedEntries.push({
               id: `LEGACY-${product.id}`,
               isNew: false,
-              originalQty: Number(product.openingStock),
+              originalQty: legacyDiff,
               type: 'Opening Stock',
-              quantity: Number(product.openingStock),
+              quantity: legacyDiff,
               unitCost: Number(product.unitPurchasePrice || 0),
               expDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : '',
               lotNumber: product.lotNumber || '',
@@ -329,24 +335,27 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
               Manage initial inventory levels for <span className="font-bold text-indigo-700">{product.name}</span>
             </p>
           </div>
-          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4">
+              <button onClick={handleClose} className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="px-6 py-4 bg-indigo-50/50 border-b border-indigo-100 flex items-center gap-4">
+            <label className="text-sm font-bold text-indigo-900">Inventory Location:</label>
             <select
               value={selectedLocation}
               onChange={(e) => setSelectedLocation(e.target.value)}
-              className="text-sm border border-slate-200 rounded px-3 py-1.5 min-w-[200px]"
+              className="text-sm font-semibold border-2 border-indigo-200 rounded-lg px-4 py-2 min-w-[250px] bg-white text-indigo-900 shadow-sm focus:border-indigo-500 focus:ring-0 outline-none"
             >
-              <option value="">-- Select Location --</option>
               {locations.map(loc => (
                 <option key={loc.id} value={loc.name}>{loc.name}</option>
               ))}
             </select>
-            <button onClick={handleClose} className="text-slate-400 hover:text-slate-600">
-              <X size={20} />
-            </button>
           </div>
-        </div>
 
-        <div className="p-6 overflow-auto relative min-h-[300px]">
+          <div className="flex-1 overflow-y-auto bg-slate-50 p-6">
           {loading && (
              <div className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center backdrop-blur-sm">
                 <span className="font-bold text-slate-500">Loading ledger...</span>
