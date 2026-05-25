@@ -309,18 +309,23 @@ export const simulateStockAdjustment = ({
 
     const product = resolveProduct(item);
     const delta = round3(qty * direction);
-    const usesProductStock = normalize(product.businessLocation) === normalize(adjustment.location) || !locationId;
-    const inventory = usesProductStock ? null : getInventoryRecord(product, delta > 0);
-    const currentStock = usesProductStock ? Number(product.stock || 0) : Number(inventory?.stock || 0);
-    const next = round3(currentStock + delta);
-    if (next < -0.0001) {
+    // Always apply adjustments against the selected location inventory when we have a locationId.
+    // This keeps location-based stock views consistent across sales/POS/transfers/reports.
+    const inventory = locationId ? getInventoryRecord(product, delta > 0) : null;
+    const currentLocationStock = locationId
+      ? Number(inventory?.stock || 0)
+      : Number(product.stock || 0);
+    const nextLocationStock = round3(currentLocationStock + delta);
+    if (nextLocationStock < -0.0001) {
       throw new Error(`Insufficient stock for "${product.name}" at "${adjustment.location}".`);
     }
-    if (usesProductStock) {
-      product.stock = Math.max(0, next);
-    } else if (inventory) {
-      inventory.stock = Math.max(0, next);
+    if (inventory) {
+      inventory.stock = Math.max(0, nextLocationStock);
     }
+    // Keep global product stock in sync as an aggregate mirror.
+    const currentGlobalStock = Number(product.stock || 0);
+    const nextGlobalStock = round3(currentGlobalStock + delta);
+    product.stock = Math.max(0, nextGlobalStock);
 
     const reasonText = adjustment.reason ? ` | ${adjustment.reason}` : '';
     const statusText = adjustment.status ? ` | ${adjustment.status}` : '';
@@ -332,7 +337,7 @@ export const simulateStockAdjustment = ({
       sku: product.sku || item.sku || '',
       type: direction === 1 ? 'Stock Adjustment' : 'Stock Adjustment Reversal',
       change: delta,
-      newQty: usesProductStock ? product.stock : Number(inventory?.stock || 0),
+      newQty: inventory ? Number(inventory.stock || 0) : Number(product.stock || 0),
       date: transferDate,
       ref: adjustment.referenceNo,
       party: actorName || 'System',

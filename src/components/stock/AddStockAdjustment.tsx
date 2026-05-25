@@ -306,10 +306,17 @@ const AddStockAdjustment: React.FC<AddStockAdjustmentProps> = ({
     preferredDamageSellableLocation,
   ]);
 
-  const locationProducts = useMemo(
-    () => products.filter((p) => !location || normalize(p.businessLocation) === normalize(location)),
-    [products, location],
-  );
+  const locationProducts = useMemo(() => {
+    if (!location) return products;
+    const selectedLocationId = locations.find((loc) => normalize(loc.name) === normalize(location))?.id || '';
+    const hasInventoryAtSelectedLocation = (productId: string) => (
+      !!selectedLocationId &&
+      locationInventory.some((record) => record.productId === productId && record.locationId === selectedLocationId)
+    );
+    return products.filter((product) => (
+      normalize(product.businessLocation) === normalize(location) || hasInventoryAtSelectedLocation(product.id)
+    ));
+  }, [products, location, locations, locationInventory]);
 
   const filteredProducts = useMemo(() => {
     const q = normalize(productSearch);

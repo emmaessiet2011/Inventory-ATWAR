@@ -206,7 +206,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
   const getProductStockForList = (product: Product): number => {
     const locationsToUse = selectedProductListLocations.length > 0 
       ? selectedProductListLocations 
-      : selectedProductListLocations;
+      : locations;
 
     if (!locationsToUse.length) return Number(product.stock || 0);
 
