@@ -3049,6 +3049,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteLocations,
           remoteSettings,
           remoteExpenses,
+          remoteExpenseCategories,
           remotePurchases,
           remoteSellReturns,
           remotePurchaseReturns,
@@ -3073,6 +3074,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<Location>('locations'),
           apiFetchAllWithRetry<AppSettings>('settings'),
           apiFetchAllWithRetry<Expense>('expenses'),
+          apiFetchAllWithRetry<ExpenseCategory>('expenseCategories'),
           apiFetchAllWithRetry<Purchase>('purchases'),
           apiFetchAllWithRetry<SellReturn>('sellReturns'),
           apiFetchAllWithRetry<PurchaseReturn>('purchaseReturns'),
@@ -3101,6 +3103,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteLocations,
           remoteSettings,
           remoteExpenses,
+          remoteExpenseCategories,
           remotePurchases,
           remoteSellReturns,
           remotePurchaseReturns,
@@ -3165,6 +3168,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (remoteExpenses) {
           setExpenses((remoteExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
+        }
+        if (remoteExpenseCategories) {
+          if ((remoteExpenseCategories as ExpenseCategory[]).length === 0) {
+            setExpenseCategories(initialExpenseCategories);
+          } else {
+            setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
+          }
         }
         if (remotePurchases) {
           setPurchases((remotePurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
@@ -3290,7 +3300,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const [
           freshProducts, freshSales, freshPayments, freshCustomers, freshLocations,
           freshRoles,
-          freshExpenses, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
+          freshExpenses, freshExpenseCategories, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
           freshTaxRates, freshProductCategories, freshProductBrands, freshProductUnits,
           freshCustomerGroups, freshSellingPriceGroups,
         ] = await Promise.all([
@@ -3301,6 +3311,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<Location>('locations').catch(() => null),
           apiFetchAll<Role>('roles').catch(() => null),
           apiFetchAll<Expense>('expenses').catch(() => null),
+          apiFetchAll<ExpenseCategory>('expenseCategories').catch(() => null),
           apiFetchAll<Purchase>('purchases').catch(() => null),
           apiFetchAll<SellReturn>('sellReturns').catch(() => null),
           apiFetchAll<PurchaseReturn>('purchaseReturns').catch(() => null),
@@ -3346,6 +3357,13 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         if (freshExpenses) {
           setExpenses((freshExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
+        }
+        if (freshExpenseCategories) {
+          if ((freshExpenseCategories as ExpenseCategory[]).length === 0) {
+            setExpenseCategories(initialExpenseCategories);
+          } else {
+            setExpenseCategories(freshExpenseCategories as ExpenseCategory[]);
+          }
         }
         if (freshPurchases) {
           setPurchases((freshPurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
