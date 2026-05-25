@@ -1,0 +1,1 @@
+const fs = require('fs'); fs.writeFileSync('../src/components/products/AddOpeningStock.tsx', \import React, { useEffect, useMemo, useState } from 'react';\);

@@ -257,6 +257,24 @@ export const appendStockLedgerEntries = async (entries: StockLedgerEntry[]): Pro
   return result.ok;
 };
 
+export const deleteStockLedgerEntry = async (id: string): Promise<boolean> => {
+  if (!id) return false;
+  try {
+    const res = await fetch(`/api/sync/stock-ledger/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+      },
+    });
+    if (!res.ok) return false;
+    const json = await res.json();
+    return json.ok;
+  } catch (err) {
+    return false;
+  }
+};
+
 /**
  * Bootstrap stock transfer + stock ledger state from DB.
  * If DB returns empty arrays, local cache is explicitly cleared to avoid stale browser-only data.
