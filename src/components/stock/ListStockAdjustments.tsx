@@ -553,7 +553,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       const nowIso = new Date().toISOString();
       let linkedTransferId = '';
       let linkedExpenseId = '';
-      let nextProductsAfter: typeof products | null = null;
       let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
 
@@ -583,7 +582,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           actorName,
           notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
-        nextProductsAfter = appliedTransfer.productsAfter;
         nextInventoryAfter = appliedTransfer.inventoryAfter;
         const transferLedgerSaved = await appendStockLedgerEntriesStrict(appliedTransfer.ledgerEntries);
         if (!transferLedgerSaved.ok) {
@@ -629,7 +627,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           actorName,
           notePrefix: 'Approval',
         });
-        nextProductsAfter = applied.productsAfter;
         nextInventoryAfter = applied.inventoryAfter;
         const adjustmentLedgerSaved = await appendStockLedgerEntriesStrict(applied.ledgerEntries);
         if (!adjustmentLedgerSaved.ok) {
@@ -756,7 +753,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 
     try {
       const status = normalizeStockAdjustmentStatus(adjustment.status);
-      let nextProductsAfter: typeof products | null = null;
       let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       if (status === 'Approved') {
@@ -799,7 +795,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             actorName,
             notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
-          nextProductsAfter = rollbackTransfer.productsAfter;
           nextInventoryAfter = rollbackTransfer.inventoryAfter;
           const rollbackTransferLedgerSaved = await appendStockLedgerEntriesStrict(rollbackTransfer.ledgerEntries);
           if (!rollbackTransferLedgerSaved.ok) {
@@ -845,7 +840,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
             actorName,
             notePrefix: 'Delete rollback',
           });
-          nextProductsAfter = rollback.productsAfter;
           nextInventoryAfter = rollback.inventoryAfter;
           const rollbackLedgerSaved = await appendStockLedgerEntriesStrict(rollback.ledgerEntries);
           if (!rollbackLedgerSaved.ok) {
@@ -1280,5 +1274,6 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
 };
 
 export default ListStockAdjustments;
+
 
 
