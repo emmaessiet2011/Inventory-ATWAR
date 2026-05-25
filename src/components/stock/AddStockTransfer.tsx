@@ -19,7 +19,7 @@ import {
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
-  syncChangedProductsStrict,
+  
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 
@@ -56,7 +56,7 @@ const toIso = (value: string) => {
 };
 
 const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTransferId }) => {
-  const { locations, products, setProducts, generateId, settings, currentUser, formatCurrency, addActivityLog } = useGlobalContext();
+  const { locations, products, refreshProductsFromServer, generateId, settings, currentUser, formatCurrency, addActivityLog } = useGlobalContext();
   const { addNotification } = useNotifications();
   const defaultUnitLabel = String(settings.defaultUnit || 'Pc(s)').trim() || 'Pc(s)';
 
@@ -407,11 +407,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         throw new Error(`Unable to save stock ledger entries in Postgres. ${detail}`);
       }
 
-      const productsSaved = await syncChangedProductsStrict(workingProducts, products);
-      if (!productsSaved.ok) {
-        const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
-        throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
-      }
+      
 
       const inventorySaved = await syncChangedLocationInventoryStrict(workingInventory, originalInventory);
       if (!inventorySaved.ok) {
@@ -429,7 +425,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       if (!transferSaved) {
         throw new Error('Unable to save stock transfer in Postgres.');
       }
-      setProducts(workingProducts);
+      void refreshProductsFromServer();
 
       addNotification({
         title: editingRecord ? 'Transfer Updated' : 'Transfer Saved',
@@ -711,3 +707,5 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
 };
 
 export default AddStockTransfer;
+
+

@@ -228,9 +228,15 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
     }
 
     // Update Product Stock Target
-    const currentStock = Number(product.stock) || 0;
-    const nextStock = Number((currentStock + netAddedQty).toFixed(3));
-    const currentValue = currentStock * (Number(product.unitPurchasePrice) || 0);
+    const { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } = await import('@/utils/stockLocationInventory');
+    const allInventory = await fetchLocationInventoryFromDB();
+    
+    const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
+    const productInventory = allInventory.filter(inv => normalize(inv.productId) === normalize(product.id));
+    const currentTotalStock = productInventory.reduce((sum, inv) => sum + (Number(inv.stock) || 0), 0);
+    
+    const nextStock = Number((currentTotalStock + netAddedQty).toFixed(3));
+    const currentValue = currentTotalStock * (Number(product.unitPurchasePrice) || 0);
     const nextUnitCost = nextStock > 0 ? Number(((currentValue + netAddedValue) / nextStock).toFixed(3)) : Number(product.unitPurchasePrice) || 0;
 
     const productUpdateResult = await updateProduct({
@@ -251,15 +257,12 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
 
     // Save Location Inventory
     const locName = selectedLocation;
-    const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
     const locMatch = locations.find(l => normalize(l.name) === normalize(locName) || normalize(l.id) === normalize(locName));
     const locationId = locMatch ? locMatch.id : locName;
     const locationName = locMatch ? locMatch.name : locName;
 
     if (locationId) {
       try {
-        const { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } = await import('@/utils/stockLocationInventory');
-        const allInventory = await fetchLocationInventoryFromDB();
         const existingKey = `${normalize(product.id)}@@${normalize(locationId)}`;
         const existing = allInventory.find(row => `${normalize(row.productId)}@@${normalize(row.locationId)}` === existingKey);
 
@@ -269,7 +272,8 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
           locationId: locationId,
           locationName: locationName,
           stock: 0,
-          unitCost: Number(product.unitPurchasePrice || 0),
+          unitCost: Number(product.unitPurchasePrice) || 0,
+          updatedAt: new Date().toISOString(),
         };
 
         const prevInventory = existing ? [{ ...existing }] : [];

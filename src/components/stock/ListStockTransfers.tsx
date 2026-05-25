@@ -15,7 +15,7 @@ import {
   bootstrapStockTransfersFromDB,
   readStockTransfers,
   simulateStockTransfer,
-  syncChangedProductsStrict,
+  
   writeStockTransfers,
 } from '@/utils/stockTransfers';
 import { fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
@@ -43,7 +43,7 @@ const getCurrentYearRange = (): DateRangeValue => {
 };
 
 const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, canManage = true }) => {
-  const { locations, products, setProducts, generateId, currentUser, formatCurrency, addActivityLog, settings } = useGlobalContext();
+  const { locations, products, refreshProductsFromServer, generateId, currentUser, formatCurrency, addActivityLog, settings } = useGlobalContext();
   const { addNotification } = useNotifications();
   const formatDateDisplay = (value?: string) =>
     formatDateBySettings(value || '', settings.dateFormat, settings.timeZone);
@@ -286,10 +286,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         if (!ledgerSaved) {
           throw new Error('Unable to persist rollback ledger entries in Postgres.');
         }
-        const productsSaved = await syncChangedProductsStrict(nextProducts, products);
-        if (!productsSaved.ok) {
-          throw new Error(productsSaved.error || 'Unable to save product stock changes in Postgres.');
-        }
+        /* We rely on background product refresh instead of syncing products directly */
       }
 
       const nextTransfers = transfers.filter(row => row.id !== transfer.id);
@@ -299,7 +296,7 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
       }
       setTransfers(nextTransfers);
       if (transfer.status === 'Completed') {
-        setProducts(nextProducts);
+        void refreshProductsFromServer();
       }
       if (viewTransferId === transfer.id) setViewTransferId(null);
       setActiveActionId(null);
@@ -616,3 +613,4 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
 };
 
 export default ListStockTransfers;
+

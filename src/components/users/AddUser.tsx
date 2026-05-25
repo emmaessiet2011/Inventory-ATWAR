@@ -163,7 +163,7 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
     username: '',
     password: '',
     confirmPassword: '',
-    role: 'Admin',
+    role: 'Cashier',
     accessLocations: ['All Locations'],
     accessCategories: ['All Categories'],
     commissionPercent: '',
@@ -765,3 +765,4 @@ const AddUser: React.FC<AddUserProps> = ({ onNavigate, isEdit, userId }) => {
 };
 
 export default AddUser;
+
