@@ -47,7 +47,7 @@ const createDefaultRow = (): StockEntry => ({
 });
 
 const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClose, product, pageMode = false }) => {
-  const { updateProduct, currentUser, formatCurrency } = useGlobalContext();
+  const { updateProduct, currentUser, formatCurrency, generateId } = useGlobalContext();
   const { addNotification } = useNotifications();
 
   const [entries, setEntries] = useState<StockEntry[]>([createDefaultRow()]);
@@ -133,6 +133,41 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         type: 'error',
       });
       return;
+    }
+
+    const locationId = product.businessLocation || product.openingStockLocation || '';
+    if (locationId) {
+      try {
+        const { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } = await import('@/utils/stockLocationInventory');
+        const allInventory = await fetchLocationInventoryFromDB();
+        const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
+        const existingKey = `${normalize(product.id)}@@${normalize(locationId)}`;
+        const existing = allInventory.find(row => `${normalize(row.productId)}@@${normalize(row.locationId)}` === existingKey);
+
+        const targetInventory = existing ? { ...existing } : {
+          id: generateId('PINV'),
+          productId: product.id,
+          locationId: locationId,
+          locationName: locationId,
+          stock: 0,
+          unitCost: Number(product.unitPurchasePrice || 0),
+        };
+
+        const prevInventory = existing ? [{ ...existing }] : [];
+        targetInventory.stock = Math.max(0, Number((Number(targetInventory.stock || 0) + addedQty).toFixed(3)));
+        targetInventory.unitCost = nextUnitCost;
+
+        const invSaved = await syncChangedLocationInventoryStrict([targetInventory], prevInventory);
+        if (!invSaved.ok) {
+          throw new Error('Unable to sync location inventory');
+        }
+      } catch (err) {
+        addNotification({
+          title: 'Location Inventory Warning',
+          message: 'Product stock was updated but we could not apply it to the specific location immediately. It may take a moment to sync.',
+          type: 'error',
+        });
+      }
     }
 
     const newLedgerEntries: StockLedgerEntry[] = [];
