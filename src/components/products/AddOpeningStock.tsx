@@ -47,7 +47,7 @@ const createDefaultRow = (): StockEntry => ({
 });
 
 const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClose, product, pageMode = false }) => {
-  const { updateProduct, currentUser, formatCurrency, generateId } = useGlobalContext();
+  const { updateProduct, currentUser, formatCurrency, generateId, locations } = useGlobalContext();
   const { addNotification } = useNotifications();
 
   const [entries, setEntries] = useState<StockEntry[]>([createDefaultRow()]);
@@ -135,12 +135,16 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
       return;
     }
 
-    const locationId = product.businessLocation || product.openingStockLocation || '';
+    const locName = product.businessLocation || product.openingStockLocation || '';
+    const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
+    const locMatch = locations.find(l => normalize(l.name) === normalize(locName) || normalize(l.id) === normalize(locName));
+    const locationId = locMatch ? locMatch.id : locName;
+    const locationName = locMatch ? locMatch.name : locName;
+
     if (locationId) {
       try {
         const { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } = await import('@/utils/stockLocationInventory');
         const allInventory = await fetchLocationInventoryFromDB();
-        const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
         const existingKey = `${normalize(product.id)}@@${normalize(locationId)}`;
         const existing = allInventory.find(row => `${normalize(row.productId)}@@${normalize(row.locationId)}` === existingKey);
 
@@ -148,7 +152,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
           id: generateId('PINV'),
           productId: product.id,
           locationId: locationId,
-          locationName: locationId,
+          locationName: locationName,
           stock: 0,
           unitCost: Number(product.unitPurchasePrice || 0),
         };
@@ -158,7 +162,9 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         targetInventory.unitCost = nextUnitCost;
 
         const invSaved = await syncChangedLocationInventoryStrict([targetInventory], prevInventory);
-        if (!invSaved.ok) {
+        if (invSaved.ok) {
+           window.dispatchEvent(new Event('app:location-inventory-updated'));
+        } else {
           throw new Error('Unable to sync location inventory');
         }
       } catch (err) {

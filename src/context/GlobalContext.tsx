@@ -3170,7 +3170,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setExpenses((remoteExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
         }
         if (remoteExpenseCategories) {
-          setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
+          if ((remoteExpenseCategories as ExpenseCategory[]).length === 0) {
+            setExpenseCategories(initialExpenseCategories);
+          } else {
+            setExpenseCategories(remoteExpenseCategories as ExpenseCategory[]);
+          }
         }
         if (remotePurchases) {
           setPurchases((remotePurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
@@ -3355,7 +3359,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setExpenses((freshExpenses as Expense[]).map((expense) => normalizeExpenseRecordLoaded(expense)));
         }
         if (freshExpenseCategories) {
-          setExpenseCategories(freshExpenseCategories as ExpenseCategory[]);
+          if ((freshExpenseCategories as ExpenseCategory[]).length === 0) {
+            setExpenseCategories(initialExpenseCategories);
+          } else {
+            setExpenseCategories(freshExpenseCategories as ExpenseCategory[]);
+          }
         }
         if (freshPurchases) {
           setPurchases((freshPurchases as Purchase[]).map((purchase) => normalizePurchaseRecordLoaded(purchase)));
