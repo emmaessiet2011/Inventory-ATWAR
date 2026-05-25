@@ -101,7 +101,22 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
             };
           });
 
-          setEntries([createDefaultRow(), ...mappedEntries]);
+          if (mappedEntries.length === 0 && Number(product.openingStock) > 0) {
+            mappedEntries.push({
+              id: `LEGACY-${product.id}`,
+              isNew: false,
+              originalQty: Number(product.openingStock),
+              type: 'Opening Stock',
+              quantity: Number(product.openingStock),
+              unitCost: Number(product.unitPurchasePrice || 0),
+              expDate: product.expiryDate ? new Date(product.expiryDate).toISOString().split('T')[0] : '',
+              lotNumber: product.lotNumber || '',
+              date: new Date().toISOString().slice(0, 16),
+              note: 'Legacy Opening Stock',
+            });
+          }
+
+          setEntries(mappedEntries.length > 0 ? mappedEntries : [createDefaultRow()]);
           setDeletedIds([]);
         } catch (e) {
           console.error(e);
@@ -436,14 +451,10 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
                     </div>
                   </td>
                   <td className="px-3 py-4 align-top text-center pt-5 rounded-r-xl">
-                    {entry.isNew ? (
-                      <button onClick={handleAddRow} className="p-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm transition-colors"><Plus size={16} /></button>
+                    {isOpening ? (
+                      <button onClick={() => handleRemoveRow(entry)} className="p-2 rounded-full bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"><Trash2 size={16} /></button>
                     ) : (
-                      isOpening ? (
-                        <button onClick={() => handleRemoveRow(entry)} className="p-2 rounded-full bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"><Trash2 size={16} /></button>
-                      ) : (
-                        <div className="p-2 inline-flex rounded-full bg-slate-100 text-slate-400"><Lock size={16} /></div>
-                      )
+                      <div className="p-2 inline-flex rounded-full bg-slate-100 text-slate-400"><Lock size={16} /></div>
                     )}
                   </td>
                 </tr>
@@ -453,8 +464,13 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
-          <div className="text-lg font-bold text-slate-600">
-            Total Value: <span className="font-black text-indigo-700">{formatCurrency(totalAmount)}</span>
+          <div className="flex items-center gap-4">
+            <button onClick={handleAddRow} className="px-4 py-2 rounded-lg border border-indigo-200 text-indigo-700 bg-indigo-50 text-sm font-bold flex items-center gap-2 hover:bg-indigo-100 transition-colors">
+              <Plus size={16} /> Add New Row
+            </button>
+            <div className="text-lg font-bold text-slate-600">
+              Total Value: <span className="font-black text-indigo-700">{formatCurrency(totalAmount)}</span>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={handleClose} className="px-4 py-2 rounded-lg border border-slate-200 text-sm font-bold text-slate-600 hover:bg-white transition-colors">
