@@ -21,6 +21,7 @@ import { Sale as GlobalSale, ShippingStatus, useGlobalContext } from '@/context/
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { useNotifications } from '@/context/NotificationContext';
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ShipmentsProps {
   onNavigate: (page: string) => void;
@@ -162,6 +163,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
 
   const shipments = useMemo<ShipmentRow[]>(
     () => globalSales
+      .filter((sale) => isLocationAccessible(sale.location || '', currentUser, locations))
       .filter(isFinalizedSale)
       .map(sale => ({
         id: sale.id,
@@ -175,15 +177,20 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
         paymentStatus: (sale.paymentStatus || 'Due') as PaymentStatus,
         addedBy: sale.addedBy || '--',
       })),
-    [globalSales]
+    [globalSales, currentUser, locations]
   );
 
   const saleById = useMemo(
-    () => new Map(globalSales.map(sale => [sale.id, sale])),
-    [globalSales]
+    () => new Map(
+      globalSales
+        .filter((sale) => isLocationAccessible(sale.location || '', currentUser, locations))
+        .map(sale => [sale.id, sale]),
+    ),
+    [globalSales, currentUser, locations]
   );
   const scopedShipments = useMemo(
     () => shipments.filter(ship => {
+      if (!isLocationAccessible(ship.location || '', currentUser, locations)) return false;
       if (canAccessAllShipments) return true;
 
       const currentUserName = String(currentUser?.name || '').trim().toLowerCase();
@@ -219,13 +226,15 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
       canAccessCommissionAgentOwnShipments,
       currentUser?.name,
       currentUser?.id,
+      currentUser,
+      locations,
       saleById,
     ]
   );
 
   const locationOptions = useMemo(
-    () => Array.from(new Set([...locations.map(loc => loc.name), ...scopedShipments.map(ship => ship.location)])).filter(Boolean).sort(),
-    [locations, scopedShipments]
+    () => Array.from(new Set(scopedShipments.map(ship => String(ship.location || '').trim()).filter(Boolean))).sort(),
+    [scopedShipments]
   );
   const customerOptions = useMemo(
     () => Array.from(new Set(scopedShipments.map(ship => ship.customerName))).filter(Boolean).sort(),
@@ -357,8 +366,8 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
   }, [activeActionId]);
 
   const selectedSale = useMemo(
-    () => (selectedSaleId ? globalSales.find(sale => sale.id === selectedSaleId) || null : null),
-    [selectedSaleId, globalSales]
+    () => (selectedSaleId ? saleById.get(selectedSaleId) || null : null),
+    [selectedSaleId, saleById]
   );
   const activeShipment = useMemo(
     () => (activeActionId ? scopedShipments.find(ship => ship.id === activeActionId) || null : null),
@@ -377,7 +386,7 @@ const Shipments: React.FC<ShipmentsProps> = ({ onNavigate: _onNavigate }) => {
     setActiveActionId(null);
   };
   const handlePrintInvoice = (saleId: string) => {
-    const sale = globalSales.find(row => row.id === saleId);
+    const sale = saleById.get(saleId);
     const saleLocation = findLocationByIdOrName(locations, sale?.location);
     notifyReceiptPrintFallback({
       location: saleLocation,

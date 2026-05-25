@@ -13,6 +13,7 @@ import ViewSellReturnPaymentsModal from './ViewSellReturnPaymentsModal';
 import { SellReturn, useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
 import { printDocument, paymentBadge } from '@/utils/printUtils';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ListReturnsProps {
   onNavigate: (page: string) => void;
@@ -121,13 +122,21 @@ const ListReturns: React.FC<ListReturnsProps> = ({ onNavigate }) => {
   })).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [sellReturns, saleMap]);
 
   const scopedReturns = useMemo(() => {
-    if (canAccessAllSellReturns) return baseReturns;
+    if (canAccessAllSellReturns) {
+      return baseReturns.filter((record) => isLocationAccessible(record.location || '', currentUser, locations));
+    }
     if (!canAccessOwnSellReturns) return [];
     const owner = String(currentUser?.name || '').trim().toLowerCase();
-    return baseReturns.filter(record => String(record.addedBy || '').trim().toLowerCase() === owner);
-  }, [baseReturns, canAccessAllSellReturns, canAccessOwnSellReturns, currentUser?.name]);
+    return baseReturns.filter(record => (
+      isLocationAccessible(record.location || '', currentUser, locations) &&
+      String(record.addedBy || '').trim().toLowerCase() === owner
+    ));
+  }, [baseReturns, canAccessAllSellReturns, canAccessOwnSellReturns, currentUser, currentUser?.name, locations]);
 
-  const locationFilterOptions = useMemo(() => locations.map(location => location.name), [locations]);
+  const locationFilterOptions = useMemo(
+    () => Array.from(new Set(scopedReturns.map((record) => String(record.location || '').trim()).filter(Boolean))).sort(),
+    [scopedReturns],
+  );
   const customerFilterOptions = useMemo(() => Array.from(new Set(scopedReturns.map(record => record.customerName))).sort(), [scopedReturns]);
   const userFilterOptions = useMemo(() => Array.from(new Set(users.map(user => user.name))).sort(), [users]);
 

@@ -5,6 +5,7 @@ import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { findLocationByIdOrName, resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
 import { fetchDedicated } from '@/utils/apiClient';
 import { printElementSnapshot } from '@/utils/printUtils';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ViewSaleDetailsProps {
   isOpen: boolean;
@@ -27,12 +28,14 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
   autoPrintRequestId,
   pageMode = false,
 }) => {
-  const { sales, payments, settings, formatCurrency, taxRates, invoiceLayouts, customers, locations } = useGlobalContext();
+  const { sales, payments, settings, formatCurrency, taxRates, invoiceLayouts, customers, locations, currentUser } = useGlobalContext();
 
-  const sale = useMemo(
-    () => (saleId ? sales.find(s => s.id === saleId) : undefined),
-    [sales, saleId]
-  );
+  const sale = useMemo(() => {
+    if (!saleId) return undefined;
+    const match = sales.find(s => s.id === saleId);
+    if (!match) return undefined;
+    return isLocationAccessible(match.location || '', currentUser, locations) ? match : undefined;
+  }, [sales, saleId, currentUser, locations]);
 
   const layoutConfig = useMemo(
     () => resolveInvoiceLayoutRenderConfig(sale?.invoiceLayout, invoiceLayouts),

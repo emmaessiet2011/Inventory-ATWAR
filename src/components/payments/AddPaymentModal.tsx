@@ -14,6 +14,7 @@ import {
   PAYMENT_ACCOUNTS_UPDATED_EVENT,
   resolveDefaultAccountFromMethod,
 } from '@/utils/paymentAccounts';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface AddPaymentModalProps {
   isOpen: boolean;
@@ -128,10 +129,19 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const rebateAmount = (rebateEnabled && customerRebatePercent > 0)
     ? Number((paymentAmountPreview * customerRebatePercent / 100).toFixed(currencyPrecision))
     : 0;
+  const canAccessSaleLocation = isLocationAccessible(String(sale?.location || ''), currentUser, locations);
 
   const handleSave = async () => {
     const paymentAmount = parseFloat(toFixedPrecision(amount, currencyPrecision));
     if (!sale) return;
+    if (!canAccessSaleLocation) {
+      addNotification({
+        title: 'Access denied',
+        message: 'You can only add payment for your business location sales.',
+        type: 'error',
+      });
+      return;
+    }
     if (isNaN(paymentAmount) || paymentAmount <= 0) {
       addNotification({
         title: 'Invalid payment amount',

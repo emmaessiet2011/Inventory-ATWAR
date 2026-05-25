@@ -5,6 +5,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { ConfirmationModal } from '@/components/users/UserModals';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { printDocument } from '@/utils/printUtils';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ViewPaymentsModalProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface ViewPaymentsModalProps {
 }
 
 const ViewPaymentsModal: React.FC<ViewPaymentsModalProps> = ({ isOpen, onClose, invoiceNo }) => {
-  const { payments, sales, settings, formatCurrency, deletePayment: globalDeletePayment } = useGlobalContext();
+  const { payments, sales, settings, formatCurrency, deletePayment: globalDeletePayment, currentUser, locations } = useGlobalContext();
   const { addNotification } = useNotifications();
   const [pendingDeletePaymentId, setPendingDeletePaymentId] = useState<string | null>(null);
 
@@ -27,18 +28,23 @@ const ViewPaymentsModal: React.FC<ViewPaymentsModalProps> = ({ isOpen, onClose, 
   };
 
   const sale = useMemo(
-    () => (invoiceNo ? sales.find(s => s.invoiceNo === invoiceNo) : undefined),
-    [sales, invoiceNo]
+    () => {
+      if (!invoiceNo) return undefined;
+      const match = sales.find(s => s.invoiceNo === invoiceNo);
+      if (!match) return undefined;
+      return isLocationAccessible(match.location || '', currentUser, locations) ? match : undefined;
+    },
+    [sales, invoiceNo, currentUser, locations]
   );
 
   const invoicePayments = useMemo(() => {
-    if (!invoiceNo) return [];
+    if (!invoiceNo || !sale) return [];
     return payments.filter(p =>
       (p.linkedInvoices || []).includes(invoiceNo) ||
       p.referenceNo === invoiceNo ||
       (p.note || '').includes(invoiceNo)
     );
-  }, [payments, invoiceNo]);
+  }, [payments, invoiceNo, sale]);
 
   const handlePrint = () => {
     const grandTotal = Number(sale?.grandTotal || sale?.totalAmount || 0);

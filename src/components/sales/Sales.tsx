@@ -171,7 +171,10 @@ const Sales: React.FC<SalesProps> = ({
   
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [invoiceAutoPrintRequestId, setInvoiceAutoPrintRequestId] = useState<string | null>(null);
-  const sales = globalSales;
+  const sales = useMemo(
+    () => globalSales.filter((sale) => isLocationAccessible(sale.location || '', currentUser, locations)),
+    [globalSales, currentUser, locations],
+  );
   const isColumnVisible = (key: ColumnKey) => !hiddenColumns.includes(key);
   const getColumnStyle = (key: ColumnKey): React.CSSProperties | undefined =>
     isColumnVisible(key) ? undefined : { display: 'none' };
@@ -296,6 +299,10 @@ const Sales: React.FC<SalesProps> = ({
   const canViewLocation = (sale: any) => isLocationAccessible(sale.location || '', currentUser, locations);
   const isQuotationList = statusFilter === 'Quotation';
   const canAddInCurrentList = !isQuotationList || canCreateQuotations;
+  const accessibleLocationOptions = useMemo(
+    () => Array.from(new Set(sales.map((sale) => String(sale.location || '').trim()).filter(Boolean))).sort(),
+    [sales],
+  );
 
   const activeSale = useMemo(
     () => (activeActionId ? sales.find(s => s.id === activeActionId) : undefined),
@@ -664,7 +671,7 @@ const Sales: React.FC<SalesProps> = ({
     }
     const editDays = Number(settings.transactionEditDays);
     if (editDays > 0) {
-      const sale = globalSales.find(s => s.id === saleId);
+      const sale = sales.find(s => s.id === saleId);
       if (sale) {
         const saleDate = new Date(sale.date);
         const now = new Date();
@@ -825,6 +832,7 @@ const Sales: React.FC<SalesProps> = ({
 
   const scopedSales = useMemo(() => (
     sales.filter(s => {
+      if (!canViewLocation(s)) return false;
       if (!statusFilter) return true;
       const normalizedStatus = normalizeSaleLifecycleStatus(s.status || s.saleStatus);
       if (statusFilter === 'Quotation') {
@@ -843,7 +851,7 @@ const Sales: React.FC<SalesProps> = ({
       }
       return normalizedStatus === statusFilter;
     })
-  ), [sales, statusFilter, canViewAllQuotations, canViewOwnQuotations, currentUser?.name]);
+  ), [sales, statusFilter, canViewAllQuotations, canViewOwnQuotations, currentUser?.name, currentUser, locations]);
 
   const paymentStatusOptions = useMemo(() => {
     const order: PaymentStatusValue[] = ['Paid', 'Due', 'Partial', 'Overdue'];
@@ -983,7 +991,7 @@ const Sales: React.FC<SalesProps> = ({
                   <div className="relative grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 overflow-visible">
                       <MultiSelect 
                           label="Business Location"
-                          options={locations.map(loc => loc.name)}
+                          options={accessibleLocationOptions}
                           selected={filters.location}
                           onChange={(val) => setFilters({...filters, location: val})}
                       />
