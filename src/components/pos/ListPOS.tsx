@@ -24,6 +24,7 @@ import { printActiveReportTable } from '@/utils/printUtils';
 import { bootstrapRegisterFromDB, getActiveRegisterSession } from '@/utils/registerLedger';
 import { findLocationByIdOrName, notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { buildPaginationItems } from '@/utils/pagination';
+import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface POSSale {
   id: string;
@@ -168,6 +169,10 @@ const ListPOS: React.FC<ListPOSProps> = ({
       user: [] as string[],
       shippingStatus: [] as string[]
   });
+  const visibleGlobalSales = useMemo(
+    () => globalSales.filter((sale) => isLocationAccessible(sale.location || '', currentUser, locations)),
+    [globalSales, currentUser, locations],
+  );
 
   const columnDefs: Array<{ key: ColumnKey; label: string }> = [
     { key: 'action', label: 'Action' },
@@ -271,7 +276,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
     String(sale.saleType || '').trim().toLowerCase() === 'pos';
 
   const sales = useMemo<POSSale[]>(() => {
-    return globalSales
+    return visibleGlobalSales
       .filter(s => isFinalizedSale(s) && isPOSSale(s))
       .map(s => {
         const matchedCustomer = customers.find(c => c.id === String(s.customerId));
@@ -300,7 +305,11 @@ const ListPOS: React.FC<ListPOSProps> = ({
           saleType: s.saleType || '',
         };
       });
-  }, [globalSales, customers]);
+  }, [visibleGlobalSales, customers]);
+  const locationFilterOptions = useMemo(
+    () => Array.from(new Set(sales.map((sale) => String(sale.location || '').trim()).filter(Boolean))).sort(),
+    [sales],
+  );
 
   const customerFilterOptions = useMemo(
     () => Array.from(new Set(sales.map(s => s.customerName))).sort(),
@@ -501,7 +510,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
   };
   
   const handleAddPayment = (saleId: string) => {
-      const sale = globalSales.find(s => s.id === saleId);
+      const sale = visibleGlobalSales.find(s => s.id === saleId);
       if (!isFinalizedSale(sale)) {
         addNotification({
           title: 'Action blocked',
@@ -529,7 +538,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
   };
 
   const handleSellReturn = (saleId: string) => {
-      const sale = globalSales.find(s => s.id === saleId);
+      const sale = visibleGlobalSales.find(s => s.id === saleId);
       if (!isFinalizedSale(sale)) {
         addNotification({
           title: 'Action blocked',
@@ -666,8 +675,8 @@ const ListPOS: React.FC<ListPOSProps> = ({
   };
 
   const selectedSale = selectedSaleId ? (sales.find(s => s.id === selectedSaleId) || null) : null;
-  const selectedSaleRaw = selectedSaleId ? (globalSales.find(s => s.id === selectedSaleId) || null) : null;
-  const activeSaleRaw = activeActionId ? (globalSales.find(s => s.id === activeActionId) || null) : null;
+  const selectedSaleRaw = selectedSaleId ? (visibleGlobalSales.find(s => s.id === selectedSaleId) || null) : null;
+  const activeSaleRaw = activeActionId ? (visibleGlobalSales.find(s => s.id === activeActionId) || null) : null;
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -703,7 +712,7 @@ const ListPOS: React.FC<ListPOSProps> = ({
                       <div className="group">
                           <MultiSelect 
                             label="Business Location"
-                            options={locations.map(loc => loc.name)}
+                            options={locationFilterOptions}
                             selected={filters.location}
                             onChange={(val) => setFilters({...filters, location: val})}
                           />
