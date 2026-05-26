@@ -298,6 +298,10 @@ export const makeNextStockTransferRef = (prefix: string, rows: StockTransferReco
   return `${normalizedPrefix}-${String(next).padStart(4, '0')}`;
 };
 
+export const shouldApplyStockTransferMovement = (transfer?: Pick<StockTransferRecord, 'status'> | null): boolean => (
+  normalize(transfer?.status) === 'completed'
+);
+
 interface SimulateParams {
   transfer: StockTransferRecord;
   direction: 1 | -1;

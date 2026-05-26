@@ -11,14 +11,15 @@ import { buildPaginationItems } from '@/utils/pagination';
 import { formatDateBySettings, formatDateTimeBySettings } from '@/utils/dateTime';
 import {
   StockTransferRecord,
-  appendStockLedgerEntries,
+  appendStockLedgerEntriesStrict,
   bootstrapStockTransfersFromDB,
   readStockTransfers,
   simulateStockTransfer,
+  syncChangedProductsStrict,
   
   writeStockTransfers,
 } from '@/utils/stockTransfers';
-import { fetchLocationInventoryFromDB } from '@/utils/stockLocationInventory';
+import { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } from '@/utils/stockLocationInventory';
 import { isLocationAccessible } from '@/utils/productVisibility';
 
 interface ListStockTransfersProps {
@@ -267,24 +268,34 @@ const ListStockTransfers: React.FC<ListStockTransfersProps> = ({ onNavigate, can
         if (!fromLoc) throw new Error(`Cannot resolve ID for source location: ${transfer.locationFrom}`);
         if (!toLoc) throw new Error(`Cannot resolve ID for destination location: ${transfer.locationTo}`);
         
-        const workingInventory = await fetchLocationInventoryFromDB();
+        const originalInventory = await fetchLocationInventoryFromDB();
         
         const rollback = simulateStockTransfer({
           transfer,
           direction: -1,
           products,
-          inventoryRows: workingInventory,
+          inventoryRows: originalInventory,
           locationFromId: fromLoc.id,
           locationToId: toLoc.id,
           generateId,
           actorName: currentUser?.name || 'System',
           notePrefix: 'Delete rollback',
         });
-        const ledgerSaved = await appendStockLedgerEntries(rollback.ledgerEntries);
-        if (!ledgerSaved) {
-          throw new Error('Unable to persist rollback ledger entries in Postgres.');
+        const ledgerSaved = await appendStockLedgerEntriesStrict(rollback.ledgerEntries);
+        if (!ledgerSaved.ok) {
+          const detail = ledgerSaved.error || `HTTP ${ledgerSaved.status || 0}`;
+          throw new Error(`Unable to persist rollback ledger entries in Postgres. ${detail}`);
         }
-        /* We rely on background product refresh instead of syncing products directly */
+        const inventorySaved = await syncChangedLocationInventoryStrict(rollback.inventoryAfter, originalInventory);
+        if (!inventorySaved.ok) {
+          const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+          throw new Error(`Unable to restore transferred location stock in Postgres. ${detail}`);
+        }
+        const productsSaved = await syncChangedProductsStrict(rollback.productsAfter, products);
+        if (!productsSaved.ok) {
+          const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
+          throw new Error(`Unable to restore transferred product stock in Postgres. ${detail}`);
+        }
       }
 
       const nextTransfers = transfers.filter(row => row.id !== transfer.id);

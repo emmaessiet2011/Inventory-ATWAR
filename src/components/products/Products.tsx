@@ -344,7 +344,16 @@ const Products: React.FC = () => {
   };
 
   // ── Row selection ─────────────────────────────────────────────
-  const locationFilteredProducts = products.filter(p => isLocationAccessible(p.businessLocation || '', currentUser, locations));
+  const productVisibleInUserScope = (product: Product) => {
+    if (isLocationAccessible(product.businessLocation || '', currentUser, locations)) return true;
+    const locationTokens = [
+      ...(Array.isArray(product.availableLocationIds) ? product.availableLocationIds : []),
+      ...(Array.isArray(product.availableLocations) ? product.availableLocations : []),
+    ];
+    return locationTokens.some(token => isLocationAccessible(String(token || ''), currentUser, locations));
+  };
+
+  const locationFilteredProducts = products.filter(productVisibleInUserScope);
   const filteredProducts = locationFilteredProducts.filter(p => {
     const q = searchTerm.toLowerCase();
     if (q && !p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false;

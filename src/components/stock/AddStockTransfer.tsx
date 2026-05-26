@@ -19,6 +19,8 @@ import {
   makeNextStockTransferRef,
   readStockTransfers,
   simulateStockTransfer,
+  shouldApplyStockTransferMovement,
+  syncChangedProductsStrict,
   
   writeStockTransfers,
 } from '@/utils/stockTransfers';
@@ -304,10 +306,25 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       addNotification({ title: 'Validation Error', message: 'Add at least one product with quantity greater than zero.', type: 'error' });
       return;
     }
+    await bootstrapStockTransfersFromDB().catch(() => {});
+    const allTransfers = readStockTransfers();
+    const editingRecord = editingTransferId
+      ? allTransfers.find(row => row.id === editingTransferId)
+      : undefined;
     const overRequested = cleanRows.find((row) => {
       const product = products.find((record) => record.id === row.productId);
       if (!product) return false;
-      return row.qty > getAvailableStock(product) + 0.0001;
+      let available = getAvailableStock(product);
+      if (
+        editingRecord &&
+        shouldApplyStockTransferMovement(editingRecord) &&
+        normalize(editingRecord.locationFrom) === normalize(resolveLocationName(locationFrom))
+      ) {
+        available += (editingRecord.items || [])
+          .filter(item => item.productId === row.productId)
+          .reduce((sum, item) => sum + round3(Number(item.qty || 0)), 0);
+      }
+      return row.qty > available + 0.0001;
     });
     if (overRequested) {
       addNotification({
@@ -317,12 +334,6 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       });
       return;
     }
-
-    await bootstrapStockTransfersFromDB().catch(() => {});
-    const allTransfers = readStockTransfers();
-    const editingRecord = editingTransferId
-      ? allTransfers.find(row => row.id === editingTransferId)
-      : undefined;
     const resolvedRef = String(refNo || '').trim()
       || makeNextStockTransferRef(settings.stockTransferPrefix || 'ST', allTransfers);
     const duplicateRef = allTransfers.find(row =>
@@ -366,7 +377,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       const ledgerEntries = [];
       const actorName = currentUser?.name || 'System';
 
-      if (editingRecord) {
+      if (editingRecord && shouldApplyStockTransferMovement(editingRecord)) {
         const rollbackSource = resolveLocationRecord(editingRecord.locationFrom) || sourceLocationRecord;
         const rollbackDestination = resolveLocationRecord(editingRecord.locationTo) || destinationLocationRecord;
         const rollback = simulateStockTransfer({
@@ -385,7 +396,7 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
         ledgerEntries.push(...rollback.ledgerEntries);
       }
 
-      {
+      if (shouldApplyStockTransferMovement(nextRecord)) {
         const applied = simulateStockTransfer({
           transfer: nextRecord,
           direction: 1,
@@ -413,6 +424,12 @@ const AddStockTransfer: React.FC<AddStockTransferProps> = ({ onNavigate, editTra
       if (!inventorySaved.ok) {
         const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
         throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
+      }
+
+      const productsSaved = await syncChangedProductsStrict(workingProducts, products);
+      if (!productsSaved.ok) {
+        const detail = productsSaved.error || `HTTP ${productsSaved.status || 0}`;
+        throw new Error(`Unable to save product stock changes in Postgres. ${detail}`);
       }
 
       const mergedTransfers = editingRecord

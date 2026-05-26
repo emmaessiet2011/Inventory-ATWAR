@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Product } from '../../src/context/GlobalContext';
 import { simulateSeedLocationStock } from '../../src/utils/stockSeeding';
-import { simulateStockTransfer, StockTransferRecord } from '../../src/utils/stockTransfers';
+import { shouldApplyStockTransferMovement, simulateStockTransfer, StockTransferRecord } from '../../src/utils/stockTransfers';
 import { ProductLocationInventory } from '../../src/utils/stockLocationInventory';
 
 const product = (overrides: Partial<Product> = {}): Product => ({
@@ -183,5 +183,50 @@ describe('location stock quantity rules', () => {
     expect(result.productsAfter[0].stock).toBe(49);
     expect(result.inventoryAfter.find(row => row.locationId === 'BL0001')?.stock).toBe(49);
     expect(result.inventoryAfter.find(row => row.locationId === 'LOC-MOWALAH')?.stock).toBe(2);
+  });
+
+  it('applies physical stock movement only for completed transfers', () => {
+    expect(shouldApplyStockTransferMovement(transfer({ status: 'Completed' }))).toBe(true);
+    expect(shouldApplyStockTransferMovement(transfer({ status: 'Pending' }))).toBe(false);
+    expect(shouldApplyStockTransferMovement(transfer({ status: 'In Transit' }))).toBe(false);
+  });
+
+  it('restores source and destination stock when a completed transfer is reversed', () => {
+    const source = product({ stock: 49 });
+    const inventoryRows: ProductLocationInventory[] = [
+      {
+        id: 'PINV-WH',
+        productId: source.id,
+        locationId: 'BL0001',
+        locationName: 'Atwar Al Mustaqbal Business, CR:1450968',
+        stock: 49,
+        unitCost: 10,
+      },
+      {
+        id: 'PINV-MOWALAH',
+        productId: source.id,
+        locationId: 'LOC-MOWALAH',
+        locationName: 'O2 Pet Shop Mowalah',
+        stock: 2,
+        unitCost: 10,
+      },
+    ];
+
+    const result = simulateStockTransfer({
+      transfer: transfer(),
+      direction: -1,
+      products: [source],
+      inventoryRows,
+      locationFromId: 'BL0001',
+      locationToId: 'LOC-MOWALAH',
+      generateId,
+      actorName: 'Admin',
+      notePrefix: 'Delete rollback',
+    });
+
+    expect(result.productsAfter[0].stock).toBe(50);
+    expect(result.inventoryAfter.find(row => row.locationId === 'BL0001')?.stock).toBe(50);
+    expect(result.inventoryAfter.find(row => row.locationId === 'LOC-MOWALAH')?.stock).toBe(1);
+    expect(result.ledgerEntries.map(entry => entry.change)).toEqual([1, -1]);
   });
 });
