@@ -1,0 +1,326 @@
+{
+  "startedAt": "2026-05-26T05:27:09.263Z",
+  "finishedAt": "2026-05-26T05:27:20.728Z",
+  "file": "C:\\Users\\atwar\\Downloads\\Products - Atwar Al Mustaqbal Business  current.xlsx",
+  "location": {
+    "id": "BL0001",
+    "name": "Atwar Al Mustaqbal Business, CR:1450968"
+  },
+  "totals": {
+    "fileRows": 161,
+    "matchedRows": 85,
+    "missingRows": 76,
+    "ambiguousRows": 0,
+    "createRows": 0,
+    "updateRows": 0,
+    "unchangedRows": 85,
+    "verifiedMatchRows": 85,
+    "verifiedMismatchRows": 0,
+    "inventoryRowsAtLocationBefore": 165,
+    "inventoryRowsAtLocationAfter": 165,
+    "negativeQtyRowsInFile": 2
+  },
+  "missingSample": [
+    {
+      "row": 10,
+      "product": "Garpidog (Adult)",
+      "sku": "0013",
+      "qty": 0
+    },
+    {
+      "row": 14,
+      "product": "Migos (Puppy)_20KG",
+      "sku": "0017",
+      "qty": 0
+    },
+    {
+      "row": 15,
+      "product": "Migos (Cat Supreme) _10kg",
+      "sku": "0018",
+      "qty": 0
+    },
+    {
+      "row": 17,
+      "product": "Indomie (Vegetable)",
+      "sku": "0022",
+      "qty": 0
+    },
+    {
+      "row": 18,
+      "product": "Indomie (Curry)",
+      "sku": "0023",
+      "qty": 0
+    },
+    {
+      "row": 19,
+      "product": "Merinda",
+      "sku": "0024",
+      "qty": 0
+    },
+    {
+      "row": 20,
+      "product": "Zomoroda",
+      "sku": "0025",
+      "qty": 0
+    },
+    {
+      "row": 21,
+      "product": "Redbull",
+      "sku": "0026",
+      "qty": 0
+    },
+    {
+      "row": 22,
+      "product": "Code Red",
+      "sku": "0027",
+      "qty": 0
+    },
+    {
+      "row": 23,
+      "product": "Fanta",
+      "sku": "0028",
+      "qty": 0
+    },
+    {
+      "row": 24,
+      "product": "Barbicane (Tin)",
+      "sku": "0029",
+      "qty": 0
+    },
+    {
+      "row": 25,
+      "product": "Barbicane (Glass Bottle)",
+      "sku": "0030",
+      "qty": 0
+    },
+    {
+      "row": 26,
+      "product": "D",
+      "sku": "0031",
+      "qty": 0
+    },
+    {
+      "row": 27,
+      "product": "RC",
+      "sku": "0032",
+      "qty": 0
+    },
+    {
+      "row": 28,
+      "product": "Spada",
+      "sku": "0033",
+      "qty": 0
+    },
+    {
+      "row": 29,
+      "product": "SP901 (10.00R20)",
+      "sku": "0034",
+      "qty": 0
+    },
+    {
+      "row": 30,
+      "product": "SP328G+ (315/80R22.5)",
+      "sku": "0035",
+      "qty": 0
+    },
+    {
+      "row": 31,
+      "product": "SP901 (11.00R20)",
+      "sku": "0036",
+      "qty": 2
+    },
+    {
+      "row": 32,
+      "product": "SP981(12.00R24)",
+      "sku": "0037",
+      "qty": 0
+    },
+    {
+      "row": 33,
+      "product": "SP328C (12.00R24)",
+      "sku": "0038",
+      "qty": 0
+    },
+    {
+      "row": 34,
+      "product": "SP901 (12.00R20)",
+      "sku": "0039",
+      "qty": 0
+    },
+    {
+      "row": 35,
+      "product": "SP913 (315/80R22.5)",
+      "sku": "0040",
+      "qty": 0
+    },
+    {
+      "row": 36,
+      "product": "SP906 (315/80R22.5)",
+      "sku": "0041",
+      "qty": 0
+    },
+    {
+      "row": 37,
+      "product": "SP901 (7.50R16LT)",
+      "sku": "0042",
+      "qty": 0
+    },
+    {
+      "row": 38,
+      "product": "Cebican (Daily Care) Damage",
+      "sku": "0043",
+      "qty": 0
+    },
+    {
+      "row": 39,
+      "product": "Garpidog (Adult) Damage",
+      "sku": "0044",
+      "qty": 0
+    },
+    {
+      "row": 40,
+      "product": "Migos (Maintanance) Damage",
+      "sku": "0046",
+      "qty": 0
+    },
+    {
+      "row": 41,
+      "product": "Cebican (High Energy) Damage",
+      "sku": "0047",
+      "qty": 0
+    },
+    {
+      "row": 42,
+      "product": "Cebicane (Cat) Damage",
+      "sku": "0048",
+      "qty": 0
+    },
+    {
+      "row": 43,
+      "product": "Clear Cat",
+      "sku": "0049",
+      "qty": 0
+    },
+    {
+      "row": 44,
+      "product": "Clear cat (Blue Packet)",
+      "sku": "0050",
+      "qty": 0
+    },
+    {
+      "row": 45,
+      "product": "Nilcutter",
+      "sku": "0051",
+      "qty": 0
+    },
+    {
+      "row": 46,
+      "product": "Clear cat (Damage)",
+      "sku": "0052",
+      "qty": 0
+    },
+    {
+      "row": 47,
+      "product": "Migos (High Energy)_Damage",
+      "sku": "0054",
+      "qty": 0
+    },
+    {
+      "row": 48,
+      "product": "SP395(385/65R22.5)",
+      "sku": "0055",
+      "qty": 0
+    },
+    {
+      "row": 49,
+      "product": "Toyota Oil (20w-50) 4L",
+      "sku": "0056",
+      "qty": 0
+    },
+    {
+      "row": 50,
+      "product": "Toyota Oil (5w-30) 4L",
+      "sku": "0057",
+      "qty": 0
+    },
+    {
+      "row": 51,
+      "product": "Salman Oil",
+      "sku": "0058",
+      "qty": 0
+    },
+    {
+      "row": 52,
+      "product": "Garpidog High Energy _20kg (Damage)",
+      "sku": "0060",
+      "qty": 0
+    },
+    {
+      "row": 53,
+      "product": "SP907",
+      "sku": "0061",
+      "qty": 0
+    },
+    {
+      "row": 54,
+      "product": "Pro Prince",
+      "sku": "0062",
+      "qty": 0
+    },
+    {
+      "row": 55,
+      "product": "Olive Pickles",
+      "sku": "0063",
+      "qty": 1
+    },
+    {
+      "row": 56,
+      "product": "Marlin Fish (Tuna)",
+      "sku": "0064",
+      "qty": 0
+    },
+    {
+      "row": 57,
+      "product": "Naji Lemon Juice",
+      "sku": "0065",
+      "qty": 0
+    },
+    {
+      "row": 58,
+      "product": "D",
+      "sku": "0066",
+      "qty": 0
+    },
+    {
+      "row": 59,
+      "product": "DU Juice",
+      "sku": "0067",
+      "qty": -95
+    },
+    {
+      "row": 60,
+      "product": "Tola Sml",
+      "sku": "0068",
+      "qty": 0
+    },
+    {
+      "row": 61,
+      "product": "Sour Punk Small",
+      "sku": "0069",
+      "qty": 0
+    },
+    {
+      "row": 62,
+      "product": "Break 2 Finger",
+      "sku": "0070",
+      "qty": 0
+    },
+    {
+      "row": 63,
+      "product": "Adore hazlenut",
+      "sku": "0071",
+      "qty": 10
+    }
+  ],
+  "updateSample": []
+}
