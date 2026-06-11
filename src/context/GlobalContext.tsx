@@ -5320,12 +5320,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           .map((invoiceNo) => String(invoiceNo || '').trim())
           .filter(Boolean),
       );
+      const strictLinkedAllocation = payment.strictLinkedAllocation === true && linkedSet.size > 0;
       const prioritized = linkedSet.size === 0
         ? dueSales
-        : [
-            ...dueSales.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim())),
-            ...dueSales.filter(({ sale }) => !linkedSet.has(String(sale.invoiceNo || '').trim())),
-          ];
+        : strictLinkedAllocation
+          ? dueSales.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim()))
+          : [
+              ...dueSales.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim())),
+              ...dueSales.filter(({ sale }) => !linkedSet.has(String(sale.invoiceNo || '').trim())),
+            ];
 
       prioritized.forEach(({ sale, index }) => {
         if (remaining <= 0) return;
