@@ -1640,6 +1640,215 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   }
 });
 
+app.post('/api/sync/customer-payment', requireAuth, async (req, res) => {
+  const raw = toObject(req.body);
+  const id = String(raw.id || '').trim();
+  if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
+
+  try {
+    const [customerId, locationId, accountId] = await Promise.all([
+      resolveLookupId(prisma.customer, raw.customerId || raw.contactId, [raw.contactName, raw.customerName], ['businessName', 'name', 'mobile']),
+      resolveLookupId(prisma.location, raw.locationId, [raw.location, raw.businessLocation], ['name']),
+      resolveLookupId(prisma.paymentAccount, raw.accountId || raw.paymentAccountId, [raw.account, raw.paymentAccount], ['name', 'accountNumber']),
+    ]);
+    if (!customerId) {
+      return res.status(400).json({ ok: false, error: 'Customer not found for payment' });
+    }
+
+    const amount = toFiniteNumber(raw.amount, 0);
+    if (amount <= 0) {
+      return res.status(400).json({ ok: false, error: 'Payment amount must be greater than zero' });
+    }
+
+    const paymentData = {
+      date: normDate(raw.date),
+      contactType: 'CUSTOMER',
+      direction: normStatus(raw.direction || raw.type, ['RECEIVED', 'SENT'], 'RECEIVED'),
+      customerId,
+      supplierId: null,
+      expenseId: null,
+      locationId,
+      accountId,
+      referenceNo: String(raw.referenceNo || raw.refNo || `PAY-${id}`),
+      method: String(raw.method || raw.paymentMethod || 'Cash'),
+      amount,
+      note: raw.note ? String(raw.note) : null,
+      meta: {
+        ...raw,
+        id,
+        contactId: raw.contactId || customerId,
+        contactType: 'Customer',
+        type: raw.type === 'sent' ? 'sent' : 'received',
+      },
+    };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const savedPayment = await tx.payment.upsert({
+        where: { id },
+        update: paymentData,
+        create: { id, ...paymentData },
+      });
+
+      const [saleRows, paymentRows, customerRow] = await Promise.all([
+        tx.sale.findMany({
+          where: { customerId, status: 'FINAL' },
+          orderBy: [{ date: 'asc' }, { invoiceNo: 'asc' }],
+        }),
+        tx.payment.findMany({
+          where: { customerId, contactType: 'CUSTOMER', direction: 'RECEIVED' },
+          orderBy: [{ date: 'asc' }, { referenceNo: 'asc' }],
+        }),
+        tx.customer.findUnique({ where: { id: customerId } }),
+      ]);
+
+      const workingSales = saleRows.map((sale) => {
+        const grandTotal = Number(toFiniteNumber(sale.grandTotal, 0).toFixed(3));
+        return {
+          ...sale,
+          grandTotalNumber: grandTotal,
+          totalPaidNumber: 0,
+          sellDueNumber: grandTotal,
+          paymentStatusValue: grandTotal <= 0.001 ? 'PAID' : 'DUE',
+        };
+      });
+      const saleIndexById = new Map(workingSales.map((sale, index) => [String(sale.id), index]));
+      const currentPaymentAllocations = [];
+      let unallocatedReceived = 0;
+
+      for (const payment of paymentRows) {
+        let remaining = Number(toFiniteNumber(payment.amount, 0).toFixed(3));
+        if (remaining <= 0) continue;
+        const meta = toObject(payment.meta);
+        const linkedInvoices = toArray(meta.linkedInvoices)
+          .map((invoiceNo) => String(invoiceNo || '').trim())
+          .filter(Boolean);
+        const linkedSet = new Set(linkedInvoices);
+        const strictLinkedAllocation = meta.strictLinkedAllocation === true && linkedSet.size > 0;
+        const dueIndexes = workingSales
+          .map((sale, index) => ({ sale, index }))
+          .filter(({ sale }) => sale.sellDueNumber > 0.0005);
+        const prioritized = linkedSet.size === 0
+          ? dueIndexes
+          : strictLinkedAllocation
+            ? dueIndexes.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim()))
+            : [
+                ...dueIndexes.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim())),
+                ...dueIndexes.filter(({ sale }) => !linkedSet.has(String(sale.invoiceNo || '').trim())),
+              ];
+
+        for (const { sale, index } of prioritized) {
+          if (remaining <= 0) break;
+          const settled = Math.min(remaining, sale.sellDueNumber);
+          if (settled <= 0) continue;
+          remaining = Number(Math.max(0, remaining - settled).toFixed(3));
+          const nextPaid = Number((sale.totalPaidNumber + settled).toFixed(3));
+          const nextDue = Number(Math.max(0, sale.sellDueNumber - settled).toFixed(3));
+          workingSales[index] = {
+            ...sale,
+            totalPaidNumber: nextPaid,
+            sellDueNumber: nextDue,
+            paymentStatusValue: nextDue <= 0.001 ? 'PAID' : 'PARTIAL',
+          };
+          if (payment.id === id) {
+            currentPaymentAllocations.push({
+              saleId: sale.id,
+              invoiceNo: sale.invoiceNo,
+              amount: Number(settled.toFixed(3)),
+            });
+          }
+        }
+        unallocatedReceived = Number((unallocatedReceived + remaining).toFixed(3));
+      }
+
+      const updatedSales = [];
+      for (const sale of workingSales) {
+        const existingIndex = saleIndexById.get(String(sale.id));
+        const existingSale = typeof existingIndex === 'number' ? saleRows[existingIndex] : null;
+        if (!existingSale) continue;
+        const existingPaid = Number(toFiniteNumber(existingSale.totalPaid, 0).toFixed(3));
+        const existingDue = Number(toFiniteNumber(existingSale.sellDue, 0).toFixed(3));
+        const existingStatus = String(existingSale.paymentStatus || 'DUE');
+        if (
+          Math.abs(existingPaid - sale.totalPaidNumber) <= 0.0005 &&
+          Math.abs(existingDue - sale.sellDueNumber) <= 0.0005 &&
+          existingStatus === sale.paymentStatusValue
+        ) {
+          continue;
+        }
+        const existingMeta = toObject(existingSale.meta);
+        const frontendStatus =
+          sale.paymentStatusValue === 'PAID'
+            ? 'Paid'
+            : sale.paymentStatusValue === 'PARTIAL'
+              ? 'Partial'
+              : 'Due';
+        const nextMeta = {
+          ...existingMeta,
+          totalPaid: sale.totalPaidNumber,
+          sellDue: sale.sellDueNumber,
+          paymentStatus: frontendStatus,
+        };
+        const updated = await tx.sale.update({
+          where: { id: sale.id },
+          data: {
+            totalPaid: sale.totalPaidNumber,
+            sellDue: sale.sellDueNumber,
+            paymentStatus: sale.paymentStatusValue,
+            meta: nextMeta,
+          },
+        });
+        updatedSales.push({ ...nextMeta, ...updated });
+      }
+
+      await tx.paymentAllocation.deleteMany({ where: { paymentId: id } });
+      if (currentPaymentAllocations.length > 0) {
+        await tx.paymentAllocation.createMany({
+          data: currentPaymentAllocations.map((allocation, index) => ({
+            id: `alloc-${id}-${index + 1}`,
+            paymentId: id,
+            saleId: allocation.saleId,
+            invoiceNo: allocation.invoiceNo,
+            amount: allocation.amount,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      const totalSellDue = Number(
+        workingSales.reduce((sum, sale) => sum + sale.sellDueNumber, 0).toFixed(3),
+      );
+      if (customerRow) {
+        const customerMeta = toObject(customerRow.meta);
+        await tx.customer.update({
+          where: { id: customerId },
+          data: {
+            totalSellDue,
+            advanceBalance: unallocatedReceived,
+            meta: {
+              ...customerMeta,
+              totalSellDue,
+              advanceBalance: unallocatedReceived,
+            },
+          },
+        });
+      }
+
+      const savedMeta = toObject(savedPayment.meta);
+      return {
+        payment: { ...savedMeta, ...savedPayment },
+        sales: updatedSales,
+        allocations: currentPaymentAllocations,
+        totalSellDue,
+        advanceBalance: unallocatedReceived,
+      };
+    });
+
+    return res.json({ ok: true, data: result });
+  } catch (error) {
+    return sendPrismaError(res, error, 'Failed to save customer payment');
+  }
+});
+
 app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, async (req, res) => {
   const resource = String(req.params.resource || '').trim();
   const id = String(req.params.id || '').trim();

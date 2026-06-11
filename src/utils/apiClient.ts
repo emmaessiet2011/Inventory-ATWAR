@@ -207,6 +207,56 @@ export async function syncRecordStrict(
 }
 
 /**
+ * Saves a customer payment and recalculates the related invoice balances on
+ * the server in one transaction. This prevents background refreshes from
+ * briefly reverting paid invoices back to due.
+ */
+export async function postCustomerPaymentStrict(
+  payment: object,
+): Promise<{ ok: boolean; status: number; error?: string; data?: unknown }> {
+  if (isTestRuntime()) {
+    return { ok: true, status: 200 };
+  }
+  if (!isLiveSyncEnabled()) {
+    return { ok: false, status: 0, error: 'Live sync is disabled' };
+  }
+  if (!getToken()) {
+    return { ok: false, status: 401, error: 'Unauthorized' };
+  }
+  try {
+    const res = await fetch(`${getApiBase()}/api/sync/customer-payment`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payment),
+    });
+    if (res.status === 401) {
+      handle401();
+      return { ok: false, status: 401, error: 'Unauthorized' };
+    }
+    let payload: unknown = null;
+    try {
+      payload = await res.json();
+    } catch {}
+    if (!res.ok) {
+      const error = toObject(payload).error;
+      console.error('[postCustomerPaymentStrict] failed', res.status, payload || payment);
+      return {
+        ok: false,
+        status: res.status,
+        error: typeof error === 'string' ? error : `HTTP ${res.status}`,
+      };
+    }
+    return { ok: true, status: res.status, data: payload };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      error: error instanceof Error ? error.message : 'Network error',
+    };
+  }
+}
+
+/**
  * Backward-compatible awaited delete wrapper.
  * Sends DELETE /api/sync/record/:resource/:id by delegating to
  * `deleteRecordStrict`.

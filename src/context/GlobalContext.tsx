@@ -63,6 +63,7 @@ import {
   hasValidAuthToken,
   isLiveSyncEnabled,
   syncRecordStrict,
+  postCustomerPaymentStrict,
   deleteRecordStrict,
   syncDedicatedStrict,
   fetchDedicated,
@@ -6891,7 +6892,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         paymentToStore = { ...normalizedPayment, strictLinkedAllocation: true };
       }
     }
-    const saved = await syncRecordStrict('payments', paymentToStore);
+    const shouldUseAtomicCustomerPayment =
+      paymentToStore.contactType === 'Customer' && paymentToStore.type !== 'sent';
+    const saved = shouldUseAtomicCustomerPayment
+      ? await postCustomerPaymentStrict(paymentToStore)
+      : await syncRecordStrict('payments', paymentToStore);
     if (!saved.ok) {
       return toCrudResult(saved);
     }
