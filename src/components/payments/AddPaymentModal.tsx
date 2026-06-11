@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { X, Calendar, DollarSign, Banknote, ChevronDown, CreditCard, Paperclip } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { useNotifications } from '@/context/NotificationContext';
@@ -69,6 +69,8 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   const [chequeNo, setChequeNo] = useState('');
   const [chequeBankName, setChequeBankName] = useState('');
   const [chequeDrawerName, setChequeDrawerName] = useState('');
+  const wasOpenRef = useRef(false);
+  const initializedSaleKeyRef = useRef('');
   const defaultAccountFromMethod = (methodName: string) =>
     resolveDefaultAccountFromMethod(methodName, activeLocation);
   const paymentAccountOptions = useMemo(() => (
@@ -92,7 +94,18 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
   };
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      wasOpenRef.current = false;
+      initializedSaleKeyRef.current = '';
+      return;
+    }
+    const saleKey = String(sale?.id || sale?.invoiceNo || '').trim();
+    const isFreshOpen = !wasOpenRef.current;
+    const saleChanged = initializedSaleKeyRef.current !== saleKey;
+    if (!isFreshOpen && !saleChanged) return;
+
+    wasOpenRef.current = true;
+    initializedSaleKeyRef.current = saleKey;
     setAmount(toFixedPrecision(sale?.sellDue || 0, currencyPrecision));
     setDate(new Date().toISOString().slice(0, 16));
     setMethod(paymentMethodOptions[0] || settings.defaultSalePaymentMethod || 'Cash');
@@ -103,7 +116,7 @@ const AddPaymentModal: React.FC<AddPaymentModalProps> = ({
     setChequeNo('');
     setChequeBankName('');
     setChequeDrawerName('');
-  }, [isOpen, sale, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision, customerRebatePercent]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isOpen, sale?.id, sale?.invoiceNo, sale?.sellDue, settings.defaultSalePaymentMethod, paymentMethodOptions, currencyPrecision, customerRebatePercent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleAccountsUpdated = () => setAccountOptionsVersion(prev => prev + 1);
