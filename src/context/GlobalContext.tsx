@@ -5237,6 +5237,126 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)));
   };
 
+  const persistSalesFinancialRows = async (
+    rows: Sale[],
+    reason: string,
+  ): Promise<void> => {
+    const uniqueRows = Array.from(
+      new Map(
+        rows
+          .filter((row) => String(row?.id || '').trim())
+          .map((row) => [String(row.id || '').trim(), row]),
+      ).values(),
+    );
+    for (const row of uniqueRows) {
+      const saleSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(row));
+      const saved = await syncRecordStrict('sales', saleSnapshot);
+      if (!saved.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Payments',
+          description: `Payment sync warning for ${saleSnapshot.invoiceNo || saleSnapshot.id}: failed to persist sale financials during ${reason} (${saved.status || 0}).`,
+        });
+      }
+    }
+  };
+
+  const rebuildCustomerSalesFromPayments = (
+    baseSales: Sale[],
+    targetContactId: string,
+    targetContactName: string,
+    customerPayments: Payment[],
+  ): { nextSales: Sale[]; changedSales: Sale[] } => {
+    const normalizedTargetId = String(targetContactId || '').trim();
+    const normalizedTargetName = normalizeText(targetContactName);
+    const matchesCustomer = (sale: Sale, payment?: Payment): boolean => {
+      const saleCustomerId = String(sale.customerId || '').trim();
+      const saleCustomerName = normalizeText(sale.customerName);
+      if (payment) {
+        const paymentContactId = String(payment.contactId || '').trim();
+        const paymentContactName = normalizeText(payment.contactName);
+        return (
+          (saleCustomerId && paymentContactId && saleCustomerId === paymentContactId) ||
+          (!!saleCustomerName && !!paymentContactName && saleCustomerName === paymentContactName)
+        );
+      }
+      return (
+        (saleCustomerId && normalizedTargetId && saleCustomerId === normalizedTargetId) ||
+        (!!saleCustomerName && !!normalizedTargetName && saleCustomerName === normalizedTargetName)
+      );
+    };
+
+    const changedSalesById = new Map<string, Sale>();
+    let nextSales = baseSales.map((sale) => {
+      if (!isFinalizedSale(sale) || !matchesCustomer(sale)) return sale;
+      const grand = Number(sale.grandTotal || sale.totalAmount || 0);
+      const resetSale: Sale = {
+        ...sale,
+        totalPaid: 0,
+        sellDue: grand,
+        paymentStatus: deriveSalePaymentStatusFromDue({ ...sale, totalPaid: 0, sellDue: grand }, grand),
+      };
+      changedSalesById.set(String(resetSale.id || '').trim(), resetSale);
+      return resetSale;
+    });
+
+    const orderedPayments = [...customerPayments].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+
+    orderedPayments.forEach((payment) => {
+      let remaining = Number(payment.amount || 0);
+      if (remaining <= 0) return;
+      const dueSales = nextSales
+        .map((sale, index) => ({ sale, index }))
+        .filter(({ sale }) =>
+          isFinalizedSale(sale) &&
+          matchesCustomer(sale, payment) &&
+          Number(sale.sellDue || 0) > 0.0005,
+        )
+        .sort((a, b) => new Date(a.sale.date).getTime() - new Date(b.sale.date).getTime());
+      const linkedSet = new Set(
+        (payment.linkedInvoices || [])
+          .map((invoiceNo) => String(invoiceNo || '').trim())
+          .filter(Boolean),
+      );
+      const prioritized = linkedSet.size === 0
+        ? dueSales
+        : [
+            ...dueSales.filter(({ sale }) => linkedSet.has(String(sale.invoiceNo || '').trim())),
+            ...dueSales.filter(({ sale }) => !linkedSet.has(String(sale.invoiceNo || '').trim())),
+          ];
+
+      prioritized.forEach(({ sale, index }) => {
+        if (remaining <= 0) return;
+        const currentDue = typeof sale.sellDue === 'number'
+          ? Math.max(0, Number(sale.sellDue || 0))
+          : Math.max(0, Number((sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0)));
+        if (currentDue <= 0) return;
+        const settled = Math.min(remaining, currentDue);
+        remaining = Number(Math.max(0, remaining - settled).toFixed(3));
+        const nextPaid = Number(((sale.totalPaid || 0) + settled).toFixed(3));
+        const nextDue = Number(Math.max(0, currentDue - settled).toFixed(3));
+        const updatedSale: Sale = {
+          ...sale,
+          totalPaid: nextPaid,
+          sellDue: nextDue,
+          paymentStatus: deriveSalePaymentStatusFromDue(
+            { ...sale, totalPaid: nextPaid, sellDue: nextDue },
+            nextDue,
+          ),
+        };
+        nextSales[index] = updatedSale;
+        changedSalesById.set(String(updatedSale.id || '').trim(), updatedSale);
+      });
+    });
+
+    return {
+      nextSales,
+      changedSales: Array.from(changedSalesById.values()),
+    };
+  };
+
   const refreshProductsFromServer = async (): Promise<void> => {
     if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
     const freshProducts = await apiFetchAllWithRetry<Product>('products').catch(() => null);
@@ -6821,7 +6941,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
 
       if (customerAllocationBySaleId.size > 0) {
-        setSales(prev => prev.map((sale) => {
+        const changedSales: Sale[] = [];
+        const nextSales = sales.map((sale) => {
           const appliedAmount = Number(customerAllocationBySaleId.get(String(sale.id || '')) || 0);
           if (appliedAmount <= 0) return sale;
           // Use sellDue if set; fall back to grandTotal - totalPaid for legacy sales.
@@ -6832,13 +6953,20 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const settled = Math.min(appliedAmount, due);
           const newPaid = Number(((sale.totalPaid || 0) + settled).toFixed(3));
           const newDue = Number(Math.max(0, due - settled).toFixed(3));
-          return {
+          const updatedSale: Sale = {
             ...sale,
             totalPaid: newPaid,
             sellDue: newDue,
-            paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial',
+            paymentStatus: deriveSalePaymentStatusFromDue(
+              { ...sale, totalPaid: newPaid, sellDue: newDue },
+              newDue,
+            ),
           };
-        }));
+          changedSales.push(updatedSale);
+          return updatedSale;
+        });
+        setSales(nextSales);
+        await persistSalesFinancialRows(changedSales, 'payment creation');
       }
 
       // Update customer balance
@@ -7053,48 +7181,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             p.type !== 'sent' &&
             (p.contactId === payment.contactId || p.contactName === payment.contactName))
           .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        setSales(prev => {
-          // Reset all finalized sales for this customer to Due
-          let copy = prev.map(s => {
-            if (!isFinalizedSale(s)) return s;
-            if (s.customerName !== payment.contactName && String(s.customerId) !== payment.contactId) return s;
-            const grand = s.grandTotal || s.totalAmount || 0;
-            return { ...s, totalPaid: 0, sellDue: grand, paymentStatus: 'Due' as const };
-          });
-          // Re-run FIFO for each remaining payment
-          remainingPays.forEach(pay => {
-            let rem = pay.amount;
-            const dues = copy
-              .map((s, i) => ({ s, i }))
-              .filter(({ s }) =>
-                isFinalizedSale(s) &&
-                (s.customerName === pay.contactName || String(s.customerId) === pay.contactId) &&
-                (s.paymentStatus === 'Due' || s.paymentStatus === 'Partial')
-              )
-              .sort((a, b) => new Date(a.s.date).getTime() - new Date(b.s.date).getTime());
-            const linkedSet = new Set(
-              (pay.linkedInvoices || [])
-                .map(inv => String(inv || '').trim())
-                .filter(Boolean)
-            );
-            const prioritized = linkedSet.size === 0
-              ? dues
-              : [
-                  ...dues.filter(({ s }) => linkedSet.has(String(s.invoiceNo || '').trim())),
-                  ...dues.filter(({ s }) => !linkedSet.has(String(s.invoiceNo || '').trim())),
-                ];
-            prioritized.forEach(({ s, i }) => {
-              if (rem <= 0) return;
-              const due = typeof s.sellDue === 'number' ? Math.max(0, s.sellDue) : Math.max(0, (s.grandTotal || 0) - (s.totalPaid || 0));
-              if (due <= 0) return;
-              const paying = Math.min(rem, due);
-              rem -= paying;
-              const newDue = due - paying;
-              copy[i] = { ...s, totalPaid: (s.totalPaid || 0) + paying, sellDue: newDue, paymentStatus: newDue <= 0.001 ? 'Paid' : 'Partial' };
-            });
-          });
-          return copy;
-        });
+        const rebuiltSales = rebuildCustomerSalesFromPayments(
+          sales,
+          payment.contactId,
+          payment.contactName,
+          remainingPays,
+        );
+        setSales(rebuiltSales.nextSales);
+        if (!options?.skipServerDelete) {
+          void persistSalesFinancialRows(rebuiltSales.changedSales, 'payment deletion');
+        }
       }
 
       if (payment.contactType === 'Supplier') {
