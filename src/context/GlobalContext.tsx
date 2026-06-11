@@ -6940,34 +6940,21 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return okResult(saved.status || 200);
       }
 
-      if (customerAllocationBySaleId.size > 0) {
-        const changedSales: Sale[] = [];
-        const nextSales = sales.map((sale) => {
-          const appliedAmount = Number(customerAllocationBySaleId.get(String(sale.id || '')) || 0);
-          if (appliedAmount <= 0) return sale;
-          // Use sellDue if set; fall back to grandTotal - totalPaid for legacy sales.
-          const due = typeof sale.sellDue === 'number'
-            ? Math.max(0, sale.sellDue)
-            : Math.max(0, (sale.grandTotal || sale.totalAmount || 0) - (sale.totalPaid || 0));
-          if (due <= 0) return sale;
-          const settled = Math.min(appliedAmount, due);
-          const newPaid = Number(((sale.totalPaid || 0) + settled).toFixed(3));
-          const newDue = Number(Math.max(0, due - settled).toFixed(3));
-          const updatedSale: Sale = {
-            ...sale,
-            totalPaid: newPaid,
-            sellDue: newDue,
-            paymentStatus: deriveSalePaymentStatusFromDue(
-              { ...sale, totalPaid: newPaid, sellDue: newDue },
-              newDue,
-            ),
-          };
-          changedSales.push(updatedSale);
-          return updatedSale;
-        });
-        setSales(nextSales);
-        await persistSalesFinancialRows(changedSales, 'payment creation');
-      }
+      const customerReceivedPayments = [...payments, appliedPayment]
+        .filter((record) =>
+          record.contactType === 'Customer' &&
+          record.type !== 'sent' &&
+          (record.contactId === appliedPayment.contactId || record.contactName === appliedPayment.contactName),
+        )
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const rebuiltSales = rebuildCustomerSalesFromPayments(
+        sales,
+        appliedPayment.contactId,
+        appliedPayment.contactName,
+        customerReceivedPayments,
+      );
+      setSales(rebuiltSales.nextSales);
+      await persistSalesFinancialRows(rebuiltSales.changedSales, 'payment creation');
 
       // Update customer balance
       setCustomers(prev => prev.map(c => {
