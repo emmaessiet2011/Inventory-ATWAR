@@ -8,6 +8,7 @@ export interface FractionalProductLike {
   containerSize?: number;
   fractionalPricePremium?: number;
   fractionalUnitPrice?: number;
+  fractionalStockConvertedToBase?: boolean;
   sellingPrice?: number;
   unit?: string;
 }
