@@ -1,6 +1,7 @@
 export type FractionalSaleMode = 'base' | 'container';
 
 export interface FractionalProductLike {
+  id?: string;
   fractionalSaleEnabled?: boolean;
   baseUnitName?: string;
   containerUnitName?: string;
@@ -23,7 +24,17 @@ export interface FractionalSaleItemLike {
   unit?: string;
 }
 
+export interface FractionalStockMetaLike {
+  meta?: Record<string, unknown>;
+  fractionalStockStoredAsBase?: boolean;
+  fractionalStockUnit?: string;
+}
+
 const round3 = (value: number): number => Number((Number(value) || 0).toFixed(3));
+const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
+export const FRACTIONAL_STOCK_UNIT_META_KEY = 'fractionalStockUnit';
+export const FRACTIONAL_STOCK_BASE_UNIT_VALUE = 'base';
 
 export const isFractionalProduct = (product?: FractionalProductLike | null): boolean =>
   product?.fractionalSaleEnabled === true && Number(product?.containerSize || 0) > 0;
@@ -73,6 +84,34 @@ export const getStockQuantityForSale = (
   return round3(qty);
 };
 
+export const isFractionalStockStoredAsBase = (record?: FractionalStockMetaLike | null): boolean => {
+  if (!record) return false;
+  if (record.fractionalStockStoredAsBase === true) return true;
+  if (normalize(record.fractionalStockUnit) === FRACTIONAL_STOCK_BASE_UNIT_VALUE) return true;
+  if (normalize(record.meta?.fractionalStockUnit) === FRACTIONAL_STOCK_BASE_UNIT_VALUE) return true;
+  return record.meta?.fractionalStockStoredAsBase === true;
+};
+
+export const withFractionalStockBaseMeta = <T extends FractionalStockMetaLike>(record: T): T => ({
+  ...record,
+  fractionalStockStoredAsBase: true,
+  fractionalStockUnit: FRACTIONAL_STOCK_BASE_UNIT_VALUE,
+  meta: {
+    ...(record.meta || {}),
+    fractionalStockStoredAsBase: true,
+    fractionalStockUnit: FRACTIONAL_STOCK_BASE_UNIT_VALUE,
+  },
+});
+
+export const convertContainerStockToBaseUnits = (
+  stock: unknown,
+  product?: FractionalProductLike | null,
+): number => {
+  const qty = Math.max(0, Number(stock || 0));
+  if (!isFractionalProduct(product)) return round3(qty);
+  return round3(qty * getContainerSize(product));
+};
+
 export const getSaleDisplayQuantity = (item: FractionalSaleItemLike): number =>
   round3(Number(item.saleQuantity ?? item.quantityInput ?? item.qty ?? 0));
 
@@ -90,5 +129,8 @@ export const getStockDisplay = (
   const size = getContainerSize(product);
   const fullContainers = size > 0 ? Math.floor(qty / size) : 0;
   const remainder = size > 0 ? round3(qty - (fullContainers * size)) : qty;
-  return `${qty.toFixed(3)} ${getBaseUnitName(product)} (${fullContainers} ${getContainerUnitName(product)} + ${remainder.toFixed(3)} ${getBaseUnitName(product)})`;
+  const parts: string[] = [];
+  if (fullContainers > 0) parts.push(`${fullContainers} ${getContainerUnitName(product)}`);
+  if (remainder > 0 || parts.length === 0) parts.push(`${remainder.toFixed(3)} ${getBaseUnitName(product)}`);
+  return parts.join(' + ');
 };

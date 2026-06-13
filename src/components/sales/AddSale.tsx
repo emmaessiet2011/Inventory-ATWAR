@@ -27,6 +27,7 @@ import {
   getFractionalModeUnitName,
   getFractionalModeUnitPrice,
   getSaleDisplayQuantity,
+  getStockDisplay,
   getStockQuantityForSale,
   isFractionalProduct,
 } from '@/utils/fractionalProducts';
@@ -43,6 +44,7 @@ import {
 import MultiProductPicker from '@/components/shared/MultiProductPicker';
 import { getAccessibleActiveLocations, productVisibleAtLocation } from '@/utils/productVisibility';
 import {
+  calculateAvailableStock as calculateLocationAvailableStock,
   fetchLocationInventoryFromDB,
   LOCATION_INVENTORY_UPDATED_EVENT,
   ProductLocationInventory,
@@ -575,8 +577,14 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     if (!location) return 0;
     const locId = locations.find(l => l.name === location)?.id;
     if (!locId) return 0;
-    const match = locationInventory.find(record => record.productId === product.id && record.locationId === locId);
-    return Number(match?.stock || 0);
+    return calculateLocationAvailableStock(product as any, locId, locationInventory);
+  };
+
+  const getAvailableStockDisplay = (product: Product) => {
+    const availableStock = getAvailableStock(product);
+    return isFractionalProduct(product)
+      ? getStockDisplay(availableStock, product)
+      : `${availableStock.toFixed(3)} ${product.unit || ''}`.trim();
   };
 
   // --- Bottom Section State ---
@@ -2707,7 +2715,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                     className={`font-bold hover:underline ${getAvailableStock(p) <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
                                     title="Open stock history"
                                   >
-                                    Stock: {getAvailableStock(p)}
+                                    Stock: {getAvailableStockDisplay(p)}
                                   </button>
                                   <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
                                   {packHint && <span>{packHint}</span>}
@@ -2811,7 +2819,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                                       className={`font-bold hover:underline ${getAvailableStock(p) <= 0 ? 'text-red-500' : 'text-emerald-600'}`}
                                                       title="Open stock history"
                                                     >
-                                                      Stock: {getAvailableStock(p)}
+                                                      Stock: {getAvailableStockDisplay(p)}
                                                     </button>
                                                     <span>Price: {formatCurrency(getGroupedProductPrice(p))}</span>
                                                     {packHint && <span>{packHint}</span>}
@@ -2841,7 +2849,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                             className="text-blue-600 hover:underline"
                                             title="Open stock history"
                                           >
-                                            Stock: {getAvailableStock(selectedProduct)} {selectedProduct.unit}
+                                            Stock: {getAvailableStockDisplay(selectedProduct)}
                                           </button>
                                           {selectedProductPackHint && <span> | {selectedProductPackHint}</span>}
                                           <span> | {selectedProduct.category}</span>

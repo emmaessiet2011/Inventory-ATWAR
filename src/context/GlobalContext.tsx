@@ -33,6 +33,13 @@ import {
 } from '../utils/productPackaging';
 import type { FractionalSaleMode } from '../utils/fractionalProducts';
 import {
+  convertContainerStockToBaseUnits,
+  getContainerSize,
+  isFractionalProduct,
+  isFractionalStockStoredAsBase,
+  withFractionalStockBaseMeta,
+} from '../utils/fractionalProducts';
+import {
   dispatchPaymentAccountsUpdated,
   getStoredPaymentAccounts,
   resolveDefaultAccountFromMethod,
@@ -4774,7 +4781,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const addProduct = async (product: Product): Promise<CrudMutationResult> => {
-    const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    let normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    if (isFractionalProduct(normalized)) {
+      normalized = {
+        ...normalized,
+        stock: convertContainerStockToBaseUnits(normalized.stock, normalized),
+        openingStock: normalized.openingStock !== undefined
+          ? convertContainerStockToBaseUnits(normalized.openingStock, normalized)
+          : normalized.openingStock,
+      };
+    }
     const saved = await syncRecordStrict('products', normalized);
     const result = toCrudResult(saved);
     if (!result.ok) {
@@ -4827,7 +4843,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const updateProduct = async (product: Product): Promise<CrudMutationResult> => {
-    const normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    const existingProduct = products.find(p => p.id === product.id);
+    let normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    const isNewFractionalProduct = isFractionalProduct(normalized);
+    const wasFractionalProduct = isFractionalProduct(existingProduct);
+    const shouldConvertExistingStock = !!existingProduct && isNewFractionalProduct && !wasFractionalProduct;
+
+    if (shouldConvertExistingStock) {
+      normalized = {
+        ...normalized,
+        stock: convertContainerStockToBaseUnits(existingProduct?.stock ?? normalized.stock, normalized),
+        openingStock: normalized.openingStock !== undefined
+          ? convertContainerStockToBaseUnits(normalized.openingStock, normalized)
+          : normalized.openingStock,
+      };
+    }
+
     const saved = await syncRecordStrict('products', normalized);
     const result = toCrudResult(saved);
     if (!result.ok) {
@@ -4838,6 +4869,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
       return result;
     }
+
+    if (shouldConvertExistingStock) {
+      try {
+        const currentInventory = await fetchLocationInventoryFromDB();
+        const nextInventory = currentInventory.map(row => {
+          if (normalizeText(row.productId) !== normalizeText(normalized.id)) return row;
+          if (isFractionalStockStoredAsBase(row)) return row;
+          return withFractionalStockBaseMeta({
+            ...row,
+            stock: convertContainerStockToBaseUnits(row.stock, normalized),
+          });
+        });
+        const syncResult = await syncChangedLocationInventoryStrict(nextInventory, currentInventory);
+        if (!syncResult.ok) {
+          recordActivity({
+            action: 'Blocked',
+            module: 'Products',
+            description: `Product ${normalized.name || normalized.sku || normalized.id} was updated, but fractional stock conversion failed (${syncResult.status || 0}).`,
+          });
+          return toCrudResult(syncResult);
+        }
+      } catch (error) {
+        return failResult(500, error instanceof Error ? error.message : 'Unable to convert product stock to smaller units.');
+      }
+    }
+
     setProducts(prev => prev.map(p => p.id === product.id ? normalized : p));
     recordActivity({
       action: 'Updated',
@@ -5233,11 +5290,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         
         perProductDeltas.forEach((entry) => {
           const key = inventoryKey(entry.id, linkedLocation.id);
+          const product = products.find(p => p.id === entry.id);
           const matchIndex = nextInventory.findIndex(r => inventoryKey(r.productId, r.locationId) === key);
           if (matchIndex >= 0) {
-            nextInventory[matchIndex].stock = Math.max(0, nextInventory[matchIndex].stock + entry.delta);
+            const currentRow = nextInventory[matchIndex];
+            const fractional = product && isFractionalProduct(product);
+            const baseRow = fractional && !isFractionalStockStoredAsBase(currentRow)
+              ? withFractionalStockBaseMeta({
+                  ...currentRow,
+                  stock: convertContainerStockToBaseUnits(currentRow.stock, product),
+                })
+              : currentRow;
+            const nextRow = {
+              ...baseRow,
+              stock: Math.max(0, Number((Number(baseRow.stock || 0) + entry.delta).toFixed(3))),
+            };
+            nextInventory[matchIndex] = fractional ? withFractionalStockBaseMeta(nextRow) : nextRow;
           } else if (entry.delta > 0) {
-             const product = products.find(p => p.id === entry.id);
              nextInventory.push({
                id: `PINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                productId: entry.id,
@@ -5245,6 +5314,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                locationName: linkedLocation.name,
                stock: entry.delta,
                unitCost: product ? Number(product.unitPurchasePrice || 0) : 0,
+               ...(product && isFractionalProduct(product)
+                 ? {
+                     fractionalStockStoredAsBase: true,
+                     fractionalStockUnit: 'base',
+                     meta: {
+                       fractionalStockStoredAsBase: true,
+                       fractionalStockUnit: 'base',
+                     },
+                   }
+                 : {}),
              });
           }
         });

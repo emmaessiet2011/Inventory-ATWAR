@@ -26,6 +26,7 @@ import { printDocument } from '@/utils/printUtils';
 import { formatUnitWithPack } from '@/utils/productPackaging';
 import { buildPaginationItems } from '@/utils/pagination';
 import { productVisibleAtLocation, productVisibleToUser } from '@/utils/productVisibility';
+import { getContainerSize, getStockDisplay, isFractionalProduct } from '@/utils/fractionalProducts';
 
 const normalize = (v: unknown) => String(v ?? '').trim().toLowerCase();
 const csvCell = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -62,6 +63,7 @@ interface StockReportItem {
   totalUnitSold: number;
   totalUnitTransferred: number;
   totalUnitAdjusted: number;
+  stockDisplay: string;
 }
 
 interface DropdownPosition {
@@ -220,6 +222,17 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     if (!selectedProductListLocations.length) return product.businessLocation || '';
     return selectedProductListLocations.map(location => location.name).join(', ');
   };
+  const getStockValueQuantity = (product: Product, stock: number): number => (
+    isFractionalProduct(product) && getContainerSize(product) > 0
+      ? stock / getContainerSize(product)
+      : stock
+  );
+  const getProductStockDisplayForList = (product: Product): string => {
+    const stock = getProductStockForList(product);
+    return isFractionalProduct(product)
+      ? getStockDisplay(stock, product)
+      : `${stock.toFixed(3)} ${formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}`.trim();
+  };
 
   const filteredProducts = useMemo(() => {
     const q = normalize(searchTerm);
@@ -298,8 +311,11 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       rowId: string,
     ): StockReportItem => {
       const unitSellingPrice = Number(product.sellingPrice) || 0;
-      const stockValuePurchase = currentStock * unitPurchasePrice;
-      const stockValueSale = currentStock * unitSellingPrice;
+      const stockValueQty = isFractionalProduct(product) && getContainerSize(product) > 0
+        ? currentStock / getContainerSize(product)
+        : currentStock;
+      const stockValuePurchase = stockValueQty * unitPurchasePrice;
+      const stockValueSale = stockValueQty * unitSellingPrice;
       const movement = stockMovementByProductId.get(product.id) || { transferred: 0, adjusted: 0 };
       return {
         id: rowId,
@@ -322,6 +338,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         totalUnitSold: soldByProductName.get(normalize(product.name)) || 0,
         totalUnitTransferred: movement.transferred,
         totalUnitAdjusted: movement.adjusted,
+        stockDisplay: getStockDisplay(currentStock, product),
       };
     };
 
@@ -725,7 +742,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         csvCell(formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage)),
         csvCell((p.unitPurchasePrice || 0).toFixed(3)),
         csvCell((p.sellingPrice || 0).toFixed(3)),
-        csvCell(getProductStockForList(p).toFixed(3)),
+        csvCell(getProductStockDisplayForList(p)),
         csvCell(p.tax || '--'),
         csvCell(getProductLocationLabelForList(p) || ''),
       ].join(','));
@@ -742,7 +759,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
       csvCell(r.brand),
       csvCell(r.location),
       csvCell(r.unitSellingPrice.toFixed(3)),
-      csvCell(r.currentStock.toFixed(3)),
+      csvCell(r.stockDisplay || r.currentStock.toFixed(3)),
       csvCell(r.stockValuePurchase.toFixed(3)),
       csvCell(r.stockValueSale.toFixed(3)),
       csvCell(r.potentialProfit.toFixed(3)),
@@ -759,7 +776,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
         p.name, p.sku, p.type, p.category, p.brand, formatUnitWithPack(p.unit, p.packagingType, p.unitsPerPackage),
         (p.unitPurchasePrice || 0).toFixed(3),
         (p.sellingPrice || 0).toFixed(3),
-        getProductStockForList(p).toFixed(3),
+        getProductStockDisplayForList(p),
         p.tax || '--',
         getProductLocationLabelForList(p) || '',
       ].join('\t'));
@@ -772,7 +789,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     const rows = filteredStockReport.map(r => [
       r.sku, r.product, r.category, r.brand, r.location,
       r.unitSellingPrice.toFixed(3),
-      r.currentStock.toFixed(3),
+      r.stockDisplay || r.currentStock.toFixed(3),
       r.stockValuePurchase.toFixed(3),
       r.stockValueSale.toFixed(3),
       r.potentialProfit.toFixed(3),
@@ -800,11 +817,17 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
     ? `Filters: ${inventoryPrintFilterParts.join(' | ')}`
     : undefined;
   const inventoryListSubtotalPurchase = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.unitPurchasePrice || 0) * getProductStockForList(p)),
+    (sum, p) => {
+      const stock = getProductStockForList(p);
+      return sum + (Number(p.unitPurchasePrice || 0) * getStockValueQuantity(p, stock));
+    },
     0
   );
   const inventoryListSubtotalSale = filteredProducts.reduce(
-    (sum, p) => sum + (Number(p.sellingPrice || 0) * getProductStockForList(p)),
+    (sum, p) => {
+      const stock = getProductStockForList(p);
+      return sum + (Number(p.sellingPrice || 0) * getStockValueQuantity(p, stock));
+    },
     0
   );
   const inventoryListTotalQty = filteredProducts.reduce((sum, p) => sum + getProductStockForList(p), 0);
@@ -839,7 +862,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           r.category || '--',
           r.location || '--',
           formatCurrency(r.unitSellingPrice),
-          r.currentStock.toFixed(3),
+          r.stockDisplay || r.currentStock.toFixed(3),
           formatCurrency(r.stockValuePurchase),
           formatCurrency(r.stockValueSale),
           r.totalUnitSold.toFixed(3),
@@ -890,7 +913,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
           getProductLocationLabelForList(p) || '--',
           formatCurrency(p.unitPurchasePrice || 0),
           formatCurrency(p.sellingPrice || 0),
-          getProductStockForList(p).toFixed(3),
+          getProductStockDisplayForList(p),
         ]),
         stats: [
           { label: 'Total Products', value: String(filteredProducts.length), color: 'blue' },
@@ -1288,7 +1311,7 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                             autoFocus
                                         />
                                     ) : (
-                                        <>{getProductStockForList(product).toFixed(3)} {formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage)}</>
+                                        <>{getProductStockDisplayForList(product)}</>
                                     )}
                                 </td>}
                                 {!hiddenCols.includes('type') && <td className="px-4 py-3">
@@ -1384,7 +1407,8 @@ const Inventory: React.FC<InventoryProps> = ({ onNavigate }) => {
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-slate-500 truncate max-w-[120px] hidden md:table-cell" title={item.location}>{item.location}</td>
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right font-medium text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap">
-                                    <span className="font-bold text-slate-800">{item.currentStock.toFixed(3)}</span> <span className="text-[10px] text-slate-400">{item.unit}</span>
+                                    <span className="font-bold text-slate-800">{item.stockDisplay || item.currentStock.toFixed(3)}</span>
+                                    {!item.stockDisplay && <span className="text-[10px] text-slate-400"> {item.unit}</span>}
                                 </td>
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden lg:table-cell">{formatCurrency(item.stockValuePurchase)}</td>
                                 <td className="px-2 py-2 sm:px-4 sm:py-3 md:px-6 md:py-4 text-right whitespace-nowrap text-slate-500 hidden lg:table-cell">{formatCurrency(item.stockValueSale)}</td>

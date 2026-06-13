@@ -1,4 +1,9 @@
 import { apiFetchAll, syncRecordStrict } from './apiClient';
+import {
+  convertContainerStockToBaseUnits,
+  isFractionalProduct,
+  isFractionalStockStoredAsBase,
+} from './fractionalProducts';
 
 export interface ProductLocationInventory {
   id: string;
@@ -24,6 +29,14 @@ export interface LocationInventorySyncResult {
 
 const normalize = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 const round3 = (value: number): number => Math.round(value * 1000) / 1000;
+const stableJson = (value: unknown): string => {
+  if (!value || typeof value !== 'object') return '';
+  try {
+    return JSON.stringify(value, Object.keys(value as Record<string, unknown>).sort());
+  } catch {
+    return '';
+  }
+};
 export const LOCATION_INVENTORY_UPDATED_EVENT = 'app:location-inventory-updated';
 
 const notifyInventoryUpdated = () => {
@@ -72,7 +85,8 @@ export const syncChangedLocationInventoryStrict = async (
       normalize(previous.productId) !== normalize(row.productId) ||
       normalize(previous.locationId) !== normalize(row.locationId) ||
       round3(Number(previous.stock || 0)) !== round3(Number(row.stock || 0)) ||
-      round3(Number(previous.unitCost || 0)) !== round3(Number(row.unitCost || 0))
+      round3(Number(previous.unitCost || 0)) !== round3(Number(row.unitCost || 0)) ||
+      stableJson(previous.meta) !== stableJson(row.meta)
     );
   });
 
@@ -116,6 +130,10 @@ export const calculateAvailableStock = (
     return maxCombos === Infinity ? 0 : Math.max(0, maxCombos);
   } else {
     const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locationId));
-    return round3(Number(match?.stock || 0));
+    const stock = Number(match?.stock || 0);
+    if (match && isFractionalProduct(product) && !isFractionalStockStoredAsBase(match)) {
+      return convertContainerStockToBaseUnits(stock, product);
+    }
+    return round3(stock);
   }
 };

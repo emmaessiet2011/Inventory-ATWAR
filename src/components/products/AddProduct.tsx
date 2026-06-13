@@ -50,6 +50,11 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   const [selectedUnit, setSelectedUnit] = useState(settings.defaultUnit || '');
   const [packagingType, setPackagingType] = useState<ProductPackagingType>('Piece');
   const [unitsPerPackage, setUnitsPerPackage] = useState<number | ''>('');
+  const [fractionalSaleEnabled, setFractionalSaleEnabled] = useState(false);
+  const [baseUnitName, setBaseUnitName] = useState('Litre');
+  const [containerUnitName, setContainerUnitName] = useState('Container');
+  const [containerSize, setContainerSize] = useState<number | ''>('');
+  const [fractionalPricePremium, setFractionalPricePremium] = useState<number | ''>('');
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [subCategory, setSubCategory] = useState('');
@@ -105,6 +110,14 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   const packageSellingPrice = normalizedUnitsPerPackage && pieceSellingPrice > 0
     ? Number((pieceSellingPrice * normalizedUnitsPerPackage).toFixed(3))
     : null;
+  const fractionalContainerSize = Math.max(0, Number(containerSize || 0));
+  const fractionalPremium = Math.max(0, Number(fractionalPricePremium || 0));
+  const fractionalBaseUnitPrice = fractionalContainerSize > 0 && pieceSellingPrice > 0
+    ? Number((pieceSellingPrice / fractionalContainerSize).toFixed(3))
+    : 0;
+  const fractionalUnitPrice = fractionalContainerSize > 0 && pieceSellingPrice > 0
+    ? Number((fractionalBaseUnitPrice + fractionalPremium).toFixed(3))
+    : 0;
   const normalizedSkuInput = sku.trim().toLowerCase();
   const isSkuDuplicate = normalizedSkuInput !== '' && products.some(p =>
     p.sku.trim().toLowerCase() === normalizedSkuInput && (!isEdit || p.id !== productId)
@@ -218,6 +231,15 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
         const existingUnitsPerPackage = normalizeUnitsPerPackage(p.unitsPerPackage);
         setPackagingType(existingPackagingType);
         setUnitsPerPackage(existingUnitsPerPackage ?? '');
+        setFractionalSaleEnabled(p.fractionalSaleEnabled === true);
+        setBaseUnitName(p.baseUnitName || p.unit || 'Litre');
+        setContainerUnitName(p.containerUnitName || 'Container');
+        setContainerSize(p.containerSize && Number(p.containerSize) > 0 ? Number(p.containerSize) : '');
+        setFractionalPricePremium(
+          p.fractionalPricePremium && Number(p.fractionalPricePremium) > 0
+            ? Number(p.fractionalPricePremium)
+            : ''
+        );
         setSelectedBrand(p.brand || '');
         const linkedCategoryName = p.categoryId
           ? (productCategories.find(c => c.id === p.categoryId)?.name || p.category || '')
@@ -462,6 +484,9 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
     setBusinessLocation(''); setSelectedUnit(settings.defaultUnit || '');
     setAvailableLocationIds([]);
     setPackagingType('Piece'); setUnitsPerPackage('');
+    setFractionalSaleEnabled(false); setBaseUnitName('Litre');
+    setContainerUnitName('Container'); setContainerSize('');
+    setFractionalPricePremium('');
     setSelectedBrand(''); setSelectedCategory(''); setSubCategory('');
     setSelectedTax('--'); setTaxType('Exclusive'); setSelectedWarranty('');
     setExpiryDate(''); setOpeningStock(''); setAlertQuantity('');
@@ -538,6 +563,32 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
         type: 'error'
       });
       return;
+    }
+
+    const shouldEnableFractionalSale = productType === 'Single' && fractionalSaleEnabled;
+    const resolvedContainerSize = Math.max(0, Number(containerSize || 0));
+    const resolvedFractionalPremium = Math.max(0, Number(fractionalPricePremium || 0));
+    const resolvedFractionalUnitPrice = shouldEnableFractionalSale && resolvedContainerSize > 0 && pieceSellingPrice > 0
+      ? Number(((pieceSellingPrice / resolvedContainerSize) + resolvedFractionalPremium).toFixed(3))
+      : 0;
+
+    if (shouldEnableFractionalSale) {
+      if (resolvedContainerSize <= 0) {
+        addNotification({
+          title: 'Error',
+          message: 'Enter how many litres are inside one full container before enabling smaller quantity sales.',
+          type: 'error'
+        });
+        return;
+      }
+      if (!baseUnitName.trim()) {
+        addNotification({ title: 'Error', message: 'Enter the smaller unit name, for example Litre.', type: 'error' });
+        return;
+      }
+      if (!containerUnitName.trim()) {
+        addNotification({ title: 'Error', message: 'Enter the full product unit name, for example Container.', type: 'error' });
+        return;
+      }
     }
 
     if (!barcodeType.trim()) {
@@ -682,6 +733,12 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
         ? existingProduct.stock
         : (typeof openingStock === 'number' ? openingStock : 0),
       unit: selectedUnit || existingProduct?.unit || 'Pc(s)',
+      fractionalSaleEnabled: shouldEnableFractionalSale,
+      baseUnitName: shouldEnableFractionalSale ? baseUnitName.trim() : undefined,
+      containerUnitName: shouldEnableFractionalSale ? containerUnitName.trim() : undefined,
+      containerSize: shouldEnableFractionalSale ? Number(resolvedContainerSize.toFixed(3)) : undefined,
+      fractionalPricePremium: shouldEnableFractionalSale ? Number(resolvedFractionalPremium.toFixed(3)) : undefined,
+      fractionalUnitPrice: shouldEnableFractionalSale ? resolvedFractionalUnitPrice : undefined,
       packagingType: normalizedPackagingType === 'Piece' ? undefined : normalizedPackagingType,
       unitsPerPackage: normalizedUnitsPerPackage,
       warranty: selectedWarranty || undefined,
@@ -1261,6 +1318,90 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                     </tr>
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {productType === 'Single' && (
+              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={fractionalSaleEnabled}
+                    onChange={(e) => setFractionalSaleEnabled(e.target.checked)}
+                    className="mt-1 h-5 w-5 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span>
+                    <span className="block text-sm font-black text-slate-900">
+                      Allow selling this product in smaller quantity
+                    </span>
+                    <span className="block text-xs text-slate-600 mt-1">
+                      Use this for engine oil, for example selling 2 litres from a 5 litre container.
+                    </span>
+                  </span>
+                </label>
+
+                {fractionalSaleEnabled && (
+                  <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Smaller Unit</label>
+                      <input
+                        type="text"
+                        value={baseUnitName}
+                        onChange={(e) => setBaseUnitName(e.target.value)}
+                        placeholder="Litre"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 text-sm font-medium text-slate-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Full Product Unit</label>
+                      <input
+                        type="text"
+                        value={containerUnitName}
+                        onChange={(e) => setContainerUnitName(e.target.value)}
+                        placeholder="Container"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 text-sm font-medium text-slate-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Size In Smaller Unit</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={containerSize}
+                        onChange={(e) => setContainerSize(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="5"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 text-sm font-medium text-slate-700"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">Example: 5 means 1 container has 5 litres.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Extra Per Smaller Unit</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        value={fractionalPricePremium}
+                        onChange={(e) => setFractionalPricePremium(e.target.value === '' ? '' : Number(e.target.value))}
+                        placeholder="0.500"
+                        className="w-full px-4 py-3 rounded-xl bg-white border border-amber-100 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 text-sm font-medium text-slate-700"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">Optional extra profit for litre sale.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Smaller Unit Price</label>
+                      <input
+                        type="text"
+                        readOnly
+                        value={fractionalUnitPrice > 0 ? formatCurrency(fractionalUnitPrice) : '--'}
+                        className="w-full px-4 py-3 rounded-xl bg-white/70 border border-amber-100 text-sm font-black text-slate-800"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Full price divided by size{fractionalPremium > 0 ? ' plus the extra amount.' : '.'}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

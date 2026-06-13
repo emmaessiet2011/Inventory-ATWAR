@@ -20,6 +20,7 @@ import {
   LOCATION_INVENTORY_UPDATED_EVENT,
   ProductLocationInventory,
 } from '@/utils/stockLocationInventory';
+import { getContainerSize, getStockDisplay, isFractionalProduct } from '@/utils/fractionalProducts';
 
 interface StockReportItem {
   id: string;
@@ -40,6 +41,7 @@ interface StockReportItem {
   totalUnitAdjusted: number;
   brand: string;
   unit: string;
+  stockDisplay: string;
 }
 
 interface ReportStockProps {
@@ -326,6 +328,9 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
       rowId: string,
     ): StockReportItem => {
       const unitSellingPrice = Number(product.sellingPrice) || 0;
+      const stockValueQty = isFractionalProduct(product) && getContainerSize(product) > 0
+        ? currentStock / getContainerSize(product)
+        : currentStock;
       const movement = movementByProductId.get(product.id) || { transferred: 0, adjusted: 0 };
       const soldQty = soldByProductId.get(product.id) || 0;
       const variation = Array.isArray(product.variationRows) && product.variationRows.length > 0
@@ -343,14 +348,15 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
         location,
         unitSellingPrice,
         currentStock: Number(currentStock.toFixed(3)),
-        stockValuePurchase: currentStock * unitPurchasePrice,
-        stockValueSale: currentStock * unitSellingPrice,
-        potentialProfit: (currentStock * unitSellingPrice) - (currentStock * unitPurchasePrice),
+        stockValuePurchase: stockValueQty * unitPurchasePrice,
+        stockValueSale: stockValueQty * unitSellingPrice,
+        potentialProfit: (stockValueQty * unitSellingPrice) - (stockValueQty * unitPurchasePrice),
         totalUnitSold: Number(soldQty.toFixed(3)),
         totalUnitTransferred: movement.transferred,
         totalUnitAdjusted: movement.adjusted,
         brand: product.brand || '',
         unit: product.unit || '',
+        stockDisplay: getStockDisplay(currentStock, product),
       };
     };
 
@@ -491,7 +497,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
           case 'category': return toCsvCell(item.category);
           case 'location': return toCsvCell(item.location);
           case 'unitSellingPrice': return toCsvCell(item.unitSellingPrice.toFixed(3));
-          case 'currentStock': return toCsvCell(item.currentStock.toFixed(3));
+          case 'currentStock': return toCsvCell(item.stockDisplay || item.currentStock.toFixed(3));
           case 'stockValuePurchase': return toCsvCell(item.stockValuePurchase.toFixed(3));
           case 'stockValueSale': return toCsvCell(item.stockValueSale.toFixed(3));
           case 'potentialProfit': return toCsvCell(item.potentialProfit.toFixed(3));
@@ -525,7 +531,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
           case 'category': return item.category;
           case 'location': return item.location;
           case 'unitSellingPrice': return item.unitSellingPrice.toFixed(3);
-          case 'currentStock': return item.currentStock.toFixed(3);
+          case 'currentStock': return item.stockDisplay || item.currentStock.toFixed(3);
           case 'stockValuePurchase': return item.stockValuePurchase.toFixed(3);
           case 'stockValueSale': return item.stockValueSale.toFixed(3);
           case 'potentialProfit': return item.potentialProfit.toFixed(3);
@@ -732,7 +738,7 @@ const ReportStock: React.FC<ReportStockProps> = ({ canViewValueMetrics = true, o
                       return <td key={column.key} className="px-4 py-3 text-right text-slate-700 whitespace-nowrap">{formatCurrency(item.unitSellingPrice)}</td>;
                     }
                     if (column.key === 'currentStock') {
-                      return <td key={column.key} className="px-4 py-3 text-right text-slate-700 font-bold whitespace-nowrap">{formatQty(item.currentStock, item.unit)}</td>;
+                      return <td key={column.key} className="px-4 py-3 text-right text-slate-700 font-bold whitespace-nowrap">{item.stockDisplay || formatQty(item.currentStock, item.unit)}</td>;
                     }
                     if (column.key === 'stockValuePurchase') {
                       return <td key={column.key} className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{formatCurrency(item.stockValuePurchase)}</td>;
