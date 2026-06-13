@@ -31,6 +31,7 @@ import {
   normalizePackagingType,
   normalizeUnitsPerPackage,
 } from '../utils/productPackaging';
+import type { FractionalSaleMode } from '../utils/fractionalProducts';
 import {
   dispatchPaymentAccountsUpdated,
   getStoredPaymentAccounts,
@@ -120,6 +121,12 @@ export interface Product {
   sellingPrice: number;
   stock: number;
   unit: string;
+  fractionalSaleEnabled?: boolean;
+  baseUnitName?: string;
+  containerUnitName?: string;
+  containerSize?: number;
+  fractionalPricePremium?: number;
+  fractionalUnitPrice?: number;
   packagingType?: ProductPackagingType;
   unitsPerPackage?: number;
   image: string;
@@ -243,6 +250,12 @@ export interface SaleItem {
   quantityInput?: number;
   unitsPerPackage?: number;
   productPackagingType?: ProductPackagingType;
+  isFractionalSale?: boolean;
+  fractionalSaleMode?: FractionalSaleMode;
+  saleQuantity?: number;
+  saleUnitName?: string;
+  stockQuantity?: number;
+  stockUnitName?: string;
   unitPrice: number;
   discount: number;
   subtotal: number;
@@ -3966,6 +3979,19 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const normalizedStock = Number(
       Math.max(0, toFiniteNumber((product as any)?.stock, 0)).toFixed(3),
     );
+    const normalizedContainerSize = Number(
+      Math.max(0, toFiniteNumber((product as any)?.containerSize, 0)).toFixed(3),
+    );
+    const normalizedFractionalPremium = Number(
+      Math.max(0, toFiniteNumber((product as any)?.fractionalPricePremium, 0)).toFixed(3),
+    );
+    const rawFractionalUnitPrice = toFiniteNumber((product as any)?.fractionalUnitPrice, 0);
+    const computedFractionalUnitPrice = normalizedContainerSize > 0
+      ? Number(((normalizedSellingPrice / normalizedContainerSize) + normalizedFractionalPremium).toFixed(3))
+      : 0;
+    const normalizedFractionalUnitPrice = Number(
+      Math.max(0, rawFractionalUnitPrice || computedFractionalUnitPrice).toFixed(3),
+    );
     const normalizedOpeningStockRaw = Number((product as any)?.openingStock);
     const normalizedAlertQuantityRaw = Number((product as any)?.alertQuantity);
     const normalizedWeightRaw = Number((product as any)?.weight);
@@ -3997,6 +4023,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       unitPurchasePrice: normalizedUnitPurchasePrice,
       sellingPrice: normalizedSellingPrice,
       stock: normalizedStock,
+      fractionalSaleEnabled: Boolean((product as any)?.fractionalSaleEnabled) && normalizedContainerSize > 0,
+      baseUnitName: String((product as any)?.baseUnitName || '').trim() || undefined,
+      containerUnitName: String((product as any)?.containerUnitName || '').trim() || undefined,
+      containerSize: normalizedContainerSize || undefined,
+      fractionalPricePremium: normalizedFractionalPremium || undefined,
+      fractionalUnitPrice: normalizedFractionalUnitPrice || undefined,
       openingStock: Number.isFinite(normalizedOpeningStockRaw)
         ? Number(Math.max(0, normalizedOpeningStockRaw).toFixed(3))
         : undefined,
@@ -4329,6 +4361,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     quantityInput: asOptionalNumber(item.quantityInput),
     unitsPerPackage: asOptionalNumber(item.unitsPerPackage),
     productPackagingType: item.productPackagingType,
+    isFractionalSale: Boolean(item.isFractionalSale),
+    fractionalSaleMode: item.fractionalSaleMode === 'container' ? 'container' : item.fractionalSaleMode === 'base' ? 'base' : undefined,
+    saleQuantity: asOptionalNumber(item.saleQuantity),
+    saleUnitName: asString(item.saleUnitName) || undefined,
+    stockQuantity: asOptionalNumber(item.stockQuantity),
+    stockUnitName: asString(item.stockUnitName) || undefined,
     unitPrice: asNumber(item.unitPrice),
     discount: asNumber(item.discount),
     subtotal: asNumber(item.subtotal),
@@ -5151,7 +5189,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const key = String((item as any).productId || item.id || '').trim();
       if (!key) return;
       
-      const qty = multiplier * (item.qty || 0);
+      const qty = multiplier * Number(item.stockQuantity ?? item.qty ?? 0);
       const product = products.find(p => p.id === key || p.sku === key);
       
       if (product && String(product.type || '').trim().toLowerCase() === 'combo' && product.comboItems && product.comboItems.length > 0) {

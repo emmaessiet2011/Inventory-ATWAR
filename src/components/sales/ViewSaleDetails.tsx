@@ -3,6 +3,7 @@ import { ArrowLeft, X, Printer, Package, Paperclip } from 'lucide-react';
 import { useGlobalContext } from '@/context/GlobalContext';
 import { formatDateTimeBySettings } from '@/utils/dateTime';
 import { findLocationByIdOrName, resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
+import { getSaleDisplayQuantity, getSaleDisplayUnit } from '@/utils/fractionalProducts';
 import { fetchDedicated } from '@/utils/apiClient';
 import { printElementSnapshot } from '@/utils/printUtils';
 import { isLocationAccessible } from '@/utils/productVisibility';
@@ -318,7 +319,8 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                   <tbody className={`${layoutConfig.theme.tableBodyClass} divide-y divide-slate-300`}>
                     {(sale.items || []).length > 0 ? (
                       sale.items.map((item, idx) => {
-                        const qty = Number(item.qty || 0);
+                        const qty = getSaleDisplayQuantity(item);
+                        const unitLabel = getSaleDisplayUnit(item);
                         const unitPrice = Number(item.unitPrice || 0);
                         const lineTax = Number(item.tax || 0);
                         const lineTotal = Number(item.total || 0);
@@ -329,7 +331,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                             <td className="px-2 py-1">{item.name || '--'}</td>
                             <td className="px-2 py-1">--</td>
                             <td className="px-2 py-1">
-                              {Number(qty).toFixed(settings.quantityPrecision || 3)} {item.unit || ''}
+                              {Number(qty).toFixed(settings.quantityPrecision || 3)} {unitLabel}
                             </td>
                             <td className="px-2 py-1">{formatCurrency(unitPrice)}</td>
                             <td className="px-2 py-1">{formatCurrency(Number(item.discount || 0))}</td>
@@ -603,7 +605,8 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                   <tbody>
                     {(sale.items || []).length > 0 ? (
                       sale.items.map((item, idx) => {
-                        const quantity = Number(item.qty || 0);
+                        const quantity = getSaleDisplayQuantity(item);
+                        const unitLabel = getSaleDisplayUnit(item);
                         const unitPrice = Number(item.unitPrice || 0);
                         const lineSubtotal = Number(
                           item.total ?? item.subtotal ?? (quantity * unitPrice)
@@ -612,7 +615,7 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                           <tr key={`${item.id || item.name || 'row'}-${idx}`}>
                             <td className="border-b border-slate-200 px-2 py-1">{item.name || '--'}</td>
                             <td className="border-b border-slate-200 px-2 py-1 text-right">
-                              {quantity.toFixed(settings.quantityPrecision || 3)}
+                              {quantity.toFixed(settings.quantityPrecision || 3)} {unitLabel}
                             </td>
                             <td className="border-b border-slate-200 px-2 py-1 text-right">{formatCurrency(unitPrice)}</td>
                             <td className="border-b border-slate-200 px-2 py-1 text-right">{formatCurrency(lineSubtotal)}</td>

@@ -30,10 +30,28 @@ import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingS
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { printDocument } from '@/utils/printUtils';
 import { getAccessibleActiveLocations, productVisibleAtLocation } from '@/utils/productVisibility';
+import {
+  FractionalSaleMode,
+  getBaseUnitName,
+  getContainerSize,
+  getContainerUnitName,
+  getFractionalModeUnitName,
+  getFractionalModeUnitPrice,
+  getSaleDisplayQuantity,
+  getStockQuantityForSale,
+  isFractionalProduct,
+} from '@/utils/fractionalProducts';
 
 interface CartItem extends GlobalProduct {
   cartId: number;
   qty: number;
+  saleQuantity?: number;
+  stockQuantity?: number;
+  saleUnitName?: string;
+  stockUnitName?: string;
+  fractionalSaleMode?: FractionalSaleMode;
+  isFractionalSale?: boolean;
+  lineUnitPrice?: number;
   subtotal: number;
 }
 
@@ -277,7 +295,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     const taxAmount = taxableSubtotal * (effectiveTaxRate / 100);
     const rawTotal = taxableSubtotal + taxAmount + shipping;
     const total = Math.max(0, rawTotal);
-    const itemsCount = cart.reduce((acc, item) => acc + item.qty, 0);
+    const itemsCount = cart.reduce((acc, item) => acc + (item.saleQuantity ?? item.qty), 0);
     return { subtotal, total, itemsCount };
   };
 
@@ -298,7 +316,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       ],
       rows: (sale.items || []).map((item: any) => [
         String(item.name || '--'),
-        Number(item.qty || 0).toFixed(3),
+        `${Number(item.saleQuantity ?? item.quantityInput ?? item.qty ?? 0).toFixed(3)} ${String(item.saleUnitName || item.unit || '').trim()}`.trim(),
         formatCurrency(Number(item.unitPrice || 0)),
         formatCurrency(Number(item.total || 0)),
       ]),
@@ -340,11 +358,11 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     return screen === 'All screens' || screen === 'POS screen';
   }, [settings.strictCashDenominationCheck, settings.cashDenominationEnabledOn, parsedDenominations]);
 
-  const canAdjustProductQty = (product: GlobalProduct, desiredQty: number): boolean => {
+  const canAdjustProductQty = (product: GlobalProduct, desiredStockQty: number): boolean => {
     if (settings.allowOverselling) return true;
     if (!selectedLocation?.id) return false;
     const available = calculateAvailableStock(product as any, selectedLocation.id, locationInventory);
-    return desiredQty <= available;
+    return desiredStockQty <= available + 0.0005;
   };
 
   const openStockHistory = (product: GlobalProduct, event?: React.MouseEvent) => {
@@ -353,12 +371,46 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
     setIsStockHistoryOpen(true);
   };
 
-  const addToCart = (product: GlobalProduct, qtyToAdd = 1) => {
+  const buildCartLine = (
+    product: GlobalProduct,
+    saleQuantity: number,
+    mode: FractionalSaleMode = 'container',
+    existing?: CartItem,
+  ): CartItem => {
+    const fractional = isFractionalProduct(product);
+    const resolvedSaleQty = fractional
+      ? Number(Math.max(0.001, saleQuantity).toFixed(3))
+      : Math.max(1, Math.floor(saleQuantity));
+    const stockQuantity = fractional
+      ? getStockQuantityForSale(product, resolvedSaleQty, mode)
+      : resolvedSaleQty;
+    const lineUnitPrice = fractional
+      ? getFractionalModeUnitPrice(product, mode)
+      : Number(product.sellingPrice || 0);
+    return {
+      ...product,
+      cartId: existing?.cartId || Date.now(),
+      qty: stockQuantity,
+      saleQuantity: resolvedSaleQty,
+      stockQuantity,
+      saleUnitName: fractional ? getFractionalModeUnitName(product, mode) : product.unit,
+      stockUnitName: fractional ? getBaseUnitName(product) : product.unit,
+      fractionalSaleMode: fractional ? mode : undefined,
+      isFractionalSale: fractional,
+      lineUnitPrice,
+      subtotal: Number((resolvedSaleQty * lineUnitPrice).toFixed(3)),
+    };
+  };
+
+  const addToCart = (product: GlobalProduct, qtyToAdd = 1, mode: FractionalSaleMode = 'container') => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
-      const currentQty = existing?.qty || 0;
-      const nextQty = currentQty + qtyToAdd;
-      if (!canAdjustProductQty(product, nextQty)) {
+      const fractional = isFractionalProduct(product);
+      const currentSaleQty = existing?.saleQuantity ?? existing?.qty ?? 0;
+      const nextSaleQty = currentSaleQty + (fractional ? Number(qtyToAdd || 1) : Math.floor(qtyToAdd || 1));
+      const nextMode = fractional ? (existing?.fractionalSaleMode || mode) : mode;
+      const nextLine = buildCartLine(product, nextSaleQty, nextMode, existing);
+      if (!canAdjustProductQty(product, nextLine.stockQuantity || nextLine.qty)) {
         addNotification({
           title: 'Insufficient stock',
           message: `${product.name} stock is ${selectedLocation ? calculateAvailableStock(product as any, selectedLocation.id, locationInventory) : 0}.`,
@@ -369,19 +421,22 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       if (existing) {
         return prev.map(item =>
           item.id === product.id
-            ? { ...item, qty: nextQty, subtotal: nextQty * item.sellingPrice }
+            ? nextLine
             : item
         );
       }
-      return [...prev, { ...product, cartId: Date.now(), qty: qtyToAdd, subtotal: qtyToAdd * product.sellingPrice }];
+      return [...prev, nextLine];
     });
   };
 
   const updateQty = (cartId: number, delta: number) => {
     setCart(prev => prev.map(item => {
       if (item.cartId !== cartId) return item;
-      const newQty = Math.max(1, item.qty + delta);
-      if (!canAdjustProductQty(item, newQty)) {
+      const currentSaleQty = item.saleQuantity ?? item.qty;
+      const step = isFractionalProduct(item) && item.fractionalSaleMode === 'base' ? 0.5 : 1;
+      const newSaleQty = Math.max(isFractionalProduct(item) ? 0.001 : 1, currentSaleQty + (delta * step));
+      const nextLine = buildCartLine(item, newSaleQty, item.fractionalSaleMode || 'container', item);
+      if (!canAdjustProductQty(item, nextLine.stockQuantity || nextLine.qty)) {
         addNotification({
           title: 'Insufficient stock',
           message: `${item.name} stock is ${selectedLocation ? calculateAvailableStock(item as any, selectedLocation.id, locationInventory) : 0}.`,
@@ -389,7 +444,29 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
         });
         return item;
       }
-      return { ...item, qty: newQty, subtotal: newQty * item.sellingPrice };
+      return nextLine;
+    }));
+  };
+
+  const updateFractionalMode = (cartId: number, mode: FractionalSaleMode) => {
+    setCart(prev => prev.map(item => {
+      if (item.cartId !== cartId) return item;
+      const nextLine = buildCartLine(item, item.saleQuantity || 1, mode, item);
+      if (!canAdjustProductQty(item, nextLine.stockQuantity || nextLine.qty)) return item;
+      return nextLine;
+    }));
+  };
+
+  const updateCartSaleQuantity = (cartId: number, value: string) => {
+    setCart(prev => prev.map(item => {
+      if (item.cartId !== cartId) return item;
+      const parsed = Number(value);
+      const nextQty = Number.isFinite(parsed)
+        ? Math.max(isFractionalProduct(item) ? 0.001 : 1, parsed)
+        : (item.saleQuantity || item.qty || 1);
+      const nextLine = buildCartLine(item, nextQty, item.fractionalSaleMode || 'container', item);
+      if (!canAdjustProductQty(item, nextLine.stockQuantity || nextLine.qty)) return item;
+      return nextLine;
     }));
   };
 
@@ -572,13 +649,20 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
       items: cart.map(item => ({
         id: item.id,
         name: item.name,
-        qty: item.qty,
-        unitPrice: item.sellingPrice,
+        qty: item.stockQuantity ?? item.qty,
+        quantityInput: Number(item.saleQuantity ?? item.qty),
+        isFractionalSale: item.isFractionalSale === true,
+        fractionalSaleMode: item.fractionalSaleMode,
+        saleQuantity: Number(item.saleQuantity ?? item.qty),
+        saleUnitName: item.saleUnitName,
+        stockQuantity: item.stockQuantity ?? item.qty,
+        stockUnitName: item.stockUnitName,
+        unitPrice: item.lineUnitPrice ?? item.sellingPrice,
         discount: 0,
         subtotal: item.subtotal,
         tax: 0,
         total: item.subtotal,
-        unit: item.unit,
+        unit: item.stockUnitName || item.unit,
       })),
       subTotal: subtotal,
       discountType: effectiveDiscountType,
@@ -1141,6 +1225,11 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                       <td className="px-4 py-3 align-middle">
                         <div className="font-bold text-slate-800 text-sm mb-0.5">{item.name}</div>
                         <div className="text-[10px] text-slate-400 font-mono">{item.sku}</div>
+                        {item.isFractionalSale && (
+                          <div className="text-[10px] text-amber-700 font-bold mt-0.5">
+                            Deducts {(item.stockQuantity || item.qty).toFixed(3)} {item.stockUnitName || getBaseUnitName(item)}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-3 align-middle">
                         <div className="flex items-center justify-center gap-1">
@@ -1151,10 +1240,12 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                             <Minus size={12} />
                           </button>
                           <input
-                            type="text"
-                            value={item.qty}
-                            readOnly
-                            className="w-10 text-center font-bold text-slate-800 bg-transparent text-sm"
+                            type="number"
+                            min={item.isFractionalSale ? '0.001' : '1'}
+                            step={item.isFractionalSale ? '0.001' : '1'}
+                            value={item.saleQuantity ?? item.qty}
+                            onChange={(e) => updateCartSaleQuantity(item.cartId, e.target.value)}
+                            className="w-16 text-center font-bold text-slate-800 bg-transparent text-sm"
                           />
                           <button
                             onClick={() => updateQty(item.cartId, 1)}
@@ -1163,6 +1254,16 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
                             <Plus size={12} />
                           </button>
                         </div>
+                        {item.isFractionalSale && (
+                          <select
+                            value={item.fractionalSaleMode || 'container'}
+                            onChange={(e) => updateFractionalMode(item.cartId, e.target.value as FractionalSaleMode)}
+                            className="mt-1 w-full rounded border border-amber-200 bg-amber-50 px-1 py-0.5 text-[10px] font-bold text-amber-800"
+                          >
+                            <option value="container">{getContainerUnitName(item)}</option>
+                            <option value="base">{getBaseUnitName(item)}</option>
+                          </select>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-800 align-middle">
                         {formatCurrency(item.subtotal)}

@@ -402,6 +402,12 @@ model Product {
   unitPurchasePrice   Decimal               @default(0) @db.Decimal(18, 3)
   sellingPrice        Decimal               @default(0) @db.Decimal(18, 3)
   stock               Decimal               @default(0) @db.Decimal(18, 3)
+  fractionalSaleEnabled Boolean              @default(false)
+  baseUnitName        String?
+  containerUnitName   String?
+  containerSize       Decimal               @default(0) @db.Decimal(18, 3)
+  fractionalPricePremium Decimal            @default(0) @db.Decimal(18, 3)
+  fractionalUnitPrice Decimal               @default(0) @db.Decimal(18, 3)
   alertQuantity       Int?
   image               String?
   meta                Json?

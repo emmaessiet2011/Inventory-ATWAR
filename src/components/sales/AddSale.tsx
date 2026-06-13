@@ -19,6 +19,17 @@ import {
   normalizeUnitsPerPackage,
   toPieceQuantity,
 } from '@/utils/productPackaging';
+import {
+  FractionalSaleMode,
+  getBaseUnitName,
+  getContainerSize,
+  getContainerUnitName,
+  getFractionalModeUnitName,
+  getFractionalModeUnitPrice,
+  getSaleDisplayQuantity,
+  getStockQuantityForSale,
+  isFractionalProduct,
+} from '@/utils/fractionalProducts';
 import { normalizeSkuDigits, parseWeighingScaleBarcode } from '@/utils/weighingScaleBarcode';
 import { notifyReceiptPrintFallback } from '@/utils/receiptPrinting';
 import { resolveInvoiceLayoutRenderConfig } from '@/utils/receiptPrinting';
@@ -147,6 +158,12 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, Math.floor(parsed));
+  };
+  const toSaleQuantity = (value: unknown, allowDecimal = false): number => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    const safe = Math.max(0, parsed);
+    return allowDecimal ? Number(safe.toFixed(3)) : Math.floor(safe);
   };
   const sanitizeOrderDiscountAmount = (
     type: string,
@@ -440,6 +457,24 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       String(p.id || '').trim() === productKey ||
       String(p.sku || '').trim() === productKey
     );
+    if (isFractionalProduct(linkedProduct)) {
+      const requestedMode = row?.fractionalSaleMode === 'base' ? 'base' : 'container';
+      const saleQuantity = Math.max(0, toSaleQuantity(row?.saleQuantity ?? row?.quantityInput ?? row?.qty ?? 1, true));
+      const stockQuantity = getStockQuantityForSale(linkedProduct, saleQuantity, requestedMode);
+      return {
+        ...row,
+        isFractionalSale: true,
+        fractionalSaleMode: requestedMode,
+        quantityMode: 'Piece',
+        quantityInput: round3(saleQuantity),
+        saleQuantity: round3(saleQuantity),
+        saleUnitName: getFractionalModeUnitName(linkedProduct, requestedMode),
+        stockQuantity,
+        stockUnitName: getBaseUnitName(linkedProduct),
+        unit: getBaseUnitName(linkedProduct),
+        qty: stockQuantity,
+      };
+    }
     const packagingType = normalizePackagingType(linkedProduct?.packagingType || row?.productPackagingType);
     const unitsPerPackage = normalizeUnitsPerPackage(row?.unitsPerPackage ?? linkedProduct?.unitsPerPackage);
     const availableModes = getAvailableQuantityModes(packagingType, unitsPerPackage);
@@ -463,19 +498,24 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
 
   const recalcRowWithProduct = (row: any, product: any, forcedUnitPrice?: number) => {
     const quantityAdjustedRow = applyRowQuantityMode(row, product);
-    const qty = toIntegerQuantity(quantityAdjustedRow?.qty || 0);
-    const unitPrice = toNonNegativeAmount(
-      typeof forcedUnitPrice === 'number' && Number.isFinite(forcedUnitPrice)
-        ? forcedUnitPrice
-        : quantityAdjustedRow?.unitPrice || 0
-    );
+    const fractional = isFractionalProduct(product);
+    const qty = fractional
+      ? toSaleQuantity(quantityAdjustedRow?.saleQuantity ?? quantityAdjustedRow?.quantityInput ?? 0, true)
+      : toIntegerQuantity(quantityAdjustedRow?.qty || 0);
+    const unitPrice = fractional && !quantityAdjustedRow?.manualPrice
+      ? getFractionalModeUnitPrice(product, quantityAdjustedRow?.fractionalSaleMode === 'base' ? 'base' : 'container')
+      : toNonNegativeAmount(
+          typeof forcedUnitPrice === 'number' && Number.isFinite(forcedUnitPrice)
+            ? forcedUnitPrice
+            : quantityAdjustedRow?.unitPrice || 0
+        );
     const lineBase = Number((unitPrice * qty).toFixed(3));
     const discount = Number(clamp(toNonNegativeAmount(quantityAdjustedRow?.discount || 0), 0, lineBase).toFixed(3));
     const subtotal = Number((lineBase - discount).toFixed(3));
     return {
       ...quantityAdjustedRow,
-      unit: product?.unit || row?.unit || '',
-      qty,
+      unit: fractional ? getBaseUnitName(product) : (product?.unit || row?.unit || ''),
+      qty: fractional ? Number(quantityAdjustedRow?.stockQuantity || 0) : qty,
       quantityInput: round3(Number(quantityAdjustedRow?.quantityInput ?? qty)),
       unitPrice,
       discount,
@@ -1400,8 +1440,16 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
           manualPrice: false,
           productPackagingType: normalizePackagingType(product.packagingType),
           unitsPerPackage: normalizeUnitsPerPackage(product.unitsPerPackage),
+          isFractionalSale: isFractionalProduct(product),
+          fractionalSaleMode: isFractionalProduct(product) ? 'container' : undefined,
+          saleQuantity: 1,
+          saleUnitName: isFractionalProduct(product) ? getContainerUnitName(product) : undefined,
+          stockQuantity: isFractionalProduct(product) ? getContainerSize(product) : undefined,
+          stockUnitName: isFractionalProduct(product) ? getBaseUnitName(product) : undefined,
           quantityMode: normalizePackagingType(row.quantityMode || 'Piece'),
-          quantityInput: Math.max(1, toIntegerQuantity(row.quantityInput ?? row.qty ?? 1)),
+          quantityInput: isFractionalProduct(product)
+            ? Math.max(0.001, toSaleQuantity(row.saleQuantity ?? row.quantityInput ?? 1, true))
+            : Math.max(1, toIntegerQuantity(row.quantityInput ?? row.qty ?? 1)),
         };
         return recalcRowWithProduct(mergedRow, product, groupedPrice);
       }
@@ -1414,7 +1462,9 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
   const handleTopProductSelect = (product: any, qtyOverride?: number) => {
     const price = getGroupedProductPrice(product);
     const newId = Date.now();
-    const qty = Math.max(1, toIntegerQuantity(qtyOverride || 1));
+    const qty = isFractionalProduct(product)
+      ? Math.max(0.001, toSaleQuantity(qtyOverride || 1, true))
+      : Math.max(1, toIntegerQuantity(qtyOverride || 1));
     const seedRow = {
       id: newId,
       productId: product.id,
@@ -1422,6 +1472,12 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       qty,
       quantityMode: 'Piece',
       quantityInput: qty,
+      isFractionalSale: isFractionalProduct(product),
+      fractionalSaleMode: isFractionalProduct(product) ? 'container' : undefined,
+      saleQuantity: isFractionalProduct(product) ? qty : qty,
+      saleUnitName: isFractionalProduct(product) ? getContainerUnitName(product) : undefined,
+      stockQuantity: isFractionalProduct(product) ? getStockQuantityForSale(product, qty, 'container') : undefined,
+      stockUnitName: isFractionalProduct(product) ? getBaseUnitName(product) : undefined,
       productPackagingType: normalizePackagingType(product.packagingType),
       unitsPerPackage: normalizeUnitsPerPackage(product.unitsPerPackage),
       unit: product.unit || '',
@@ -1451,6 +1507,12 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
         qty: 1,
         quantityMode: 'Piece',
         quantityInput: 1,
+        isFractionalSale: isFractionalProduct(product),
+        fractionalSaleMode: isFractionalProduct(product) ? 'container' : undefined,
+        saleQuantity: 1,
+        saleUnitName: isFractionalProduct(product) ? getContainerUnitName(product) : undefined,
+        stockQuantity: isFractionalProduct(product) ? getContainerSize(product) : undefined,
+        stockUnitName: isFractionalProduct(product) ? getBaseUnitName(product) : undefined,
         productPackagingType: normalizePackagingType(product.packagingType),
         unitsPerPackage: normalizeUnitsPerPackage(product.unitsPerPackage),
         unit: product.unit || '',
@@ -1490,16 +1552,32 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                 ...(field === 'unitPrice' ? { manualPrice: true } : {}),
               };
               if (field === 'qty') {
-                updated.qty = Math.max(1, toIntegerQuantity(value));
+                const linkedProduct = products.find(p => p.id === updated.productId);
+                if (isFractionalProduct(linkedProduct)) {
+                  updated.saleQuantity = Math.max(0.001, toSaleQuantity(value, true));
+                  updated.quantityInput = updated.saleQuantity;
+                } else {
+                  updated.qty = Math.max(1, toIntegerQuantity(value));
+                }
               } else if (field === 'quantityInput') {
-                updated.quantityInput = Math.max(1, toIntegerQuantity(value));
+                const linkedProduct = products.find(p => p.id === updated.productId);
+                updated.quantityInput = isFractionalProduct(linkedProduct)
+                  ? Math.max(0.001, toSaleQuantity(value, true))
+                  : Math.max(1, toIntegerQuantity(value));
+                if (isFractionalProduct(linkedProduct)) updated.saleQuantity = updated.quantityInput;
+              } else if (field === 'saleQuantity') {
+                updated.saleQuantity = Math.max(0.001, toSaleQuantity(value, true));
+                updated.quantityInput = updated.saleQuantity;
+              } else if (field === 'fractionalSaleMode') {
+                updated.fractionalSaleMode = value === 'base' ? 'base' : 'container';
+                updated.manualPrice = false;
               } else if (field === 'unitPrice') {
                 updated.unitPrice = toNonNegativeAmount(value);
               } else if (field === 'discount') {
                 updated.discount = toNonNegativeAmount(value);
               }
               // Simple recalc
-              if (field === 'qty' || field === 'quantityInput' || field === 'quantityMode' || field === 'unitPrice' || field === 'discount') {
+              if (field === 'qty' || field === 'quantityInput' || field === 'saleQuantity' || field === 'fractionalSaleMode' || field === 'quantityMode' || field === 'unitPrice' || field === 'discount') {
                   const linkedProduct = products.find(p => p.id === updated.productId);
                   if (field === 'qty') {
                     const packagingType = normalizePackagingType(linkedProduct?.packagingType || updated.productPackagingType);
@@ -1674,22 +1752,36 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       staffNote: '',
       document: attachedFileName || '',
       items: rows.filter(r => r.name).map(r => {
+        const linkedProduct = products.find(p => p.id === r.productId);
+        const isFractional = isFractionalProduct(linkedProduct);
+        const fractionalMode: FractionalSaleMode = r.fractionalSaleMode === 'base' ? 'base' : 'container';
         const itemQuantityMode = normalizePackagingType(r.quantityMode);
         const itemPackagingType = normalizePackagingType(r.productPackagingType);
-        const qty = toIntegerQuantity(r.qty);
+        const saleQuantity = isFractional
+          ? Math.max(0, toSaleQuantity(r.saleQuantity ?? r.quantityInput ?? 0, true))
+          : toIntegerQuantity(r.qty);
+        const stockQuantity = isFractional
+          ? getStockQuantityForSale(linkedProduct, saleQuantity, fractionalMode)
+          : saleQuantity;
         const unitPrice = toNonNegativeAmount(r.unitPrice);
-        const lineBase = Number((qty * unitPrice).toFixed(3));
+        const lineBase = Number((saleQuantity * unitPrice).toFixed(3));
         const discount = Number(clamp(toNonNegativeAmount(r.discount), 0, lineBase).toFixed(3));
         const subtotal = Number((lineBase - discount).toFixed(3));
         return {
           id: r.productId || r.id?.toString(),
           name: r.name,
-          qty,
+          qty: stockQuantity,
           quantityMode: itemQuantityMode,
-          quantityInput: round3(Number(r.quantityInput ?? qty)),
+          quantityInput: round3(Number(r.quantityInput ?? saleQuantity)),
+          isFractionalSale: isFractional,
+          fractionalSaleMode: isFractional ? fractionalMode : undefined,
+          saleQuantity: round3(saleQuantity),
+          saleUnitName: isFractional ? getFractionalModeUnitName(linkedProduct, fractionalMode) : undefined,
+          stockQuantity: round3(stockQuantity),
+          stockUnitName: isFractional ? getBaseUnitName(linkedProduct) : undefined,
           unitsPerPackage: normalizeUnitsPerPackage(r.unitsPerPackage),
           productPackagingType: itemPackagingType === 'Piece' ? undefined : itemPackagingType,
-          unit: r.unit || '',
+          unit: isFractional ? getBaseUnitName(linkedProduct) : (r.unit || ''),
           unitPrice,
           discount,
           subtotal,
@@ -1852,16 +1944,21 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       const invalidRow = rows
         .filter(r => r.name)
         .find(r => {
-          const qty = Number(r.qty || 0);
+          const product = products.find(p => p.id === r.productId);
+          const fractional = isFractionalProduct(product);
+          const qty = fractional
+            ? Number(r.saleQuantity ?? r.quantityInput ?? 0)
+            : Number(r.qty || 0);
           const unitPrice = Number(r.unitPrice || 0);
           const lineBase = qty * unitPrice;
           const lineDiscount = Number(r.discount || 0);
-          return !Number.isInteger(qty) || qty <= 0 || unitPrice < 0 || lineDiscount < 0 || lineDiscount > lineBase;
+          return (!fractional && !Number.isInteger(qty)) || qty <= 0 || unitPrice < 0 || lineDiscount < 0 || lineDiscount > lineBase;
         });
       if (invalidRow) {
+        const invalidProduct = products.find(p => p.id === invalidRow.productId);
         addNotification({
           title: 'Error',
-          message: `Invalid values for "${invalidRow.name}". Quantity must be a whole number > 0, Unit Price >= 0, and Discount cannot exceed line amount.`,
+          message: `Invalid values for "${invalidRow.name}". Quantity must be ${isFractionalProduct(invalidProduct) ? 'greater than 0' : 'a whole number > 0'}, Unit Price >= 0, and Discount cannot exceed line amount.`,
           type: 'error',
         });
         return;
@@ -1877,7 +1974,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                 String(p.sku || '').trim() === productKey
               );
               if (!product) return false;
-              const rowQty = Number(r.qty || 0);
+              const rowQty = Number(r.stockQuantity ?? r.qty ?? 0);
               return rowQty > getAvailableStock(product);
             });
           if (oversold) {
@@ -2665,9 +2762,14 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                           const rowQuantityMode = quantityModes.includes(normalizePackagingType(row.quantityMode))
                             ? normalizePackagingType(row.quantityMode)
                             : 'Piece';
+                          const isFractionalRow = isFractionalProduct(selectedProduct);
+                          const fractionalMode: FractionalSaleMode = row.fractionalSaleMode === 'base' ? 'base' : 'container';
                           const selectedProductPackHint = selectedProduct
                             ? getPackHint(selectedProduct.unit, selectedProduct.packagingType, selectedProduct.unitsPerPackage)
                             : null;
+                          const fractionalStockQty = isFractionalRow
+                            ? getStockQuantityForSale(selectedProduct, row.saleQuantity ?? row.quantityInput ?? 0, fractionalMode)
+                            : 0;
                           return (
                             <tr key={row.id} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-4 text-center font-bold text-slate-500">{index + 1}</td>
@@ -2748,6 +2850,29 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                     )}
                                 </td>
                                 <td className="p-2">
+                                  {isFractionalRow ? (
+                                    <div className="space-y-1">
+                                      <input
+                                        type="number"
+                                        min="0.001"
+                                        step="0.001"
+                                        value={row.saleQuantity ?? row.quantityInput ?? 1}
+                                        onChange={(e) => updateRow(row.id, 'saleQuantity', e.target.value)}
+                                        className="w-full px-2 py-1.5 border border-amber-200 rounded-lg text-center text-sm font-bold text-slate-700 outline-none bg-amber-50 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+                                      />
+                                      <select
+                                        value={fractionalMode}
+                                        onChange={(e) => updateRow(row.id, 'fractionalSaleMode', e.target.value)}
+                                        className="w-full px-2 py-1 bg-white border border-amber-200 rounded-lg text-[11px] font-semibold text-slate-600 focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 outline-none"
+                                      >
+                                        <option value="container">{getContainerUnitName(selectedProduct)}</option>
+                                        <option value="base">{getBaseUnitName(selectedProduct)}</option>
+                                      </select>
+                                      <div className="text-[10px] text-center text-amber-700 font-semibold">
+                                        Stock deducted: {fractionalStockQty.toFixed(3)} {getBaseUnitName(selectedProduct)}
+                                      </div>
+                                    </div>
+                                  ) : (
                                     <div className="space-y-1">
                                       <input
                                         type="number"
@@ -2768,6 +2893,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                       </select>
                                       <div className="text-[10px] text-center text-slate-500 font-semibold">Quantity in pieces</div>
                                     </div>
+                                  )}
                                 </td>
                                 <td className="p-3">
                                     <input 

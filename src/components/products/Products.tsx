@@ -12,6 +12,7 @@ import { buildPaginationItems } from '@/utils/pagination';
 import { compressImageFileToDataUrl } from '@/utils/imageCompression';
 import ViewProduct from './ViewProduct';
 import { isLocationAccessible } from '@/utils/productVisibility';
+import { getStockDisplay } from '@/utils/fractionalProducts';
 
 const Products: React.FC = () => {
   const {
@@ -67,6 +68,12 @@ const Products: React.FC = () => {
     purchasePrice: '',
     profitMargin: '',
     sellingPrice: '',
+    fractionalSaleEnabled: false,
+    baseUnitName: 'Litre',
+    containerUnitName: 'Container',
+    containerSize: '',
+    fractionalPricePremium: '',
+    fractionalUnitPrice: '',
   });
 
   const resetForm = () => {
@@ -75,6 +82,8 @@ const Products: React.FC = () => {
       category: '', subCategory: '', businessLocation: '', alertQuantity: '',
       description: '', weight: '', tax: '--', taxType: 'Exclusive',
       type: 'Single', purchasePrice: '', profitMargin: '', sellingPrice: '',
+      fractionalSaleEnabled: false, baseUnitName: 'Litre', containerUnitName: 'Container',
+      containerSize: '', fractionalPricePremium: '', fractionalUnitPrice: '',
     });
     setProductImage('');
     setEditingProduct(null);
@@ -121,6 +130,12 @@ const Products: React.FC = () => {
     : 0;
   const sellingPriceInc = formData.sellingPrice
     ? parseFloat((parseFloat(formData.sellingPrice) * (1 + selectedTaxRate / 100)).toFixed(3))
+    : 0;
+  const containerSizeValue = Number(formData.containerSize || 0);
+  const sellingPriceValue = Number(formData.sellingPrice || 0);
+  const fractionalPremiumValue = Number(formData.fractionalPricePremium || 0);
+  const calculatedFractionalUnitPrice = formData.fractionalSaleEnabled && containerSizeValue > 0
+    ? Number(((sellingPriceValue / containerSizeValue) + Math.max(0, fractionalPremiumValue || 0)).toFixed(3))
     : 0;
 
   // ── Price change handlers ────────────────────────────────────
@@ -186,6 +201,20 @@ const Products: React.FC = () => {
     const resolvedLocation = formData.businessLocation || locations[0]?.name || '';
     const resolvedCategory = resolveCategoryLink(formData.category, editingProduct?.categoryId);
     const resolvedBrand = resolveBrandLink(formData.brand, editingProduct?.brandId);
+    const fractionalEnabled = formData.fractionalSaleEnabled === true;
+    const parsedContainerSize = Number(formData.containerSize || 0);
+    const parsedFractionalPremium = Number(formData.fractionalPricePremium || 0);
+    if (fractionalEnabled && (!Number.isFinite(parsedContainerSize) || parsedContainerSize <= 0)) {
+      addNotification({
+        title: 'Validation Error',
+        message: 'Enter a valid size per whole unit before enabling smaller-quantity selling.',
+        type: 'error',
+      });
+      return;
+    }
+    const resolvedFractionalUnitPrice = fractionalEnabled && parsedContainerSize > 0
+      ? Number((((Number(formData.sellingPrice || editingProduct?.sellingPrice || 0) || 0) / parsedContainerSize) + Math.max(0, parsedFractionalPremium || 0)).toFixed(3))
+      : 0;
 
     if (editingProduct) {
       const parsedPurchasePrice = formData.purchasePrice === '' ? editingProduct.unitPurchasePrice : Number(formData.purchasePrice);
@@ -203,6 +232,12 @@ const Products: React.FC = () => {
         alertQuantity: formData.alertQuantity ? Number(formData.alertQuantity) : editingProduct.alertQuantity,
         unitPurchasePrice: Number.isFinite(parsedPurchasePrice) ? parsedPurchasePrice : editingProduct.unitPurchasePrice,
         sellingPrice: Number.isFinite(parsedSellingPrice) ? parsedSellingPrice : editingProduct.sellingPrice,
+        fractionalSaleEnabled: fractionalEnabled && parsedContainerSize > 0,
+        baseUnitName: fractionalEnabled ? (formData.baseUnitName || 'Litre') : undefined,
+        containerUnitName: fractionalEnabled ? (formData.containerUnitName || 'Container') : undefined,
+        containerSize: fractionalEnabled ? Number(Math.max(0, parsedContainerSize || 0).toFixed(3)) : undefined,
+        fractionalPricePremium: fractionalEnabled ? Number(Math.max(0, parsedFractionalPremium || 0).toFixed(3)) : undefined,
+        fractionalUnitPrice: resolvedFractionalUnitPrice || undefined,
         tax: formData.tax || editingProduct.tax,
         taxType: formData.taxType || editingProduct.taxType,
         description: formData.description || editingProduct.description,
@@ -237,6 +272,12 @@ const Products: React.FC = () => {
         alertQuantity: formData.alertQuantity ? Number(formData.alertQuantity) : undefined,
         unitPurchasePrice: Number(formData.purchasePrice) || 0,
         sellingPrice: Number(formData.sellingPrice) || 0,
+        fractionalSaleEnabled: fractionalEnabled && parsedContainerSize > 0,
+        baseUnitName: fractionalEnabled ? (formData.baseUnitName || 'Litre') : undefined,
+        containerUnitName: fractionalEnabled ? (formData.containerUnitName || 'Container') : undefined,
+        containerSize: fractionalEnabled ? Number(Math.max(0, parsedContainerSize || 0).toFixed(3)) : undefined,
+        fractionalPricePremium: fractionalEnabled ? Number(Math.max(0, parsedFractionalPremium || 0).toFixed(3)) : undefined,
+        fractionalUnitPrice: resolvedFractionalUnitPrice || undefined,
         stock: 0,
         tax: formData.tax || '--',
         taxType: formData.taxType,
@@ -287,6 +328,12 @@ const Products: React.FC = () => {
         ? String((((product.sellingPrice - product.unitPurchasePrice) / product.unitPurchasePrice) * 100).toFixed(2))
         : '',
       sellingPrice: String(product.sellingPrice || ''),
+      fractionalSaleEnabled: product.fractionalSaleEnabled === true,
+      baseUnitName: product.baseUnitName || product.unit || 'Litre',
+      containerUnitName: product.containerUnitName || 'Container',
+      containerSize: product.containerSize ? String(product.containerSize) : '',
+      fractionalPricePremium: product.fractionalPricePremium ? String(product.fractionalPricePremium) : '',
+      fractionalUnitPrice: product.fractionalUnitPrice ? String(product.fractionalUnitPrice) : '',
     });
     setView('add');
   };
@@ -790,7 +837,7 @@ const Products: React.FC = () => {
                         else if (col.key === 'sellingPrice') cell = <span className="font-medium">{formatCurrency(product.sellingPrice)}</span>;
                         else if (col.key === 'stock') cell = (
                           <span className={`px-2.5 py-1 rounded-full font-bold text-xs ${Number(product.stock || 0) > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                            {Number(product.stock || 0).toFixed(3)} {product.unit}
+                            {getStockDisplay(product.stock, product)}
                           </span>
                         );
                         else if (col.key === 'type') cell = (
@@ -1048,6 +1095,84 @@ const Products: React.FC = () => {
                       </tr>
                     </tbody>
                   </table>
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.fractionalSaleEnabled}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        fractionalSaleEnabled: e.target.checked,
+                        baseUnitName: formData.baseUnitName || 'Litre',
+                        containerUnitName: formData.containerUnitName || 'Container',
+                      })}
+                      className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <div>
+                      <div className="text-sm font-black text-slate-900">Allow selling this product in smaller quantity</div>
+                      <div className="text-xs text-slate-600 mt-1">
+                        Use this for engine oil, for example opening a 20L container and selling only 2 litres.
+                      </div>
+                    </div>
+                  </label>
+
+                  {formData.fractionalSaleEnabled && (
+                    <div className="mt-5 grid grid-cols-1 md:grid-cols-5 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Small unit</label>
+                        <input
+                          value={formData.baseUnitName}
+                          onChange={(e) => setFormData({ ...formData, baseUnitName: e.target.value })}
+                          placeholder="Litre"
+                          className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Whole unit</label>
+                        <input
+                          value={formData.containerUnitName}
+                          onChange={(e) => setFormData({ ...formData, containerUnitName: e.target.value })}
+                          placeholder="Container"
+                          className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Size per whole unit</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          value={formData.containerSize}
+                          onChange={(e) => setFormData({ ...formData, containerSize: e.target.value })}
+                          placeholder="20"
+                          className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Extra per small unit</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          value={formData.fractionalPricePremium}
+                          onChange={(e) => setFormData({ ...formData, fractionalPricePremium: e.target.value })}
+                          placeholder="0.500"
+                          className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Small unit price</label>
+                        <input
+                          readOnly
+                          value={calculatedFractionalUnitPrice ? calculatedFractionalUnitPrice.toFixed(3) : ''}
+                          placeholder="Auto"
+                          className="w-full px-3 py-2 rounded-xl border border-amber-200 bg-white/70 text-sm font-black text-amber-700"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

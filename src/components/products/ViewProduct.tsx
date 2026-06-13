@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowLeft, Printer, Edit, Image as ImageIcon } from 'lucide-react';
 import { Product, useGlobalContext } from '@/context/GlobalContext';
 import { formatUnitWithPack, getPackHint } from '@/utils/productPackaging';
+import { getFractionalBasePrice, getStockDisplay, isFractionalProduct } from '@/utils/fractionalProducts';
 import { printDocument } from '@/utils/printUtils';
 import {
   computeSellingPriceGroupProductPrice,
@@ -50,6 +51,7 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
 
   const stockValue = Number(((Number(product.stock) || 0) * (Number(product.sellingPrice) || 0)).toFixed(3));
   const unitDisplay = formatUnitWithPack(product.unit, product.packagingType, product.unitsPerPackage);
+  const stockDisplay = getStockDisplay(product.stock, product);
   const packHint = getPackHint(product.unit, product.packagingType, product.unitsPerPackage);
   const resolvedWarrantyLabel = (() => {
     const value = String(product.warranty || '').trim();
@@ -100,9 +102,15 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
       ['Product', 'Pack / Carton Size', packHint || '--'],
       ['Product', 'Barcode Type', product.barcodeType || '--'],
       ['Product', 'Warranty', resolvedWarrantyLabel],
-      ['Inventory', 'Current Stock', `${Number(product.stock || 0).toFixed(3)} ${unitDisplay}`],
+      ['Inventory', 'Current Stock', stockDisplay],
       ['Inventory', 'Unit Purchase Price', formatCurrency(product.unitPurchasePrice || 0)],
       ['Inventory', 'Unit Selling Price', formatCurrency(product.sellingPrice || 0)],
+      ...(isFractionalProduct(product)
+        ? [
+            ['Fractional Sale', 'Small Unit Price', formatCurrency(getFractionalBasePrice(product))],
+            ['Fractional Sale', 'Container Size', `${Number(product.containerSize || 0).toFixed(3)} ${product.baseUnitName || product.unit || 'Litre'}`],
+          ]
+        : []),
       ['Inventory', 'Stock Value', formatCurrency(stockValue)],
       ['Inventory', 'Alert Quantity', product.alertQuantity != null ? Number(product.alertQuantity).toFixed(3) : '--'],
       ['Tax', 'Applicable Tax', product.tax || '--'],
@@ -144,7 +152,7 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
       ],
       rows: printRows,
       stats: [
-        { label: 'Current Stock', value: `${Number(product.stock || 0).toFixed(3)} ${unitDisplay}`, color: 'blue' },
+        { label: 'Current Stock', value: stockDisplay, color: 'blue' },
         { label: 'Unit Selling Price', value: formatCurrency(product.sellingPrice || 0), color: 'green' },
         { label: 'Stock Value', value: formatCurrency(stockValue), color: 'amber' },
       ],
@@ -231,7 +239,7 @@ const ViewProduct: React.FC<ViewProductProps> = ({ onBack, onEdit, product }) =>
             </thead>
             <tbody>
               <tr className="border-b border-slate-100">
-                <td className="px-4 py-3">{(product.stock || 0).toFixed(3)} {unitDisplay}</td>
+                <td className="px-4 py-3">{stockDisplay}</td>
                 <td className="px-4 py-3">{formatCurrency(product.unitPurchasePrice || 0)}</td>
                 <td className="px-4 py-3">{formatCurrency(product.sellingPrice || 0)}</td>
                 <td className="px-4 py-3">{formatCurrency(stockValue)}</td>
