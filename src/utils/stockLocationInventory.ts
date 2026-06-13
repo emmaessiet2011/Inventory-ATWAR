@@ -1,10 +1,4 @@
 import { apiFetchAll, syncRecordStrict } from './apiClient';
-import {
-  convertContainerStockToBaseUnits,
-  isFractionalProduct,
-  isFractionalStockStoredAsBase,
-} from './fractionalProducts';
-
 export interface ProductLocationInventory {
   id: string;
   productId: string;
@@ -141,9 +135,6 @@ export const calculateAvailableStock = (
   } else {
     const match = locationInventory.find(record => inventoryKey(record.productId, record.locationId) === inventoryKey(product.id, locationId));
     const stock = Number(match?.stock || 0);
-    if (match && isFractionalProduct(product) && !isFractionalStockStoredAsBase(match)) {
-      return convertContainerStockToBaseUnits(stock, product);
-    }
     return round3(stock);
   }
 };

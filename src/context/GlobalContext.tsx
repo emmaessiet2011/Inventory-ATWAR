@@ -4783,7 +4783,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   });
 
   const addProduct = async (product: Product): Promise<CrudMutationResult> => {
-    let normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    const productInput = {
+      ...(product as Product & { forceFractionalStockConversion?: boolean }),
+      forceFractionalStockConversion: undefined,
+    } as Product;
+    let normalized = normalizeProductRecord(productInput, productCategories, productBrands, warranties);
     if (isFractionalProduct(normalized)) {
       normalized = {
         ...normalized,
@@ -4847,11 +4851,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const updateProduct = async (product: Product): Promise<CrudMutationResult> => {
     const existingProduct = products.find(p => p.id === product.id);
-    let normalized = normalizeProductRecord(product, productCategories, productBrands, warranties);
+    const forceFractionalStockConversion = Boolean((product as Product & { forceFractionalStockConversion?: boolean }).forceFractionalStockConversion);
+    const productInput = {
+      ...(product as Product & { forceFractionalStockConversion?: boolean }),
+      forceFractionalStockConversion: undefined,
+    } as Product;
+    let normalized = normalizeProductRecord(productInput, productCategories, productBrands, warranties);
     const isNewFractionalProduct = isFractionalProduct(normalized);
     const wasFractionalProduct = isFractionalProduct(existingProduct);
     const existingStockConverted = Boolean(existingProduct?.fractionalStockConvertedToBase);
-    const shouldConvertExistingStock = !!existingProduct && isNewFractionalProduct && (!wasFractionalProduct || !existingStockConverted);
+    const shouldConvertExistingStock = !!existingProduct && isNewFractionalProduct && (
+      forceFractionalStockConversion || !wasFractionalProduct
+    );
 
     if (shouldConvertExistingStock) {
       normalized = {
@@ -4880,7 +4891,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return result;
     }
 
-    if (isNewFractionalProduct) {
+    if (shouldConvertExistingStock) {
       try {
         const currentInventory = await fetchLocationInventoryFromDB();
         let convertedAnyLocationStock = false;
@@ -5309,7 +5320,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         const currentInventory = await fetchLocationInventoryFromDB();
         const nextInventory = currentInventory.map(row => ({ ...row }));
-        const convertedProductIds = new Set<string>();
         
         perProductDeltas.forEach((entry) => {
           const key = inventoryKey(entry.id, linkedLocation.id);
@@ -5318,21 +5328,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const matchIndex = nextInventory.findIndex(r => inventoryKey(r.productId, r.locationId) === key);
           if (matchIndex >= 0) {
             const currentRow = nextInventory[matchIndex];
-            const mustConvertLegacyContainerStock = fractional && !isFractionalStockStoredAsBase(currentRow);
-            if (mustConvertLegacyContainerStock && product?.id) convertedProductIds.add(product.id);
-            const baseRow = mustConvertLegacyContainerStock
-              ? withFractionalStockBaseMeta({
-                  ...currentRow,
-                  stock: convertContainerStockToBaseUnits(currentRow.stock, product),
-                })
-              : currentRow;
             const nextRow = {
-              ...baseRow,
-              stock: Math.max(0, Number((Number(baseRow.stock || 0) + entry.delta).toFixed(3))),
+              ...currentRow,
+              stock: Math.max(0, Number((Number(currentRow.stock || 0) + entry.delta).toFixed(3))),
             };
-            nextInventory[matchIndex] = fractional ? withFractionalStockBaseMeta(nextRow) : nextRow;
+            nextInventory[matchIndex] = fractional && isFractionalStockStoredAsBase(currentRow)
+              ? withFractionalStockBaseMeta(nextRow)
+              : nextRow;
           } else if (entry.delta > 0) {
-             if (fractional && product?.id) convertedProductIds.add(product.id);
              nextInventory.push({
                id: `PINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                productId: entry.id,
@@ -5357,22 +5360,6 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const syncResult = await syncChangedLocationInventoryStrict(nextInventory, currentInventory);
         if (!syncResult.ok) {
            return toCrudResult(syncResult);
-        }
-
-        if (convertedProductIds.size > 0) {
-          for (const productId of convertedProductIds) {
-            const product = products.find(p => p.id === productId);
-            if (!product) continue;
-            const convertedProduct = normalizeProductRecord({
-              ...product,
-              fractionalStockConvertedToBase: true,
-            } as Product, productCategories, productBrands, warranties);
-            const savedProduct = await syncRecordStrict('products', convertedProduct);
-            if (!savedProduct.ok) {
-              return toCrudResult(savedProduct);
-            }
-            setProducts(prev => prev.map(p => p.id === productId ? convertedProduct : p));
-          }
         }
 
         // Fetch the perfectly accurate stock calculations from the DB instead of using optimistic delta math

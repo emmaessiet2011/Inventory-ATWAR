@@ -55,6 +55,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
   const [containerUnitName, setContainerUnitName] = useState('Container');
   const [containerSize, setContainerSize] = useState<number | ''>('');
   const [fractionalPricePremium, setFractionalPricePremium] = useState<number | ''>('');
+  const [convertExistingFractionalStock, setConvertExistingFractionalStock] = useState(false);
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [subCategory, setSubCategory] = useState('');
@@ -240,6 +241,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
             ? Number(p.fractionalPricePremium)
             : ''
         );
+        setConvertExistingFractionalStock(false);
         setSelectedBrand(p.brand || '');
         const linkedCategoryName = p.categoryId
           ? (productCategories.find(c => c.id === p.categoryId)?.name || p.category || '')
@@ -487,6 +489,7 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
     setFractionalSaleEnabled(false); setBaseUnitName('Litre');
     setContainerUnitName('Container'); setContainerSize('');
     setFractionalPricePremium('');
+    setConvertExistingFractionalStock(false);
     setSelectedBrand(''); setSelectedCategory(''); setSubCategory('');
     setSelectedTax('--'); setTaxType('Exclusive'); setSelectedWarranty('');
     setExpiryDate(''); setOpeningStock(''); setAlertQuantity('');
@@ -739,6 +742,9 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       containerSize: shouldEnableFractionalSale ? Number(resolvedContainerSize.toFixed(3)) : undefined,
       fractionalPricePremium: shouldEnableFractionalSale ? Number(resolvedFractionalPremium.toFixed(3)) : undefined,
       fractionalUnitPrice: shouldEnableFractionalSale ? resolvedFractionalUnitPrice : undefined,
+      ...(shouldEnableFractionalSale && convertExistingFractionalStock
+        ? { forceFractionalStockConversion: true }
+        : {}),
       packagingType: normalizedPackagingType === 'Piece' ? undefined : normalizedPackagingType,
       unitsPerPackage: normalizedUnitsPerPackage,
       warranty: selectedWarranty || undefined,
@@ -1400,6 +1406,24 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
                         Full price divided by size{fractionalPremium > 0 ? ' plus the extra amount.' : '.'}
                       </p>
                     </div>
+                    {isEdit && (
+                      <label className="md:col-span-2 xl:col-span-5 flex items-start gap-3 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={convertExistingFractionalStock}
+                          onChange={(e) => setConvertExistingFractionalStock(e.target.checked)}
+                          className="mt-1 h-4 w-4 rounded border-orange-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <span>
+                          <span className="block text-xs font-black text-orange-900 uppercase">
+                            Repair existing stock: convert full containers into litres on save
+                          </span>
+                          <span className="block text-[11px] text-orange-800 mt-1">
+                            Use only if the current stock is still counted as full containers. Example: 2 containers of 5L becomes 10 litres. Do not tick this again after conversion.
+                          </span>
+                        </span>
+                      </label>
+                    )}
                   </div>
                 )}
               </div>
