@@ -4880,12 +4880,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return result;
     }
 
-    if (shouldConvertExistingStock) {
+    if (isNewFractionalProduct) {
       try {
         const currentInventory = await fetchLocationInventoryFromDB();
+        let convertedAnyLocationStock = false;
         const nextInventory = currentInventory.map(row => {
           if (normalizeText(row.productId) !== normalizeText(normalized.id)) return row;
           if (isFractionalStockStoredAsBase(row)) return row;
+          convertedAnyLocationStock = true;
           return withFractionalStockBaseMeta({
             ...row,
             stock: convertContainerStockToBaseUnits(row.stock, normalized),
@@ -4899,6 +4901,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             description: `Product ${normalized.name || normalized.sku || normalized.id} was updated, but fractional stock conversion failed (${syncResult.status || 0}).`,
           });
           return toCrudResult(syncResult);
+        }
+        if (convertedAnyLocationStock && !normalized.fractionalStockConvertedToBase) {
+          const convertedProduct = normalizeProductRecord({
+            ...normalized,
+            fractionalStockConvertedToBase: true,
+          } as Product, productCategories, productBrands, warranties);
+          const savedConvertedProduct = await syncRecordStrict('products', convertedProduct);
+          const convertedResult = toCrudResult(savedConvertedProduct);
+          if (!convertedResult.ok) return convertedResult;
+          normalized = convertedProduct;
         }
       } catch (error) {
         return failResult(500, error instanceof Error ? error.message : 'Unable to convert product stock to smaller units.');
@@ -5303,11 +5315,10 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const key = inventoryKey(entry.id, linkedLocation.id);
           const product = products.find(p => p.id === entry.id);
           const fractional = product && isFractionalProduct(product);
-          const productStockAlreadyConverted = Boolean(product?.fractionalStockConvertedToBase);
           const matchIndex = nextInventory.findIndex(r => inventoryKey(r.productId, r.locationId) === key);
           if (matchIndex >= 0) {
             const currentRow = nextInventory[matchIndex];
-            const mustConvertLegacyContainerStock = fractional && !productStockAlreadyConverted;
+            const mustConvertLegacyContainerStock = fractional && !isFractionalStockStoredAsBase(currentRow);
             if (mustConvertLegacyContainerStock && product?.id) convertedProductIds.add(product.id);
             const baseRow = mustConvertLegacyContainerStock
               ? withFractionalStockBaseMeta({
@@ -5321,7 +5332,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             };
             nextInventory[matchIndex] = fractional ? withFractionalStockBaseMeta(nextRow) : nextRow;
           } else if (entry.delta > 0) {
-             if (fractional && product?.id && !productStockAlreadyConverted) convertedProductIds.add(product.id);
+             if (fractional && product?.id) convertedProductIds.add(product.id);
              nextInventory.push({
                id: `PINV-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
                productId: entry.id,
