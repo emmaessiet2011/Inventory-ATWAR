@@ -548,13 +548,11 @@ const AddProduct: React.FC<AddProductProps> = ({ isEdit, productId, onNavigate }
       addNotification({ title: 'Error', message: 'Unit is required.', type: 'error' });
       return;
     }
-    const hasUnitsPerPackageInput = unitsPerPackage !== '';
-    if (hasUnitsPerPackageInput && (!Number.isInteger(Number(unitsPerPackage)) || Number(unitsPerPackage) <= 0)) {
+    const packageUnitsRequired = normalizedPackagingType !== 'Piece';
+    if (packageUnitsRequired && (!Number.isInteger(Number(unitsPerPackage)) || Number(unitsPerPackage) <= 0)) {
       addNotification({
         title: 'Error',
-        message: normalizedPackagingType === 'Piece'
-          ? 'Enter a valid total number of pieces in one carton.'
-          : `Enter a valid total number of pieces in one ${normalizedPackagingType.toLowerCase()}.`,
+        message: `Enter a valid total number of pieces in one ${normalizedPackagingType.toLowerCase()}.`,
         type: 'error'
       });
       return;
