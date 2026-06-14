@@ -4810,10 +4810,22 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
 
     if (normalized.openingStock && normalized.openingStock > 0 && normalized.openingStockLocation) {
-      await applyStockDelta(
+      const stockResult = await applyStockDelta(
         { [normalized.id]: normalized.openingStock },
-        normalized.openingStockLocation
+        normalized.openingStockLocation,
+        [normalized],
       );
+      if (!stockResult.ok) {
+        recordActivity({
+          action: 'Blocked',
+          module: 'Products',
+          description: `Product ${normalized.name || normalized.sku || normalized.id} was saved, but opening stock failed to sync to Postgres (${stockResult.status || 0}).`,
+        });
+        return failResult(
+          stockResult.status || 500,
+          stockResult.error || 'Product saved, but opening stock could not be saved in Postgres.',
+        );
+      }
     }
 
     setProducts(prev => [...prev, normalized]);
@@ -5302,15 +5314,32 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
-  const applyStockDelta = async (deltaByProduct: Record<string, number>, locationName?: string): Promise<CrudMutationResult> => {
+  const applyStockDelta = async (
+    deltaByProduct: Record<string, number>,
+    locationName?: string,
+    productOverrides: Product[] = [],
+  ): Promise<CrudMutationResult> => {
     if (Object.keys(deltaByProduct).length === 0) return okResult(200);
-    const perProductDeltas = products
-      .map((product) => {
-        const delta = Number((deltaByProduct[product.id] || 0) + (deltaByProduct[product.sku] || 0));
-        if (!delta) return null;
-        return { id: product.id, delta };
+    const productLookup = [...productOverrides, ...products];
+    const deltaByResolvedProduct = new Map<string, { id: string; delta: number; product: Product }>();
+    Object.entries(deltaByProduct).forEach(([key, rawDelta]) => {
+      const delta = Number(rawDelta || 0);
+      if (!delta) return;
+      const product = productLookup.find((row) => row.id === key || row.sku === key);
+      if (!product) return;
+      const current = deltaByResolvedProduct.get(product.id);
+      deltaByResolvedProduct.set(product.id, {
+        id: product.id,
+        delta: Number(((current?.delta || 0) + delta).toFixed(3)),
+        product,
+      });
+    });
+    const perProductDeltas = Array.from(deltaByResolvedProduct.values())
+      .map((entry) => {
+        if (!entry.delta) return null;
+        return entry;
       })
-      .filter((entry): entry is { id: string; delta: number } => !!entry);
+      .filter((entry): entry is { id: string; delta: number; product: Product } => !!entry);
     if (perProductDeltas.length === 0) return okResult(200);
 
     const linkedLocation = locationName ? resolveLocationRecordByName(locationName) : null;
@@ -5323,7 +5352,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         
         perProductDeltas.forEach((entry) => {
           const key = inventoryKey(entry.id, linkedLocation.id);
-          const product = products.find(p => p.id === entry.id);
+          const product = entry.product || productLookup.find(p => p.id === entry.id);
           const fractional = product && isFractionalProduct(product);
           const matchIndex = nextInventory.findIndex(r => inventoryKey(r.productId, r.locationId) === key);
           if (matchIndex >= 0) {
