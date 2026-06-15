@@ -295,12 +295,19 @@ const Sales: React.FC<SalesProps> = ({
   const canAccessOwnSellReturns = hasRolePermission('Sell', 'Access own sell return');
   const canAccessSellReturns = canAccessAllSellReturns || canAccessOwnSellReturns;
   const normalizeOwnerToken = (value: unknown): string => String(value || '').trim().toLowerCase();
+  const compactOwnerToken = (value: unknown): string => normalizeOwnerToken(value).replace(/[^a-z0-9]+/g, '');
+  const expandOwnerTokens = (value: unknown): string[] => {
+    const normalized = normalizeOwnerToken(value);
+    const compact = compactOwnerToken(value);
+    const words = normalized.split(/\s+/).filter((word) => word.length >= 3);
+    return Array.from(new Set([normalized, compact, ...words].filter(Boolean)));
+  };
   const currentUserOwnerTokens = useMemo(() => new Set([
-    currentUser?.id,
-    currentUser?.name,
-    currentUser?.username,
-    currentUser?.email,
-  ].map(normalizeOwnerToken).filter(Boolean)), [
+    ...expandOwnerTokens(currentUser?.id),
+    ...expandOwnerTokens(currentUser?.name),
+    ...expandOwnerTokens(currentUser?.username),
+    ...expandOwnerTokens(currentUser?.email),
+  ]), [
     currentUser?.id,
     currentUser?.name,
     currentUser?.username,
@@ -313,8 +320,20 @@ const Sales: React.FC<SalesProps> = ({
       (sale as any).createdById,
       (sale as any).userId,
       sale.addedBy,
-    ].map(normalizeOwnerToken).filter(Boolean);
-    return saleOwnerTokens.some((token) => currentUserOwnerTokens.has(token));
+    ].flatMap(expandOwnerTokens);
+    return saleOwnerTokens.some((token) => {
+      if (currentUserOwnerTokens.has(token)) return true;
+      const compactSaleToken = compactOwnerToken(token);
+      if (!compactSaleToken || compactSaleToken.length < 3) return false;
+      return Array.from(currentUserOwnerTokens).some((ownerToken) => {
+        const compactOwner = compactOwnerToken(ownerToken);
+        return compactOwner.length >= 3 && (
+          compactOwner === compactSaleToken ||
+          compactOwner.includes(compactSaleToken) ||
+          compactSaleToken.includes(compactOwner)
+        );
+      });
+    });
   };
   const canViewPaymentStatusOnlySale = (sale?: GlobalSale | null): boolean => {
     const status = getEffectivePaymentStatus(sale);

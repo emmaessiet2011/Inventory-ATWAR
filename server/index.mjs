@@ -117,6 +117,24 @@ const serializeAppUser = (user) => {
     },
   };
 };
+const serializeSaleRecord = (sale) => {
+  const meta = toObject(sale?.meta);
+  const locationName = String(sale?.location?.name || meta.location || meta.businessLocation || '').trim();
+  const addedByName = String(sale?.addedBy?.name || sale?.addedBy?.username || meta.addedBy || '').trim();
+  const addedById = String(sale?.addedById || meta.addedById || '').trim();
+  return {
+    ...sale,
+    location: locationName,
+    addedBy: addedByName || undefined,
+    addedById: addedById || undefined,
+    meta: {
+      ...meta,
+      ...(locationName ? { location: locationName } : {}),
+      ...(addedByName ? { addedBy: addedByName } : {}),
+      ...(addedById ? { addedById } : {}),
+    },
+  };
+};
 
 const enforceCriticalAdminStatus = async (userId) => {
   const id = String(userId || '').trim();
@@ -466,6 +484,11 @@ app.get('/api/data/:resource', async (req, res) => {
         role: { select: { name: true, isSystem: true } },
         location: { select: { id: true, name: true } },
       };
+    } else if (cfg.delegate === 'sale') {
+      findManyArgs.include = {
+        location: { select: { id: true, name: true } },
+        addedBy: { select: { id: true, name: true, username: true, email: true } },
+      };
     }
     const [data, total] = await prisma.$transaction([
       delegate.findMany(findManyArgs),
@@ -473,6 +496,8 @@ app.get('/api/data/:resource', async (req, res) => {
     ]);
     const normalizedData = cfg.delegate === 'appUser'
       ? data.map((row) => serializeAppUser(row))
+      : cfg.delegate === 'sale'
+        ? data.map((row) => serializeSaleRecord(row))
       : data;
 
     return res.json({
@@ -503,10 +528,19 @@ app.get('/api/data/:resource/:id', async (req, res) => {
         role: { select: { name: true, isSystem: true } },
         location: { select: { id: true, name: true } },
       };
+    } else if (cfg.delegate === 'sale') {
+      findUniqueArgs.include = {
+        location: { select: { id: true, name: true } },
+        addedBy: { select: { id: true, name: true, username: true, email: true } },
+      };
     }
     const data = await delegate.findUnique(findUniqueArgs);
     if (!data) return res.status(404).json({ ok: false, error: 'Record not found' });
-    const normalizedData = cfg.delegate === 'appUser' ? serializeAppUser(data) : data;
+    const normalizedData = cfg.delegate === 'appUser'
+      ? serializeAppUser(data)
+      : cfg.delegate === 'sale'
+        ? serializeSaleRecord(data)
+        : data;
     return res.json({ ok: true, data: normalizedData });
   } catch (error) {
     return sendPrismaError(res, error, 'Failed to fetch record');
