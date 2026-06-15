@@ -356,6 +356,7 @@ export interface Sale {
   commissionAmount?: number;
   commissionCalculationType?: 'Invoice value' | 'Paid amount';
   totalItems?: number;
+  addedById?: string;
   addedBy?: string;
   sellNote?: string;
   staffNote?: string;
@@ -4488,6 +4489,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       shippingNote: asString(sale.shippingNote) || undefined,
       shippingDocName: asString(sale.shippingDocName) || undefined,
       totalItems: asNumber(sale.totalItems),
+      addedById: asString(sale.addedById) || undefined,
       addedBy: asString(sale.addedBy) || undefined,
       sellNote: asString(sale.sellNote) || undefined,
       staffNote: asString(sale.staffNote) || undefined,

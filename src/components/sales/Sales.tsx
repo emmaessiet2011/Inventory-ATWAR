@@ -285,15 +285,57 @@ const Sales: React.FC<SalesProps> = ({
   const canEditQuotations = hasRolePermission('Quotation', 'Edit quotation');
   const canDeleteQuotations = hasRolePermission('Quotation', 'Delete quotation');
   const canCreateQuotations = hasRolePermission('Sell', 'Add Sell') || canEditQuotations;
+  const canViewAllSells = hasRolePermission('Sell', 'View all sell');
+  const canViewOwnSells = hasRolePermission('Sell', 'View own sell only');
+  const canViewPaidSellsOnly = hasRolePermission('Sell', 'View paid sells only');
+  const canViewDueSellsOnly = hasRolePermission('Sell', 'View due sells only');
+  const canViewPartialSellsOnly = hasRolePermission('Sell', 'View partially paid sells only');
+  const canViewOverdueSellsOnly = hasRolePermission('Sell', 'View overdue sells only');
   const canAccessAllSellReturns = hasRolePermission('Sell', 'Access all sell return');
   const canAccessOwnSellReturns = hasRolePermission('Sell', 'Access own sell return');
   const canAccessSellReturns = canAccessAllSellReturns || canAccessOwnSellReturns;
+  const normalizeOwnerToken = (value: unknown): string => String(value || '').trim().toLowerCase();
+  const currentUserOwnerTokens = useMemo(() => new Set([
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.username,
+    currentUser?.email,
+  ].map(normalizeOwnerToken).filter(Boolean)), [
+    currentUser?.id,
+    currentUser?.name,
+    currentUser?.username,
+    currentUser?.email,
+  ]);
+  const saleBelongsToCurrentUser = (sale?: GlobalSale | null): boolean => {
+    if (!sale || currentUserOwnerTokens.size === 0) return false;
+    const saleOwnerTokens = [
+      sale.addedById,
+      (sale as any).createdById,
+      (sale as any).userId,
+      sale.addedBy,
+    ].map(normalizeOwnerToken).filter(Boolean);
+    return saleOwnerTokens.some((token) => currentUserOwnerTokens.has(token));
+  };
+  const canViewPaymentStatusOnlySale = (sale?: GlobalSale | null): boolean => {
+    const status = getEffectivePaymentStatus(sale);
+    return (
+      (status === 'Paid' && canViewPaidSellsOnly) ||
+      (status === 'Due' && canViewDueSellsOnly) ||
+      (status === 'Partial' && canViewPartialSellsOnly) ||
+      (status === 'Overdue' && canViewOverdueSellsOnly)
+    );
+  };
+  const canAccessFinalSale = (sale?: GlobalSale | null): boolean => {
+    if (!sale) return false;
+    if (canViewAllSells) return true;
+    if (canViewOwnSells && saleBelongsToCurrentUser(sale)) return true;
+    return canViewPaymentStatusOnlySale(sale);
+  };
   const canAccessSellReturnSale = (sale?: GlobalSale | null): boolean => {
     if (!sale) return false;
     if (canAccessAllSellReturns) return true;
     if (!canAccessOwnSellReturns) return false;
-    const owner = String(currentUser?.name || '').trim().toLowerCase();
-    return owner.length > 0 && String(sale.addedBy || '').trim().toLowerCase() === owner;
+    return saleBelongsToCurrentUser(sale);
   };
 
   const canViewLocation = (sale: any) => isLocationAccessible(sale.location || '', currentUser, locations);
@@ -841,17 +883,33 @@ const Sales: React.FC<SalesProps> = ({
         if (!canViewLocation(s)) return false;
         if (!isQuotationRecord) return false;
         if (!canViewAllQuotations && canViewOwnQuotations) {
-          const owner = String(currentUser?.name || '').trim().toLowerCase();
-          return String(s.addedBy || '').trim().toLowerCase() === owner;
+          return saleBelongsToCurrentUser(s);
         }
         return true;
       }
       if (statusFilter === 'Draft') {
         return normalizedStatus === 'Draft';
       }
+      if (statusFilter === 'Final') {
+        return normalizedStatus === 'Final' && canAccessFinalSale(s);
+      }
       return normalizedStatus === statusFilter;
     })
-  ), [sales, statusFilter, canViewAllQuotations, canViewOwnQuotations, currentUser?.name, currentUser, locations]);
+  ), [
+    sales,
+    statusFilter,
+    canViewAllQuotations,
+    canViewOwnQuotations,
+    canViewAllSells,
+    canViewOwnSells,
+    canViewPaidSellsOnly,
+    canViewDueSellsOnly,
+    canViewPartialSellsOnly,
+    canViewOverdueSellsOnly,
+    currentUserOwnerTokens,
+    currentUser,
+    locations,
+  ]);
 
   const paymentStatusOptions = useMemo(() => {
     const order: PaymentStatusValue[] = ['Paid', 'Due', 'Partial', 'Overdue'];

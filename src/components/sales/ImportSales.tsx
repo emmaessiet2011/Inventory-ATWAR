@@ -520,6 +520,7 @@ const ImportSales: React.FC<ImportSalesProps> = () => {
         grandTotal: group.grandTotal,
         items,
         totalItems: items.length,
+        addedById: currentUser?.id || '',
         addedBy: currentUser?.name || 'System',
       };
 

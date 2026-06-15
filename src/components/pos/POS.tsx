@@ -684,6 +684,7 @@ const POS: React.FC<POSProps> = ({ onNavigate }) => {
               : mode === 'suspend'
                 ? 'Suspend'
                 : 'POS',
+      addedById: currentUser?.id || '',
       addedBy: currentUser?.name || 'Admin',
       status,
       saleStatus,
