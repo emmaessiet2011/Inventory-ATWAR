@@ -5668,6 +5668,35 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   };
 
+  const mergeBackendSaleHeader = (localSale: Sale, backendSale: Sale): Sale => {
+    const normalizedBackend = normalizeSaleRecordLoaded(backendSale);
+    const backendItems = Array.isArray(normalizedBackend.items) ? normalizedBackend.items : [];
+    return withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded({
+      ...localSale,
+      ...normalizedBackend,
+      // The generic backend sale response is intentionally compact. Keep the
+      // exact sale lines from the form so stock and payment side effects use
+      // the products the cashier actually sold.
+      items: backendItems.length > 0 ? backendItems : localSale.items,
+      totalItems: backendItems.length > 0 ? normalizedBackend.totalItems : localSale.totalItems,
+      subTotal: backendItems.length > 0 ? normalizedBackend.subTotal : localSale.subTotal,
+      discountType: backendItems.length > 0 ? normalizedBackend.discountType : localSale.discountType,
+      discountAmount: backendItems.length > 0 ? normalizedBackend.discountAmount : localSale.discountAmount,
+      tax: backendItems.length > 0 ? normalizedBackend.tax : localSale.tax,
+      grandTotal: normalizedBackend.grandTotal || localSale.grandTotal,
+      totalAmount: normalizedBackend.totalAmount || localSale.totalAmount,
+      totalPaid: normalizedBackend.totalPaid ?? localSale.totalPaid,
+      sellDue: normalizedBackend.sellDue ?? localSale.sellDue,
+      paymentStatus: normalizedBackend.paymentStatus || localSale.paymentStatus,
+      paymentMethod: normalizedBackend.paymentMethod || localSale.paymentMethod,
+      paymentAccount: normalizedBackend.paymentAccount || localSale.paymentAccount,
+      paymentNote: normalizedBackend.paymentNote || localSale.paymentNote,
+      saleType: normalizedBackend.saleType || localSale.saleType,
+      status: normalizedBackend.status || localSale.status,
+      saleStatus: normalizedBackend.saleStatus || localSale.saleStatus,
+    }));
+  };
+
   const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return failResult(403, 'Permission denied.');
     let saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
@@ -5716,7 +5745,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ? syncOutcome.data as { data?: Sale }
       : {};
     if (syncPayload.data && typeof syncPayload.data === 'object') {
-      saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(syncPayload.data as Sale));
+      saleWithSnapshot = mergeBackendSaleHeader(saleWithSnapshot, syncPayload.data as Sale);
     }
 
     setSales(prev => {
@@ -5840,7 +5869,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       ? syncOutcome.data as { data?: Sale }
       : {};
     if (syncPayload.data && typeof syncPayload.data === 'object') {
-      saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(syncPayload.data as Sale));
+      saleWithSnapshot = mergeBackendSaleHeader(saleWithSnapshot, syncPayload.data as Sale);
     }
     const oldSale = sales.find(s => s.id === saleWithSnapshot.id);
     if (!oldSale) return failResult(404, 'Sale not found.');
