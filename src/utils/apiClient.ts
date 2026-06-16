@@ -150,7 +150,7 @@ export async function apiFetchAllWithRetry<T>(
 export async function syncRecord(
   resource: string,
   data: object,
-): Promise<{ ok: boolean; status: number; error?: string }> {
+): Promise<{ ok: boolean; status: number; error?: string; data?: unknown }> {
   return syncRecordStrict(resource, data);
 }
 
@@ -161,7 +161,7 @@ export async function syncRecord(
 export async function syncRecordStrict(
   resource: string,
   data: object,
-): Promise<{ ok: boolean; status: number; error?: string }> {
+): Promise<{ ok: boolean; status: number; error?: string; data?: unknown }> {
   if (isTestRuntime()) {
     return { ok: true, status: 200 };
   }
@@ -196,7 +196,11 @@ export async function syncRecordStrict(
       console.error(`[syncRecordStrict] ${resource} failed (${res.status})`, detail || data);
       return { ok: false, status: res.status, error: detail || `HTTP ${res.status}` };
     }
-    return { ok: true, status: res.status };
+    let payload: unknown = null;
+    try {
+      payload = await res.json();
+    } catch {}
+    return { ok: true, status: res.status, data: payload };
   } catch (error) {
     return {
       ok: false,

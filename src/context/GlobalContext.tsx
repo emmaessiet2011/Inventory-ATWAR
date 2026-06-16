@@ -824,6 +824,7 @@ export interface CrudMutationResult {
   ok: boolean;
   status?: number;
   error?: string;
+  data?: unknown;
 }
 
 export interface LocationMutationResult extends Partial<CrudMutationResult> {
@@ -3756,6 +3757,23 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // Generates next invoice number using scheme start and digit settings.
+  const deriveLocationInvoicePrefix = (locationName?: string, fallbackPrefix = 'INV-'): string => {
+    const name = String(locationName || '').trim();
+    const normalized = name.toLowerCase();
+    if (normalized.includes('kennol')) return 'KEN-';
+    if (normalized.includes('barka')) return 'BAR-';
+    if (normalized.includes('mowalah') || normalized.includes('muwalah')) return 'MOW-';
+    if (normalized.includes('atwar')) return 'ATW-';
+    const code = name
+      .replace(/[^a-z0-9\s]/gi, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .join('')
+      .slice(0, 3)
+      .toUpperCase();
+    return code ? `${code}-` : fallbackPrefix;
+  };
+
   const nextInvoiceNumber = (locationId?: string, prefixOverride?: string): string => {
     const year = new Date().getFullYear();
     const locationRef = String(locationId || '').trim().toLowerCase();
@@ -3780,7 +3798,15 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const defaultScheme = invoiceSchemes.find(s => s.isDefault) || invoiceSchemes[0];
     const activeScheme = schemeByPrefix || schemeByLocation || defaultScheme;
 
-    const prefix = String(prefixOverride || activeScheme?.prefix || settings.salesInvoicePrefix || 'INV-');
+    const schemePrefix = String(prefixOverride || activeScheme?.prefix || settings.salesInvoicePrefix || 'INV-');
+    const protectedPrefixes = [
+      settings.draftPrefix || 'DR-',
+      settings.quotationPrefix || 'QT-',
+    ].map(prefix => String(prefix || '').trim().toLowerCase()).filter(Boolean);
+    const shouldUseLocationPrefix = !!locationObj && !protectedPrefixes.includes(schemePrefix.trim().toLowerCase());
+    const prefix = shouldUseLocationPrefix
+      ? deriveLocationInvoicePrefix(locationObj?.name, schemePrefix)
+      : schemePrefix;
     const startFrom = Math.max(1, Number(activeScheme?.startFrom || 1));
     const digits = Math.max(1, Number(activeScheme?.numberOfDigits || 4));
 
@@ -4797,11 +4823,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // ============================================================
 
   const toCrudResult = (
-    result: { ok: boolean; status: number; error?: string },
+    result: { ok: boolean; status: number; error?: string; data?: unknown },
   ): CrudMutationResult => ({
     ok: !!result.ok,
     status: Number(result.status || 0),
     error: result.ok ? undefined : (result.error || `HTTP ${result.status || 0}`),
+    data: result.data,
   });
   const okResult = (status = 200): CrudMutationResult => ({ ok: true, status });
   const failResult = (status = 0, error = 'Operation failed'): CrudMutationResult => ({ ok: false, status, error });
@@ -5597,7 +5624,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return failResult(403, 'Permission denied.');
-    const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
+    let saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
     const linkedLocation = resolveLocationRecordByName(saleWithSnapshot.location);
     if (!linkedLocation || linkedLocation.isActive === false) {
       recordActivity({
@@ -5638,6 +5665,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Failed to save sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} to Postgres (${syncOutcome.status || 0}).`,
       });
       return toCrudResult(syncOutcome);
+    }
+    const syncPayload = syncOutcome.data && typeof syncOutcome.data === 'object'
+      ? syncOutcome.data as { data?: Sale }
+      : {};
+    if (syncPayload.data && typeof syncPayload.data === 'object') {
+      saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(syncPayload.data as Sale));
     }
 
     setSales(prev => {
@@ -5732,7 +5765,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!canEditTransaction('Sales', String(normalizedSale.invoiceNo || normalizedSale.id || '').trim(), normalizedSale.date)) {
       return failResult(403, 'Edit window expired.');
     }
-    const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizedSale);
+    let saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizedSale);
     const syncOutcome = await syncRecordStrict('sales', saleWithSnapshot);
     if (!syncOutcome.ok) {
       recordActivity({
@@ -5741,6 +5774,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Failed to update sale ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} in Postgres (${syncOutcome.status || 0}).`,
       });
       return toCrudResult(syncOutcome);
+    }
+    const syncPayload = syncOutcome.data && typeof syncOutcome.data === 'object'
+      ? syncOutcome.data as { data?: Sale }
+      : {};
+    if (syncPayload.data && typeof syncPayload.data === 'object') {
+      saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(syncPayload.data as Sale));
     }
     const oldSale = sales.find(s => s.id === saleWithSnapshot.id);
     if (!oldSale) return failResult(404, 'Sale not found.');

@@ -933,6 +933,44 @@ const resolveLookupId = async (delegate, explicitId, nameCandidates = [], nameFi
   return null;
 };
 
+const deriveLocationInvoicePrefix = (locationName) => {
+  const name = String(locationName || '').trim();
+  const normalized = name.toLowerCase();
+  if (normalized.includes('kennol')) return 'KEN-';
+  if (normalized.includes('barka')) return 'BAR-';
+  if (normalized.includes('mowalah') || normalized.includes('muwalah')) return 'MOW-';
+  if (normalized.includes('atwar')) return 'ATW-';
+
+  const letters = name
+    .replace(/[^a-z0-9\s]/gi, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.replace(/[^a-z0-9]/gi, ''))
+    .join('')
+    .slice(0, 3)
+    .toUpperCase();
+  return `${letters || 'LOC'}-`;
+};
+
+const generateNextSaleInvoiceNo = async (locationName) => {
+  const year = new Date().getFullYear();
+  const prefix = deriveLocationInvoicePrefix(locationName);
+  const rows = await prisma.sale.findMany({
+    where: { invoiceNo: { startsWith: `${prefix}${year}-`, mode: 'insensitive' } },
+    select: { invoiceNo: true },
+  });
+  const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^${escapedPrefix}${year}-(\\d+)$`, 'i');
+  let maxSerial = 0;
+  rows.forEach((row) => {
+    const match = String(row.invoiceNo || '').trim().match(pattern);
+    if (!match) return;
+    const serial = Number(match[1]);
+    if (Number.isFinite(serial)) maxSerial = Math.max(maxSerial, serial);
+  });
+  return `${prefix}${year}-${String(maxSerial + 1).padStart(4, '0')}`;
+};
+
 app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   const resource = String(req.params.resource || '').trim();
   const raw = toObject(req.body);
@@ -1189,7 +1227,15 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           }
         }
         const taxAmountCandidate = raw.taxAmount ?? raw.tax;
-        const normalizedInvoiceNo = String(raw.invoiceNo || `INV-${id}`).trim();
+        const normalizedStatus = normStatus(raw.status || raw.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL');
+        let normalizedInvoiceNo = String(raw.invoiceNo || `INV-${id}`).trim();
+        const existingSaleById = await prisma.sale.findUnique({
+          where: { id },
+          select: { id: true, invoiceNo: true, addedById: true, meta: true },
+        });
+        if (!existingSaleById && normalizedStatus === 'FINAL') {
+          normalizedInvoiceNo = await generateNextSaleInvoiceNo(resolvedLocationName);
+        }
         const d = {
           invoiceNo: normalizedInvoiceNo,
           date: normDate(raw.date),
@@ -1200,7 +1246,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           addedById,
           salesRepresentativeId,
           deliveryPersonId,
-          status: normStatus(raw.status || raw.saleStatus, ['FINAL', 'DRAFT', 'QUOTATION', 'PROFORMA'], 'FINAL'),
+          status: normalizedStatus,
           paymentStatus: normStatus(raw.paymentStatus, ['PAID', 'DUE', 'PARTIAL', 'OVERDUE'], 'DUE'),
           shippingStatus: normStatus(raw.shippingStatus, ['PENDING', 'ORDERED', 'PACKED', 'SHIPPED', 'DELIVERED', 'CANCELLED'], 'PENDING'),
           subTotal: toFiniteNumber(raw.subTotal, 0),
@@ -1211,12 +1257,12 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           totalPaid: toFiniteNumber(raw.totalPaid, 0),
           sellDue: toFiniteNumber(raw.sellDue, 0),
           sellReturnDue: toFiniteNumber(raw.sellReturnDue, 0),
-          meta: raw,
+          meta: { ...raw, invoiceNo: normalizedInvoiceNo },
         };
-        const [existingSaleById, existingSaleByInvoiceNo] = await Promise.all([
-          prisma.sale.findUnique({ where: { id }, select: { id: true, addedById: true, meta: true } }),
-          prisma.sale.findUnique({ where: { invoiceNo: normalizedInvoiceNo }, select: { id: true, locationId: true, addedById: true, meta: true } }),
-        ]);
+        const existingSaleByInvoiceNo = await prisma.sale.findUnique({
+          where: { invoiceNo: normalizedInvoiceNo },
+          select: { id: true, locationId: true, addedById: true, meta: true },
+        });
         if (existingSaleById?.addedById && !d.addedById) {
           d.addedById = existingSaleById.addedById;
           d.meta = {
@@ -1233,24 +1279,43 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
             code: 'P2002',
           });
         } else {
+          let savedSale = null;
           try {
-            await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
+            savedSale = await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
           } catch (error) {
             const duplicateInvoice = error?.code === 'P2002'
               && Array.isArray(error?.meta?.target)
               && error.meta.target.includes('invoiceNo');
             if (!duplicateInvoice) throw error;
-            const winner = await prisma.sale.findUnique({
-              where: { invoiceNo: normalizedInvoiceNo },
-              select: { id: true },
-            });
-            if (!winner || winner.id === id) throw error;
-            return res.status(409).json({
-              ok: false,
-              error: `Invoice number ${normalizedInvoiceNo} already belongs to another sale. Create a new invoice number instead of reusing it.`,
-              code: 'P2002',
-            });
+            if (existingSaleById || normalizedStatus !== 'FINAL') {
+              const winner = await prisma.sale.findUnique({
+                where: { invoiceNo: normalizedInvoiceNo },
+                select: { id: true },
+              });
+              if (!winner || winner.id === id) throw error;
+              return res.status(409).json({
+                ok: false,
+                error: `Invoice number ${normalizedInvoiceNo} already belongs to another sale. Create a new invoice number instead of reusing it.`,
+                code: 'P2002',
+              });
+            }
+            const retryInvoiceNo = await generateNextSaleInvoiceNo(resolvedLocationName);
+            const retryData = {
+              ...d,
+              invoiceNo: retryInvoiceNo,
+              meta: { ...toObject(d.meta), invoiceNo: retryInvoiceNo },
+            };
+            savedSale = await prisma.sale.upsert({ where: { id }, update: retryData, create: { id, ...retryData } });
           }
+          responseData = savedSale
+            ? serializeSaleRecord(await prisma.sale.findUnique({
+                where: { id: savedSale.id },
+                include: {
+                  location: { select: { id: true, name: true } },
+                  addedBy: { select: { id: true, name: true, username: true, email: true } },
+                },
+              }))
+            : null;
         }
         break;
       }
@@ -1761,7 +1826,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
     }
-    return res.json({ ok: true, id, resource });
+    return res.json({ ok: true, id, resource, data: responseData });
   } catch (error) {
     console.error(`[sync/record] Failed resource=${resource} id=${id}`, error);
     return sendPrismaError(res, error, `Failed to sync ${resource} record`);
@@ -1773,6 +1838,7 @@ app.post('/api/sync/customer-payment', requireAuth, async (req, res) => {
   const id = String(raw.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
 
+  let responseData = null;
   try {
     const [customerId, locationId, accountId] = await Promise.all([
       resolveLookupId(prisma.customer, raw.customerId || raw.contactId, [raw.contactName, raw.customerName], ['businessName', 'name', 'mobile']),
