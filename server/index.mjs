@@ -117,6 +117,11 @@ const serializeAppUser = (user) => {
     },
   };
 };
+const SALE_ARCHIVE_KEYS = ['deletedAt', 'archivedAt', 'deletedBy', 'deletedById'];
+const isArchivedSaleRecord = (sale) => {
+  const meta = toObject(sale?.meta);
+  return SALE_ARCHIVE_KEYS.some((key) => String(meta[key] || '').trim());
+};
 const serializeSaleRecord = (sale) => {
   const meta = toObject(sale?.meta);
   const locationName = String(sale?.location?.name || meta.location || meta.businessLocation || '').trim();
@@ -134,6 +139,67 @@ const serializeSaleRecord = (sale) => {
       ...(addedById ? { addedById } : {}),
     },
   };
+};
+const compactSaleAuditSnapshot = (sale) => {
+  const meta = toObject(sale?.meta);
+  return {
+    id: sale?.id,
+    invoiceNo: sale?.invoiceNo,
+    date: sale?.date,
+    locationId: sale?.locationId,
+    location: sale?.location?.name || meta.location || meta.businessLocation || null,
+    addedById: sale?.addedById || meta.addedById || null,
+    addedBy: sale?.addedBy?.name || sale?.addedBy?.username || meta.addedBy || null,
+    customerId: sale?.customerId || meta.customerId || null,
+    customerName: sale?.customer?.businessName || sale?.customer?.name || meta.customerName || null,
+    status: sale?.status,
+    paymentStatus: sale?.paymentStatus,
+    grandTotal: sale?.grandTotal,
+    totalPaid: sale?.totalPaid,
+    sellDue: sale?.sellDue,
+    totalItems: Array.isArray(sale?.items) ? sale.items.length : meta.totalItems,
+  };
+};
+const archiveSaleRecord = async (id, req) => {
+  const sale = await prisma.sale.findUnique({
+    where: { id },
+    include: {
+      location: { select: { id: true, name: true } },
+      addedBy: { select: { id: true, name: true, username: true, email: true } },
+      customer: { select: { id: true, businessName: true, name: true } },
+      items: { select: { id: true } },
+    },
+  });
+  if (!sale) return null;
+
+  const now = new Date().toISOString();
+  const currentMeta = toObject(sale.meta);
+  const actorId = String(req.user?.id || '').trim() || null;
+  let actorName = String(req.user?.username || req.user?.email || '').trim();
+  if (actorId) {
+    const actor = await prisma.appUser.findUnique({
+      where: { id: actorId },
+      select: { name: true, username: true, email: true },
+    }).catch(() => null);
+    actorName = String(actor?.name || actor?.username || actor?.email || actorName || 'System').trim();
+  }
+
+  const archiveMeta = {
+    ...currentMeta,
+    archived: true,
+    archivedAt: currentMeta.archivedAt || now,
+    deletedAt: currentMeta.deletedAt || now,
+    deletedById: currentMeta.deletedById || actorId,
+    deletedBy: currentMeta.deletedBy || actorName || 'System',
+    deleteMode: 'archived',
+    archiveSnapshot: currentMeta.archiveSnapshot || compactSaleAuditSnapshot(sale),
+  };
+
+  await prisma.sale.update({
+    where: { id },
+    data: { meta: archiveMeta },
+  });
+  return { sale, meta: archiveMeta };
 };
 
 const enforceCriticalAdminStatus = async (userId) => {
@@ -494,11 +560,15 @@ app.get('/api/data/:resource', async (req, res) => {
       delegate.findMany(findManyArgs),
       delegate.count({ where }),
     ]);
-    const normalizedData = cfg.delegate === 'appUser'
-      ? data.map((row) => serializeAppUser(row))
-      : cfg.delegate === 'sale'
-        ? data.map((row) => serializeSaleRecord(row))
+    const includeArchivedSales = String(req.query.includeArchived || req.query.includeDeleted || '').trim().toLowerCase() === 'true';
+    const visibleData = cfg.delegate === 'sale' && !includeArchivedSales
+      ? data.filter((row) => !isArchivedSaleRecord(row))
       : data;
+    const normalizedData = cfg.delegate === 'appUser'
+      ? visibleData.map((row) => serializeAppUser(row))
+      : cfg.delegate === 'sale'
+        ? visibleData.map((row) => serializeSaleRecord(row))
+      : visibleData;
 
     return res.json({
       ok: true,
@@ -506,8 +576,8 @@ app.get('/api/data/:resource', async (req, res) => {
       pagination: {
         page,
         pageSize: paginate ? pageSize : normalizedData.length,
-        total,
-        totalPages: paginate ? Math.max(1, Math.ceil(total / pageSize)) : 1,
+        total: cfg.delegate === 'sale' && !includeArchivedSales ? normalizedData.length : total,
+        totalPages: paginate ? Math.max(1, Math.ceil((cfg.delegate === 'sale' && !includeArchivedSales ? normalizedData.length : total) / pageSize)) : 1,
       },
     });
   } catch (error) {
@@ -536,6 +606,9 @@ app.get('/api/data/:resource/:id', async (req, res) => {
     }
     const data = await delegate.findUnique(findUniqueArgs);
     if (!data) return res.status(404).json({ ok: false, error: 'Record not found' });
+    if (cfg.delegate === 'sale' && isArchivedSaleRecord(data) && String(req.query.includeArchived || req.query.includeDeleted || '').trim().toLowerCase() !== 'true') {
+      return res.status(404).json({ ok: false, error: 'Record archived' });
+    }
     const normalizedData = cfg.delegate === 'appUser'
       ? serializeAppUser(data)
       : cfg.delegate === 'sale'
@@ -639,6 +712,11 @@ app.delete('/api/data/:resource/:id', async (req, res) => {
       if (user && isCriticalAdminEmail(user.email)) {
         return res.status(400).json({ ok: false, error: 'Critical admin user cannot be deleted' });
       }
+    }
+    if (cfg.delegate === 'sale') {
+      const archived = await archiveSaleRecord(id, req);
+      if (!archived) return res.status(404).json({ ok: false, error: 'Record not found' });
+      return res.json({ ok: true, deleted: true, archived: true, id });
     }
     await delegate.delete({ where: { [cfg.idField]: id } });
     return res.json({ ok: true, deleted: true, id });
@@ -1136,19 +1214,24 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           meta: raw,
         };
         const [existingSaleById, existingSaleByInvoiceNo] = await Promise.all([
-          prisma.sale.findUnique({ where: { id }, select: { id: true } }),
-          prisma.sale.findUnique({ where: { invoiceNo: normalizedInvoiceNo }, select: { id: true } }),
+          prisma.sale.findUnique({ where: { id }, select: { id: true, addedById: true, meta: true } }),
+          prisma.sale.findUnique({ where: { invoiceNo: normalizedInvoiceNo }, select: { id: true, locationId: true, addedById: true, meta: true } }),
         ]);
+        if (existingSaleById?.addedById && !d.addedById) {
+          d.addedById = existingSaleById.addedById;
+          d.meta = {
+            ...toObject(d.meta),
+            addedById: existingSaleById.addedById,
+            addedBy: toObject(existingSaleById.meta).addedBy || toObject(d.meta).addedBy,
+          };
+        }
 
         if (existingSaleByInvoiceNo && existingSaleByInvoiceNo.id !== id) {
-          if (existingSaleById) {
-            return res.status(409).json({
-              ok: false,
-              error: 'Invoice number already exists on a different sale record',
-              code: 'P2002',
-            });
-          }
-          await prisma.sale.update({ where: { id: existingSaleByInvoiceNo.id }, data: d });
+          return res.status(409).json({
+            ok: false,
+            error: `Invoice number ${normalizedInvoiceNo} already belongs to another sale. Create a new invoice number instead of reusing it.`,
+            code: 'P2002',
+          });
         } else {
           try {
             await prisma.sale.upsert({ where: { id }, update: d, create: { id, ...d } });
@@ -1161,8 +1244,12 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
               where: { invoiceNo: normalizedInvoiceNo },
               select: { id: true },
             });
-            if (!winner || winner.id === id || existingSaleById) throw error;
-            await prisma.sale.update({ where: { id: winner.id }, data: d });
+            if (!winner || winner.id === id) throw error;
+            return res.status(409).json({
+              ok: false,
+              error: `Invoice number ${normalizedInvoiceNo} already belongs to another sale. Create a new invoice number instead of reusing it.`,
+              code: 'P2002',
+            });
           }
         }
         break;
@@ -1520,6 +1607,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         break;
       }
       case 'activityLogs': {
+        const rawMeta = toObject(raw.meta);
         const d = {
           userName: String(raw.user || raw.userName || 'System'),
           action: String(raw.action || 'Updated'),
@@ -1527,7 +1615,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
           description: String(raw.description || ''),
           date: normDate(raw.date),
           ipAddress: raw.ipAddress ? String(raw.ipAddress) : null,
-          meta: raw,
+          meta: { ...raw, ...rawMeta },
         };
         await prisma.activityLog.upsert({ where: { id }, update: d, create: { id, ...d } });
         break;
@@ -1904,7 +1992,11 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       case 'productVariations': await prisma.productVariation.deleteMany({ where: { id } }); break;
       case 'customers':       await prisma.customer.deleteMany({ where: { id } }); break;
       case 'suppliers':       await prisma.supplier.deleteMany({ where: { id } }); break;
-      case 'sales':           await prisma.sale.deleteMany({ where: { id } }); break;
+      case 'sales': {
+        const archived = await archiveSaleRecord(id, req);
+        if (!archived) return res.status(404).json({ ok: false, error: 'Record not found' });
+        break;
+      }
       case 'payments':        await prisma.payment.deleteMany({ where: { id } }); break;
       case 'users': {
         const user = await prisma.appUser.findUnique({ where: { id }, select: { email: true } });
@@ -1937,7 +2029,7 @@ app.delete('/api/sync/record/:resource/:id', requireAuth, requireCanDelete, asyn
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic delete` });
     }
-    return res.json({ ok: true, deleted: true, id, resource });
+    return res.json({ ok: true, deleted: true, archived: resource === 'sales', id, resource });
   } catch (error) {
     return sendPrismaError(res, error, `Failed to delete ${resource} record`);
   }

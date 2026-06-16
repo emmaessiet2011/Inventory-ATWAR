@@ -361,6 +361,12 @@ export interface Sale {
   sellNote?: string;
   staffNote?: string;
   document?: string;
+  archived?: boolean;
+  archivedAt?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletedById?: string;
+  meta?: Record<string, unknown>;
   items: SaleItem[];
   subTotal: number;
   discountType: string;
@@ -684,6 +690,7 @@ export interface ActivityLogEntry {
   description: string;
   date: string;
   ipAddress?: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface ActivityLogInput {
@@ -694,6 +701,7 @@ export interface ActivityLogInput {
   date?: string;
   ipAddress?: string;
   id?: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface AppUser {
@@ -3163,7 +3171,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setSuppliers((remoteSuppliers as Supplier[]).map((supplier) => normalizeSupplierRecord(supplier)));
         }
         if (remoteSales) {
-          setSales((remoteSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)));
+          setSales((remoteSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)).filter((sale) => !isArchivedSaleRecord(sale)));
         }
         if (remotePayments) {
           setPayments((remotePayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
@@ -3358,7 +3366,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           );
         }
         if (freshSales) {
-          setSales((freshSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)));
+          setSales((freshSales as Sale[]).map((sale) => normalizeSaleRecordLoaded(sale)).filter((sale) => !isArchivedSaleRecord(sale)));
         }
         if (freshPayments) {
           setPayments((freshPayments as Payment[]).map((payment) => normalizePaymentRecordLoaded(payment)));
@@ -3623,6 +3631,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       description: String(entry.description || '').trim() || '--',
       date: timestamp,
       ipAddress: entry.ipAddress || '',
+      meta: entry.meta,
     };
     try {
       const saved = await syncRecordStrict('activityLogs', next);
@@ -3789,8 +3798,18 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     });
 
-    const nextSerial = Math.max(startFrom, maxSerial + 1);
-    return `${prefix}${year}-${String(nextSerial).padStart(digits, '0')}`;
+    const usedInvoiceNumbers = new Set(
+      sales
+        .map(sale => String(sale.invoiceNo || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    let nextSerial = Math.max(startFrom, maxSerial + 1);
+    let candidate = `${prefix}${year}-${String(nextSerial).padStart(digits, '0')}`;
+    while (usedInvoiceNumbers.has(candidate.toLowerCase())) {
+      nextSerial += 1;
+      candidate = `${prefix}${year}-${String(nextSerial).padStart(digits, '0')}`;
+    }
+    return candidate;
   };
 
   const normalizeText = (value?: string): string => String(value || '').trim().toLowerCase();
@@ -4494,6 +4513,12 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       sellNote: asString(sale.sellNote) || undefined,
       staffNote: asString(sale.staffNote) || undefined,
       document: asString(sale.document) || undefined,
+      archived: Boolean(sale.archived),
+      archivedAt: asString(sale.archivedAt) || undefined,
+      deletedAt: asString(sale.deletedAt) || undefined,
+      deletedBy: asString(sale.deletedBy) || undefined,
+      deletedById: asString(sale.deletedById) || undefined,
+      meta: sale.meta,
       items: Array.isArray(sale.items) ? sale.items.map((item) => normalizeSaleItemRecord(item)) : [],
       subTotal: asNumber(sale.subTotal),
       discountType: asString(sale.discountType),
@@ -4503,6 +4528,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       status: normalizedStatus,
     };
   };
+
+  const isArchivedSaleRecord = (sale: Partial<Sale>): boolean =>
+    Boolean(sale.archived) ||
+    Boolean(asString(sale.archivedAt)) ||
+    Boolean(asString(sale.deletedAt));
 
   const normalizePaymentRecordLoaded = (payment: Payment): Payment => ({
     ...payment,
@@ -5412,7 +5442,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!isLiveSyncEnabled() || !hasValidAuthToken()) return;
     const freshSales = await apiFetchAll<Sale>('sales').catch(() => null);
     if (!freshSales) return;
-    setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)));
+    setSales((freshSales as Sale[]).map((record) => normalizeSaleRecordLoaded(record)).filter((sale) => !isArchivedSaleRecord(sale)));
   };
 
   const persistSalesFinancialRows = async (
@@ -5545,6 +5575,26 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     setProducts((freshProducts as Product[]).map((record) => normalizeProductRecord(record, productCategories, productBrands, warranties)));
   };
 
+  const buildSaleAuditMeta = (sale: Partial<Sale>, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    saleId: String(sale.id || '').trim(),
+    invoiceNo: String(sale.invoiceNo || '').trim(),
+    date: String(sale.date || '').trim(),
+    location: String(sale.location || '').trim(),
+    customerId: String(sale.customerId || '').trim(),
+    customerName: String(sale.customerName || '').trim(),
+    addedById: String(sale.addedById || '').trim(),
+    addedBy: String(sale.addedBy || '').trim(),
+    status: String(sale.status || sale.saleStatus || '').trim(),
+    paymentStatus: String(sale.paymentStatus || '').trim(),
+    grandTotal: Number(sale.grandTotal || sale.totalAmount || 0),
+    totalPaid: Number(sale.totalPaid || 0),
+    sellDue: Number(sale.sellDue || 0),
+    totalItems: Array.isArray(sale.items) ? sale.items.length : Number(sale.totalItems || 0),
+    actorId: String(currentUser?.id || '').trim(),
+    actorName: String(currentUser?.name || currentUser?.username || 'System').trim(),
+    ...extra,
+  });
+
   const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return failResult(403, 'Permission denied.');
     const saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
@@ -5602,7 +5652,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     recordActivity({
       action: 'Created',
       module: 'Sales',
-      description: `Created sale: ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}`,
+      description: `Created sale: ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} (${saleWithSnapshot.location || 'No location'}) by ${saleWithSnapshot.addedBy || 'Unknown user'}`,
+      meta: buildSaleAuditMeta(saleWithSnapshot, { auditEvent: 'sale-created' }),
     });
 
     let stockSyncFailure: CrudMutationResult | null = null;
@@ -5752,7 +5803,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     recordActivity({
       action: 'Updated',
       module: 'Sales',
-      description: `Updated sale: ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}`,
+      description: `Updated sale: ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id} (${saleWithSnapshot.location || 'No location'}) by ${saleWithSnapshot.addedBy || 'Unknown user'}`,
+      meta: buildSaleAuditMeta(saleWithSnapshot, {
+        auditEvent: 'sale-updated',
+        previous: oldSale ? buildSaleAuditMeta(oldSale, { auditEvent: 'sale-before-update' }) : undefined,
+      }),
     });
 
     // Sync the auto-generated payment record if paid amount changed
@@ -5885,7 +5940,14 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     recordActivity({
       action: 'Deleted',
       module: 'Sales',
-      description: `Deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId}`,
+      description: `Archived deleted sale: ${existingSale?.invoiceNo || existingSale?.id || normalizedSaleId} (${existingSale?.location || 'No location'}) originally added by ${existingSale?.addedBy || 'Unknown user'}`,
+      meta: buildSaleAuditMeta(existingSale || { id: normalizedSaleId }, {
+        auditEvent: 'sale-archived-delete',
+        deletedAt: getBusinessDateTimeString(),
+        deletedById: String(currentUser?.id || '').trim(),
+        deletedBy: String(currentUser?.name || currentUser?.username || 'System').trim(),
+        deletedSaleSnapshot: existingSale ? buildSaleAuditMeta(existingSale, { auditEvent: 'deleted-sale-snapshot' }) : undefined,
+      }),
     });
     void refreshSalesFromServer();
     if (stockSyncFailure) {
