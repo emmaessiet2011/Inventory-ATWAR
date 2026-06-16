@@ -982,6 +982,7 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
   }
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
 
+  let responseData = null;
   try {
     switch (resource) {
       case 'products': {
@@ -1838,7 +1839,6 @@ app.post('/api/sync/customer-payment', requireAuth, async (req, res) => {
   const id = String(raw.id || '').trim();
   if (!id) return res.status(400).json({ ok: false, error: 'id is required' });
 
-  let responseData = null;
   try {
     const [customerId, locationId, accountId] = await Promise.all([
       resolveLookupId(prisma.customer, raw.customerId || raw.contactId, [raw.contactName, raw.customerName], ['businessName', 'name', 'mobile']),

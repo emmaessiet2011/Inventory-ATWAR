@@ -366,6 +366,9 @@ export interface Sale {
   deletedAt?: string;
   deletedBy?: string;
   deletedById?: string;
+  stockDeducted?: boolean;
+  stockDeductedAt?: string;
+  stockDeductionFailedAt?: string;
   meta?: Record<string, unknown>;
   items: SaleItem[];
   subTotal: number;
@@ -5622,6 +5625,49 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     ...extra,
   });
 
+  const getSaleStockDeductedFlag = (sale: Partial<Sale>): boolean | null => {
+    const rawMeta = sale.meta && typeof sale.meta === 'object' && !Array.isArray(sale.meta) ? sale.meta : {};
+    const direct = (sale as any).stockDeducted;
+    const metaValue = (rawMeta as any).stockDeducted;
+    if (direct === true || metaValue === true) return true;
+    if (direct === false || metaValue === false) return false;
+    return null;
+  };
+
+  const usesProtectedLocationInvoicePrefix = (invoiceNo?: string): boolean =>
+    /^(KEN|BAR|ATW|MOW)-\d{4}-\d+$/i.test(String(invoiceNo || '').trim());
+
+  const shouldRestoreStockForDeletedSale = (sale: Partial<Sale>): boolean => {
+    const flag = getSaleStockDeductedFlag(sale);
+    if (flag !== null) return flag;
+    // Legacy invoices pre-date the stock marker and historically did deduct stock.
+    // New location-prefixed invoices without the marker were created during the partial-save bug window.
+    return !usesProtectedLocationInvoicePrefix(sale.invoiceNo);
+  };
+
+  const withSaleStockDeductionMarker = (
+    sale: Sale,
+    deducted: boolean,
+    extra: Record<string, unknown> = {},
+  ): Sale => {
+    const currentMeta = sale.meta && typeof sale.meta === 'object' && !Array.isArray(sale.meta) ? sale.meta : {};
+    const now = getBusinessDateTimeString();
+    return {
+      ...sale,
+      stockDeducted: deducted,
+      stockDeductedAt: deducted ? now : sale.stockDeductedAt,
+      stockDeductionFailedAt: deducted ? undefined : now,
+      meta: {
+        ...currentMeta,
+        stockDeducted: deducted,
+        stockDeductedAt: deducted ? now : (currentMeta as any).stockDeductedAt,
+        stockDeductionFailedAt: deducted ? undefined : now,
+        stockDeductionLocation: sale.location || '',
+        ...extra,
+      },
+    };
+  };
+
   const addSale = async (sale: Sale): Promise<CrudMutationResult> => {
     if (!enforcePermissionBoundary('Sell', 'Add Sell', 'Create sale')) return failResult(403, 'Permission denied.');
     let saleWithSnapshot = withSaleCustomerGroupSnapshot(normalizeSaleRecordLoaded(sale));
@@ -5693,12 +5739,27 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (isFinalizedSale(saleWithSnapshot)) {
       const stockResult = await applyStockDelta(buildSaleStockDelta(saleWithSnapshot, -1), saleWithSnapshot.location);
       if (!stockResult.ok) {
+        const failedStockSale = withSaleStockDeductionMarker(saleWithSnapshot, false, {
+          stockDeductionError: stockResult.error || `HTTP ${stockResult.status || 0}`,
+        });
+        await syncRecordStrict('sales', failedStockSale);
+        saleWithSnapshot = failedStockSale;
+        setSales(prev => prev.map(existing =>
+          String(existing.id || '').trim() === String(saleWithSnapshot.id || '').trim() ? saleWithSnapshot : existing,
+        ));
         recordActivity({
           action: 'Blocked',
           module: 'Sales',
           description: `Sale saved but stock sync failed for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
         });
         stockSyncFailure = stockResult;
+      } else {
+        const stockMarkedSale = withSaleStockDeductionMarker(saleWithSnapshot, true);
+        await syncRecordStrict('sales', stockMarkedSale);
+        saleWithSnapshot = stockMarkedSale;
+        setSales(prev => prev.map(existing =>
+          String(existing.id || '').trim() === String(saleWithSnapshot.id || '').trim() ? saleWithSnapshot : existing,
+        ));
       }
 
       if (!isWalkInSale(saleWithSnapshot)) {
@@ -5802,6 +5863,11 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         description: `Sale updated but stock sync failed for ${saleWithSnapshot.invoiceNo || saleWithSnapshot.id}: ${stockResult.error || `HTTP ${stockResult.status || 0}`}.`,
       });
       stockSyncFailure = stockResult;
+    } else {
+      const shouldMarkStockDeducted = isFinalizedSale(saleWithSnapshot);
+      const stockMarkedSale = withSaleStockDeductionMarker(saleWithSnapshot, shouldMarkStockDeducted);
+      await syncRecordStrict('sales', stockMarkedSale);
+      saleWithSnapshot = stockMarkedSale;
     }
 
     const oldDue = isFinalizedSale(oldSale) && !isWalkInSale(oldSale) ? saleDueAmount(oldSale) : 0;
@@ -5940,7 +6006,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const saleToDelete = sales.find(s => String(s.id || '').trim() === normalizedSaleId);
     let stockSyncFailure: CrudMutationResult | null = null;
     if (saleToDelete) {
-      if (isFinalizedSale(saleToDelete)) {
+      if (isFinalizedSale(saleToDelete) && shouldRestoreStockForDeletedSale(saleToDelete)) {
         const stockResult = await applyStockDelta(buildSaleStockDelta(saleToDelete, +1), saleToDelete.location);
         if (!stockResult.ok) {
           recordActivity({
@@ -5950,6 +6016,16 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           });
           stockSyncFailure = stockResult;
         }
+      } else if (isFinalizedSale(saleToDelete)) {
+        recordActivity({
+          action: 'Skipped',
+          module: 'Sales',
+          description: `Skipped stock rollback for ${saleToDelete.invoiceNo || saleToDelete.id}: no successful stock deduction was recorded.`,
+          meta: buildSaleAuditMeta(saleToDelete, {
+            auditEvent: 'sale-delete-stock-rollback-skipped',
+            stockDeducted: getSaleStockDeductedFlag(saleToDelete),
+          }),
+        });
       }
 
       if (!isWalkInSale(saleToDelete) && isFinalizedSale(saleToDelete)) {
