@@ -464,46 +464,29 @@ export const simulateStockTransfer = ({
     const qty = round3(Number(item.qty || 0));
     if (!qty) return;
     const source = getSourceProduct(item);
-    const sourceUsesProductStock = isWarehouseLocationForProduct(source, locationFromId, transfer.locationFrom);
-    const sourceInventory = sourceUsesProductStock
-      ? null
-      : getInventoryRecord(source, locationFromId, transfer.locationFrom, direction < 0);
-    const sourceCurrent = sourceUsesProductStock
-      ? Number(source.stock || 0)
-      : Number(sourceInventory?.stock || 0);
+    const sourceInventory = getInventoryRecord(source, locationFromId, transfer.locationFrom, direction < 0);
+    const sourceCurrent = Number(sourceInventory?.stock || 0);
     const deltaOut = round3(-qty * direction);
     const sourceNext = round3(sourceCurrent + deltaOut);
+    
     if (sourceNext < -0.0001) {
       throw new Error(`Insufficient stock for "${source.name}" at "${transfer.locationFrom}".`);
     }
-    if (sourceUsesProductStock) {
-      source.stock = Math.max(0, sourceNext);
-      syncWarehouseMirrorInventory(source, locationFromId, source.stock);
-    } else if (sourceInventory) {
-      sourceInventory.stock = Math.max(0, sourceNext);
-    }
+    sourceInventory.stock = Math.max(0, sourceNext);
 
     if (direction > 0) {
       ensureProductVisibleAtLocation(source, locationToId, transfer.locationTo, locationFromId, transfer.locationFrom);
     }
-    const targetUsesProductStock = isWarehouseLocationForProduct(source, locationToId, transfer.locationTo);
-    const targetInventory = targetUsesProductStock
-      ? null
-      : getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
+    
+    const targetInventory = getInventoryRecord(source, locationToId, transfer.locationTo, direction > 0);
     const deltaIn = round3(qty * direction);
-    const targetCurrent = targetUsesProductStock
-      ? Number(source.stock || 0)
-      : Number(targetInventory?.stock || 0);
+    const targetCurrent = Number(targetInventory?.stock || 0);
     const targetNext = round3(targetCurrent + deltaIn);
+    
     if (targetNext < -0.0001) {
       throw new Error(`Insufficient stock at target "${transfer.locationTo}" for SKU "${item.sku}".`);
     }
-    if (targetUsesProductStock) {
-      source.stock = Math.max(0, targetNext);
-      syncWarehouseMirrorInventory(source, locationToId, source.stock);
-    } else if (targetInventory) {
-      targetInventory.stock = Math.max(0, targetNext);
-    }
+    targetInventory.stock = Math.max(0, targetNext);
 
     const transferNote = `${notePrefix ? `${notePrefix}: ` : ''}${transfer.locationFrom} -> ${transfer.locationTo}`;
     const outType = deltaOut < 0 ? 'Stock Transfer Out' : 'Stock Transfer Reversal In';
@@ -515,7 +498,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: outType,
       change: deltaOut,
-      newQty: sourceUsesProductStock ? Number(source.stock || 0) : Number(sourceInventory?.stock || 0),
+      newQty: Number(sourceInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -529,7 +512,7 @@ export const simulateStockTransfer = ({
       sku: source.sku || item.sku || '',
       type: inType,
       change: deltaIn,
-      newQty: targetUsesProductStock ? Number(source.stock || 0) : Number(targetInventory?.stock || 0),
+      newQty: Number(targetInventory?.stock || 0),
       date: transferDate,
       ref: transfer.refNo,
       party: actorName || 'System',
@@ -538,19 +521,31 @@ export const simulateStockTransfer = ({
     });
   });
 
+  const allInventoryAfter = Array.from(inventoryByKey.values());
+
   const productsAfter: Product[] = [
     ...originalIds
-      .map((id) => productById.get(id))
+      .map((id) => {
+        const product = productById.get(id);
+        if (!product) return null;
+        let totalStock = 0;
+        for (const inv of allInventoryAfter) {
+          if (inv.productId === id) {
+            totalStock += Number(inv.stock || 0);
+          }
+        }
+        product.stock = round3(totalStock);
+        return product;
+      })
       .filter((product): product is Product => !!product),
   ];
 
-  const allInventory = Array.from(inventoryByKey.values());
   const inventoryAfter: ProductLocationInventory[] = [
     ...inventoryIds
-      .map((id) => allInventory.find((row) => row.id === id))
+      .map((id) => allInventoryAfter.find((row) => row.id === id))
       .filter((row): row is ProductLocationInventory => !!row),
     ...createdInventoryIds
-      .map((id) => allInventory.find((row) => row.id === id))
+      .map((id) => allInventoryAfter.find((row) => row.id === id))
       .filter((row): row is ProductLocationInventory => !!row),
   ];
 
