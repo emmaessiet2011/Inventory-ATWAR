@@ -549,12 +549,31 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         return;
       }
 
+      // IDEMPOTENCY CHECK
+      const { fetchStockLedgerFromDB } = await import('@/utils/stockTransfers');
+      const currentLedger = await fetchStockLedgerFromDB();
+      const isAlreadyApplied = currentLedger.some(l => l.ref === adjustment.id || l.ref === adjustment.referenceNo || l.note?.includes(adjustment.referenceNo));
+
+      if (isAlreadyApplied) {
+         const approvedRecord: StockAdjustmentRecord = { ...adjustment, status: 'Approved', updatedAt: new Date().toISOString() };
+         const nextAdjustments = latestAdjustments.map(row => row.id === approvedRecord.id ? approvedRecord : row);
+         await writeStockAdjustments(sortAdjustments(nextAdjustments), approvedRecord.id);
+         setAdjustments(sortAdjustments(nextAdjustments));
+         addNotification({ title: 'Already Applied', message: 'Stock was already applied. Status corrected.', type: 'info' });
+         return;
+      }
+
       const actorName = currentUser?.name || 'System';
       const nowIso = new Date().toISOString();
       let linkedTransferId = '';
       let linkedExpenseId = '';
       let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
+      
+      let ledgerPayload: any[] = [];
+      let lotPayload: any[] = [];
+      let nextTransfers: any[] | null = null;
+      let currentTransfer: any = null;
 
       if (
         adjustment.adjustmentType === 'Damage'
@@ -564,125 +583,93 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         const { transfer, transferItems, existingTransfers, targetLocation } = buildLinkedTransferRecordFromAdjustment(adjustment, actorName);
         const sourceLocationRecord = resolveLocationRecord(transfer.locationFrom);
         const destinationLocationRecord = resolveLocationRecord(targetLocation);
-        if (!sourceLocationRecord) {
-          throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
-        }
-        if (!destinationLocationRecord || destinationLocationRecord.isActive === false) {
-          throw new Error(`Sellable damage location "${targetLocation}" is inactive or missing.`);
-        }
+        if (!sourceLocationRecord) throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
+        if (!destinationLocationRecord || destinationLocationRecord.isActive === false) throw new Error(`Sellable damage location "${targetLocation}" is inactive or missing.`);
+        
         originalInventoryRows = await fetchLocationInventoryFromDB();
         const appliedTransfer = simulateStockTransfer({
-          transfer,
-          direction: 1,
-          products,
-          inventoryRows: originalInventoryRows,
-          locationFromId: sourceLocationRecord.id,
-          locationToId: destinationLocationRecord.id,
-          generateId,
-          actorName,
-          notePrefix: `Damage approval ${adjustment.referenceNo}`,
+          transfer, direction: 1, products, inventoryRows: originalInventoryRows,
+          locationFromId: sourceLocationRecord.id, locationToId: destinationLocationRecord.id,
+          generateId, actorName, notePrefix: `Damage approval ${adjustment.referenceNo}`,
         });
+        
         nextInventoryAfter = appliedTransfer.inventoryAfter;
-        const transferLedgerSaved = await appendStockLedgerEntriesStrict(appliedTransfer.ledgerEntries);
-        if (!transferLedgerSaved.ok) {
-          const detail = transferLedgerSaved.error || `HTTP ${transferLedgerSaved.status || 0}`;
-          throw new Error(`Unable to save stock ledger entries while approving transfer. ${detail}`);
-        }
-        const lotAdjustments = buildTransferLotAdjustments(
-          appliedTransfer.productsAfter,
-          transfer.locationFrom,
-          transfer.locationTo,
-          transferItems,
-          1,
-          toIsoDate(transfer.date),
-        );
-        if (lotAdjustments.length > 0) {
-          const lotsSaved = await applyStockLotAdjustments(lotAdjustments);
-          if (!lotsSaved) {
-            throw new Error('Unable to save stock lot balances while approving transfer.');
-          }
-        }
-        const nextTransfers = [
-          transfer,
-          ...existingTransfers.filter((row) => row.id !== transfer.id),
-        ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-        const transferSaved = await writeStockTransfers(nextTransfers, transfer.id);
-        if (!transferSaved) {
-          throw new Error('Unable to save linked stock transfer in Postgres.');
-        }
+        ledgerPayload = appliedTransfer.ledgerEntries;
+        lotPayload = buildTransferLotAdjustments(appliedTransfer.productsAfter, transfer.locationFrom, transfer.locationTo, transferItems, 1, toIsoDate(transfer.date));
+        nextTransfers = [transfer, ...existingTransfers.filter((row) => row.id !== transfer.id)].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+        currentTransfer = transfer;
         linkedTransferId = transfer.id;
       } else {
         const adjustmentLocationRecord = resolveLocationRecord(adjustment.location);
-        if (!adjustmentLocationRecord) {
-          throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
-        }
+        if (!adjustmentLocationRecord) throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
+        
         originalInventoryRows = await fetchLocationInventoryFromDB();
         const applied = simulateStockAdjustment({
-          adjustment: { ...adjustment, status: 'Approved' },
-          direction: 1,
-          products,
-          inventoryRows: originalInventoryRows,
-          locationId: adjustmentLocationRecord.id,
-          generateId,
-          actorName,
-          notePrefix: 'Approval',
+          adjustment: { ...adjustment, status: 'Approved' }, direction: 1, products,
+          inventoryRows: originalInventoryRows, locationId: adjustmentLocationRecord.id,
+          generateId, actorName, notePrefix: 'Approval',
         });
+        
         nextInventoryAfter = applied.inventoryAfter;
-        const adjustmentLedgerSaved = await appendStockLedgerEntriesStrict(applied.ledgerEntries);
-        if (!adjustmentLedgerSaved.ok) {
-          const detail = adjustmentLedgerSaved.error || `HTTP ${adjustmentLedgerSaved.status || 0}`;
-          throw new Error(`Unable to save stock ledger entries while approving adjustment. ${detail}`);
-        }
-        if (applied.lotAdjustments.length > 0) {
-          const lotsSaved = await applyStockLotAdjustments(applied.lotAdjustments);
-          if (!lotsSaved) {
-            throw new Error('Unable to save stock lot balances while approving adjustment.');
-          }
-        }
+        ledgerPayload = applied.ledgerEntries;
+        lotPayload = applied.lotAdjustments;
 
-        if (
-          adjustment.adjustmentType === 'Damage'
-          && normalizeStockAdjustmentDamageDisposition(adjustment.damageDisposition) === 'Unsellable'
-        ) {
-          const writeOffAmount = round3(
-            Math.max(0, Number(adjustment.totalAmount || 0) - Number(adjustment.totalRecovered || 0)),
-          );
+        if (adjustment.adjustmentType === 'Damage' && normalizeStockAdjustmentDamageDisposition(adjustment.damageDisposition) === 'Unsellable') {
+          const writeOffAmount = round3(Math.max(0, Number(adjustment.totalAmount || 0) - Number(adjustment.totalRecovered || 0)));
           if (writeOffAmount > 0) {
             const expenseId = generateId('EXP');
             const expenseAdded = await addExpense({
-              id: expenseId,
-              refNo: buildExpenseRefNo(settings.expensesPrefix || 'EP'),
-              date: toIsoDate(adjustment.date || nowIso),
-              category: 'Damage / Write-off',
-              subCategory: 'Unsellable Damage',
-              location: adjustment.location || '',
-              amount: writeOffAmount,
-              tax: 0,
-              totalAmount: writeOffAmount,
-              paymentStatus: 'Due',
-              paymentDue: writeOffAmount,
-              expenseFor: 'Stock Damage Write-off',
-              contact: '',
-              paymentAccount: '',
-              paymentMethod: 'Cash',
+              id: expenseId, refNo: buildExpenseRefNo(settings.expensesPrefix || 'EP'),
+              date: toIsoDate(adjustment.date || nowIso), category: 'Damage / Write-off',
+              subCategory: 'Unsellable Damage', location: adjustment.location || '',
+              amount: writeOffAmount, tax: 0, totalAmount: writeOffAmount,
+              paymentStatus: 'Due', paymentDue: writeOffAmount, expenseFor: 'Stock Damage Write-off',
+              contact: '', paymentAccount: '', paymentMethod: 'Cash',
               note: `Auto-posted from stock adjustment ${adjustment.referenceNo}${adjustment.reason ? `: ${adjustment.reason}` : ''}`,
-              paidAmount: 0,
-              paidOn: '',
-              paymentNote: '',
-              addedById: currentUser?.id || '',
-              addedBy: actorName,
-              isRefund: false,
-              isRecurring: false,
-              recurringInterval: '',
-              recurringUnit: '',
-              recurringRepetitions: '',
+              paidAmount: 0, paidOn: '', paymentNote: '', addedById: currentUser?.id || '',
+              addedBy: actorName, isRefund: false, isRecurring: false, recurringInterval: '',
+              recurringUnit: '', recurringRepetitions: '',
             });
-            if (!expenseAdded.ok) {
-              throw new Error(expenseAdded.error || 'Unable to create linked damage expense in Postgres.');
-            }
+            if (!expenseAdded.ok) throw new Error(expenseAdded.error || 'Unable to create linked damage expense in Postgres.');
             linkedExpenseId = expenseId;
           }
         }
+      }
+
+      // 1. Save Location Inventory FIRST
+      if (nextInventoryAfter && originalInventoryRows) {
+        const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
+        if (!inventorySaved.ok) {
+          const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
+          throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
+        }
+      }
+
+      // 2. Save Ledger
+      if (ledgerPayload.length > 0) {
+        const ledgerSaved = await appendStockLedgerEntriesStrict(ledgerPayload);
+        if (!ledgerSaved.ok) {
+           // Rollback Inventory
+           if (nextInventoryAfter && originalInventoryRows) {
+               await syncChangedLocationInventoryStrict(originalInventoryRows, nextInventoryAfter);
+           }
+           const detail = ledgerSaved.error || `HTTP ${ledgerSaved.status || 0}`;
+           throw new Error(`Unable to save stock ledger entries. Inventory rolled back. ${detail}`);
+        }
+      }
+
+      // 3. Save Lots
+      if (lotPayload.length > 0) {
+        const lotsSaved = await applyStockLotAdjustments(lotPayload);
+        if (!lotsSaved) {
+           console.warn('Unable to save stock lot balances while approving adjustment.');
+        }
+      }
+
+      // 4. Save Transfer (if any)
+      if (nextTransfers && currentTransfer) {
+         const transferSaved = await writeStockTransfers(nextTransfers, currentTransfer.id);
+         if (!transferSaved) throw new Error('Unable to save linked stock transfer in Postgres.');
       }
 
       const approvedRecord: StockAdjustmentRecord = {
@@ -699,20 +686,15 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
         row.id === approvedRecord.id ? approvedRecord : row
       ));
       const sorted = sortAdjustments(nextAdjustments);
-      /* We rely on background product refresh instead of syncing products directly */
-      if (nextInventoryAfter && originalInventoryRows) {
-        const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
-        if (!inventorySaved.ok) {
-          const detail = inventorySaved.error || `HTTP ${inventorySaved.status || 0}`;
-          throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
-        }
-      }
+      
       const adjustmentSaved = await writeStockAdjustments(sorted, approvedRecord.id);
       if (!adjustmentSaved) {
         throw new Error('Unable to save approved stock adjustment in Postgres.');
       }
+      
       void refreshProductsFromServer();
       setAdjustments(sorted);
+      
       addNotification({
         title: 'Adjustment Approved',
         message:
@@ -755,6 +737,27 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
       const status = normalizeStockAdjustmentStatus(adjustment.status);
       let originalInventoryRows: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
       let nextInventoryAfter: Awaited<ReturnType<typeof fetchLocationInventoryFromDB>> | null = null;
+      
+      // IDEMPOTENCY CHECK
+      if (status === 'Approved') {
+          const { fetchStockLedgerFromDB } = await import('@/utils/stockTransfers');
+          const currentLedger = await fetchStockLedgerFromDB();
+          const isAlreadyRolledBack = currentLedger.some(l => l.note?.includes(`Delete rollback ${adjustment.referenceNo}`) || l.note?.includes(`Delete rollback ${adjustment.id}`));
+          
+          if (isAlreadyRolledBack) {
+             const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
+             await writeStockAdjustments(nextAdjustments);
+             await deleteDedicatedStrict('/api/sync/stock-adjustments', adjustment.id);
+             setAdjustments(nextAdjustments);
+             addNotification({ title: 'Already Deleted', message: 'Adjustment was already rolled back. Cleaned up successfully.', type: 'success' });
+             return;
+          }
+      }
+
+      let ledgerPayload: any[] = [];
+      let lotPayload: any[] = [];
+      let transferIdToDelete = '';
+
       if (status === 'Approved') {
         const actorName = currentUser?.name || 'System';
         const isSellableDamage =
@@ -769,101 +772,45 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           const transfer = linkedTransfer || fallback.transfer;
           const sourceLocationRecord = resolveLocationRecord(transfer.locationFrom);
           const destinationLocationRecord = resolveLocationRecord(transfer.locationTo);
-          if (!sourceLocationRecord) {
-            throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
-          }
-          if (!destinationLocationRecord) {
-            throw new Error(`Destination location "${transfer.locationTo}" is inactive or missing.`);
-          }
+          if (!sourceLocationRecord) throw new Error(`Source location "${transfer.locationFrom}" is inactive or missing.`);
+          if (!destinationLocationRecord) throw new Error(`Destination location "${transfer.locationTo}" is inactive or missing.`);
+          
           const transferItems = transfer.items.map((item) => ({
-            sku: item.sku,
-            qty: item.qty,
-            unit: item.unit,
-            unitCost: item.unitCost,
-            productName: item.productName,
+            sku: item.sku, qty: item.qty, unit: item.unit, unitCost: item.unitCost, productName: item.productName,
           }));
 
           originalInventoryRows = await fetchLocationInventoryFromDB();
           const rollbackTransfer = simulateStockTransfer({
-            transfer,
-            direction: -1,
-            products,
-            inventoryRows: originalInventoryRows,
-            locationFromId: sourceLocationRecord.id,
-            locationToId: destinationLocationRecord.id,
-            generateId,
-            actorName,
-            notePrefix: `Delete rollback ${adjustment.referenceNo}`,
+            transfer, direction: -1, products, inventoryRows: originalInventoryRows,
+            locationFromId: sourceLocationRecord.id, locationToId: destinationLocationRecord.id,
+            generateId, actorName, notePrefix: `Delete rollback ${adjustment.referenceNo}`,
           });
+          
           nextInventoryAfter = rollbackTransfer.inventoryAfter;
-          const rollbackTransferLedgerSaved = await appendStockLedgerEntriesStrict(rollbackTransfer.ledgerEntries);
-          if (!rollbackTransferLedgerSaved.ok) {
-            const detail = rollbackTransferLedgerSaved.error || `HTTP ${rollbackTransferLedgerSaved.status || 0}`;
-            throw new Error(`Unable to save rollback stock ledger entries. ${detail}`);
-          }
-          const lotAdjustments = buildTransferLotAdjustments(
-            rollbackTransfer.productsAfter,
-            transfer.locationFrom,
-            transfer.locationTo,
-            transferItems,
-            -1,
-            toIsoDate(adjustment.date),
-          );
-          if (lotAdjustments.length > 0) {
-            const lotsSaved = await applyStockLotAdjustments(lotAdjustments);
-            if (!lotsSaved) {
-              throw new Error('Unable to save stock lot balances while rolling back transfer.');
-            }
-          }
+          ledgerPayload = rollbackTransfer.ledgerEntries;
+          lotPayload = buildTransferLotAdjustments(rollbackTransfer.productsAfter, transfer.locationFrom, transfer.locationTo, transferItems, -1, toIsoDate(adjustment.date));
+          transferIdToDelete = linkedTransfer?.id || adjustment.linkedTransferId || '';
 
-          const transferIdToDelete = linkedTransfer?.id || adjustment.linkedTransferId || '';
-          if (transferIdToDelete) {
-            const nextTransfers = allTransfers.filter((row) => row.id !== transferIdToDelete);
-            const transferDeleteSynced = await writeStockTransfers(nextTransfers, undefined, transferIdToDelete);
-            if (!transferDeleteSynced) {
-              throw new Error('Unable to delete linked transfer from Postgres.');
-            }
-          }
         } else {
           const adjustmentLocationRecord = resolveLocationRecord(adjustment.location);
-          if (!adjustmentLocationRecord) {
-            throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
-          }
+          if (!adjustmentLocationRecord) throw new Error(`Adjustment location "${adjustment.location}" is inactive or missing.`);
           originalInventoryRows = await fetchLocationInventoryFromDB();
           const rollback = simulateStockAdjustment({
-            adjustment,
-            direction: -1,
-            products,
-            inventoryRows: originalInventoryRows,
-            locationId: adjustmentLocationRecord.id,
-            generateId,
-            actorName,
-            notePrefix: 'Delete rollback',
+            adjustment, direction: -1, products, inventoryRows: originalInventoryRows,
+            locationId: adjustmentLocationRecord.id, generateId, actorName, notePrefix: 'Delete rollback',
           });
           nextInventoryAfter = rollback.inventoryAfter;
-          const rollbackLedgerSaved = await appendStockLedgerEntriesStrict(rollback.ledgerEntries);
-          if (!rollbackLedgerSaved.ok) {
-            const detail = rollbackLedgerSaved.error || `HTTP ${rollbackLedgerSaved.status || 0}`;
-            throw new Error(`Unable to save rollback stock ledger entries. ${detail}`);
-          }
-          if (rollback.lotAdjustments.length > 0) {
-            const lotsSaved = await applyStockLotAdjustments(rollback.lotAdjustments);
-            if (!lotsSaved) {
-              throw new Error('Unable to save stock lot balances while rolling back adjustment.');
-            }
-          }
+          ledgerPayload = rollback.ledgerEntries;
+          lotPayload = rollback.lotAdjustments;
         }
 
         if (adjustment.linkedExpenseId) {
           const deletedExpense = await deleteExpense(adjustment.linkedExpenseId);
-          if (!deletedExpense.ok) {
-            throw new Error(deletedExpense.error || 'Unable to delete linked expense from Postgres.');
-          }
+          if (!deletedExpense.ok) throw new Error(deletedExpense.error || 'Unable to delete linked expense from Postgres.');
         }
       }
 
-      const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
-      /* We rely on background product refresh instead of syncing products directly */
+      // 1. Save Location Inventory FIRST
       if (nextInventoryAfter && originalInventoryRows) {
         const inventorySaved = await syncChangedLocationInventoryStrict(nextInventoryAfter, originalInventoryRows);
         if (!inventorySaved.ok) {
@@ -871,14 +818,45 @@ const ListStockAdjustments: React.FC<ListStockAdjustmentsProps> = ({
           throw new Error(`Unable to save location stock changes in Postgres. ${detail}`);
         }
       }
+
+      // 2. Save Ledger
+      if (ledgerPayload.length > 0) {
+        const rollbackLedgerSaved = await appendStockLedgerEntriesStrict(ledgerPayload);
+        if (!rollbackLedgerSaved.ok) {
+           // Rollback Inventory
+           if (nextInventoryAfter && originalInventoryRows) {
+               await syncChangedLocationInventoryStrict(originalInventoryRows, nextInventoryAfter);
+           }
+           const detail = rollbackLedgerSaved.error || `HTTP ${rollbackLedgerSaved.status || 0}`;
+           throw new Error(`Unable to save rollback stock ledger entries. ${detail}`);
+        }
+      }
+
+      // 3. Save Lots
+      if (lotPayload.length > 0) {
+        const lotsSaved = await applyStockLotAdjustments(lotPayload);
+        if (!lotsSaved) {
+           console.warn('Unable to save stock lot balances while rolling back adjustment.');
+        }
+      }
+
+      if (transferIdToDelete) {
+         const allTransfers = readStockTransfers();
+         const nextTransfers = allTransfers.filter((row) => row.id !== transferIdToDelete);
+         await writeStockTransfers(nextTransfers, undefined, transferIdToDelete);
+      }
+
+      const nextAdjustments = sortAdjustments(adjustments.filter((row) => row.id !== adjustment.id));
       const savedAdjustments = await writeStockAdjustments(nextAdjustments);
       if (!savedAdjustments) {
         throw new Error('Unable to sync stock adjustments to Postgres.');
       }
+      
       const deleted = await deleteDedicatedStrict('/api/sync/stock-adjustments', adjustment.id);
       if (!deleted.ok) {
         throw new Error('Unable to delete stock adjustment from Postgres.');
       }
+      
       void refreshProductsFromServer();
       setAdjustments(nextAdjustments);
       if (viewAdjustmentId === adjustment.id) setViewAdjustmentId(null);

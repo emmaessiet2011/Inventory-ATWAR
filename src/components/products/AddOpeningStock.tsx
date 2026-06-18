@@ -5,6 +5,7 @@ import { useNotifications } from '@/context/NotificationContext';
 import { applyStockLotAdjustments } from '@/utils/stockLots';
 import { appendStockLedgerEntriesStrict, fetchStockLedgerFromDB, deleteStockLedgerEntry, StockLedgerEntry } from '@/utils/stockTransfers';
 import { fetchDedicated } from '@/utils/apiClient';
+import { isFractionalProduct, getBaseUnitName } from '@/utils/fractionalProducts';
 
 interface AddOpeningStockProps {
   isOpen?: boolean;
@@ -227,11 +228,17 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
        }
     }
 
-    // Update Product Stock Target
+    // Save Location Inventory FIRST
     const { fetchLocationInventoryFromDB, syncChangedLocationInventoryStrict } = await import('@/utils/stockLocationInventory');
     const allInventory = await fetchLocationInventoryFromDB();
     
     const normalize = (v: unknown) => String(v || '').trim().toLowerCase();
+    
+    const locName = selectedLocation;
+    const locMatch = locations.find(l => normalize(l.name) === normalize(locName) || normalize(l.id) === normalize(locName));
+    const locationId = locMatch ? locMatch.id : locName;
+    const locationName = locMatch ? locMatch.name : locName;
+
     const productInventory = allInventory.filter(inv => normalize(inv.productId) === normalize(product.id));
     const currentTotalStock = productInventory.reduce((sum, inv) => sum + (Number(inv.stock) || 0), 0);
     
@@ -239,34 +246,15 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
     const currentValue = currentTotalStock * (Number(product.unitPurchasePrice) || 0);
     const nextUnitCost = nextStock > 0 ? Number(((currentValue + netAddedValue) / nextStock).toFixed(3)) : Number(product.unitPurchasePrice) || 0;
 
-    const productUpdateResult = await updateProduct({
-      ...product,
-      stock: nextStock,
-      unitPurchasePrice: nextUnitCost,
-      openingStock: Number(((product.openingStock || 0) + netAddedQty).toFixed(3)),
-    });
-
-    if (!productUpdateResult.ok) {
-      addNotification({
-        title: 'Save Failed',
-        message: productUpdateResult.error || `Unable to update product ${product.name}.`,
-        type: 'error',
-      });
-      return;
-    }
-
-    // Save Location Inventory
-    const locName = selectedLocation;
-    const locMatch = locations.find(l => normalize(l.name) === normalize(locName) || normalize(l.id) === normalize(locName));
-    const locationId = locMatch ? locMatch.id : locName;
-    const locationName = locMatch ? locMatch.name : locName;
-
+    let targetInventory: any = null;
+    let prevInventory: any[] = [];
+    
     if (locationId) {
       try {
         const existingKey = `${normalize(product.id)}@@${normalize(locationId)}`;
         const existing = allInventory.find(row => `${normalize(row.productId)}@@${normalize(row.locationId)}` === existingKey);
 
-        const targetInventory = existing ? { ...existing } : {
+        targetInventory = existing ? { ...existing } : {
           id: generateId('PINV'),
           productId: product.id,
           locationId: locationId,
@@ -276,7 +264,7 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
           updatedAt: new Date().toISOString(),
         };
 
-        const prevInventory = existing ? [{ ...existing }] : [];
+        prevInventory = existing ? [{ ...existing }] : [];
         targetInventory.stock = Math.max(0, Number((Number(targetInventory.stock || 0) + netAddedQty).toFixed(3)));
         targetInventory.unitCost = nextUnitCost;
 
@@ -289,9 +277,10 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
       } catch (err) {
         addNotification({
           title: 'Location Inventory Warning',
-          message: 'Product stock was updated but we could not apply it to the specific location immediately. It may take a moment to sync.',
+          message: 'Unable to sync location inventory. Aborting save to prevent stock mismatch.',
           type: 'error',
         });
+        return;
       }
     }
 
@@ -299,9 +288,13 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
     if (ledgerPayload.length > 0) {
       const ledgerSaved = await appendStockLedgerEntriesStrict(ledgerPayload);
       if (!ledgerSaved.ok) {
+        // Rollback location inventory
+        if (targetInventory) {
+          await syncChangedLocationInventoryStrict(prevInventory, [targetInventory]);
+        }
         addNotification({
           title: 'Save Failed',
-          message: 'Unable to save stock ledger entries in Postgres.',
+          message: 'Unable to save stock ledger entries in Postgres. Location inventory was rolled back.',
           type: 'error',
         });
         return;
@@ -313,12 +306,27 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
       const lotSaved = await applyStockLotAdjustments(lotPayload);
       if (!lotSaved) {
         addNotification({
-          title: 'Save Failed',
+          title: 'Save Warning',
           message: 'Unable to save stock lot balances in Postgres.',
-          type: 'error',
+          type: 'warning',
         });
-        return;
       }
+    }
+
+    // Update Product Stock Target
+    const productUpdateResult = await updateProduct({
+      ...product,
+      stock: nextStock,
+      unitPurchasePrice: nextUnitCost,
+      openingStock: Number(((product.openingStock || 0) + netAddedQty).toFixed(3)),
+    });
+
+    if (!productUpdateResult.ok) {
+      addNotification({
+        title: 'Save Warning',
+        message: productUpdateResult.error || `Product global stock update failed, but location stock was updated.`,
+        type: 'warning',
+      });
     }
 
     addNotification({
@@ -398,7 +406,9 @@ const AddOpeningStock: React.FC<AddOpeningStockProps> = ({ isOpen = true, onClos
                         className="w-full pl-3 pr-16 py-2 rounded-lg border border-indigo-200 outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100" 
                         disabled={!isOpening}
                       />
-                      <span className="absolute right-3 text-xs font-bold text-slate-400 pointer-events-none">{product.unit || 'Pcs'}</span>
+                      <span className="absolute right-3 text-xs font-bold text-slate-400 pointer-events-none">
+                        {isFractionalProduct(product as any) ? getBaseUnitName(product as any) : (product.unit || 'Pcs')}
+                      </span>
                     </div>
                   </td>
                   <td className="px-3 py-4 align-top">
