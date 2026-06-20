@@ -10190,8 +10190,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const addChequeReminder = async (cheque: ChequeReminder): Promise<CrudMutationResult> => {
     const saved = await syncRecordStrict('chequeReminders', cheque);
     const result = toCrudResult(saved);
-    if (result.ok && saved.data) {
-      setChequeReminders(prev => [...prev.filter(c => c.id !== saved.data.id), saved.data as ChequeReminder]);
+    if (result.ok) {
+      setChequeReminders(prev => [...prev.filter(c => c.id !== cheque.id), cheque]);
       recordActivity({ action: 'Added', module: 'Cheque Vault', description: `Added cheque reminder ${cheque.chequeNo || cheque.id}` });
     }
     return result;
@@ -10200,8 +10200,8 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const updateChequeReminder = async (cheque: ChequeReminder): Promise<CrudMutationResult> => {
     const saved = await syncRecordStrict('chequeReminders', cheque);
     const result = toCrudResult(saved);
-    if (result.ok && saved.data) {
-      setChequeReminders(prev => prev.map(c => c.id === cheque.id ? (saved.data as ChequeReminder) : c));
+    if (result.ok) {
+      setChequeReminders(prev => prev.map(c => c.id === cheque.id ? cheque : c));
       recordActivity({ action: 'Updated', module: 'Cheque Vault', description: `Updated cheque reminder ${cheque.chequeNo || cheque.id}` });
     }
     return result;
