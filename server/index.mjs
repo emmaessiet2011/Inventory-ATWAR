@@ -1825,6 +1825,19 @@ app.put('/api/sync/record/:resource', requireAuth, async (req, res) => {
         }
         break;
       }
+      case 'chequeReminders': {
+        const d = {
+          contactName: String(raw.contactName || ''),
+          bankName: String(raw.bankName || ''),
+          chequeNo: String(raw.chequeNo || ''),
+          chequeDate: String(raw.chequeDate || ''),
+          amount: toFiniteNumber(raw.amount, 0),
+          status: String(raw.status || 'PENDING'),
+          notes: raw.notes ? String(raw.notes) : null,
+        };
+        await prisma.chequeReminder.upsert({ where: { id }, update: d, create: { id, ...d } });
+        break;
+      }
       default:
         return res.status(400).json({ ok: false, error: `Resource '${resource}' is not supported for atomic sync` });
     }

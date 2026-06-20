@@ -3,7 +3,7 @@ import { Plus, Search, Calendar, Landmark, CheckCircle2, XCircle, AlertCircle, R
 import { useGlobalContext } from '../../context/GlobalContext';
 
 const ChequeVault = () => {
-  const { chequeReminders, addChequeReminder, updateChequeReminder, deleteChequeReminder } = useGlobalContext();
+  const { chequeReminders, addChequeReminder, updateChequeReminder, deleteChequeReminder, generateId } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'CLEARED' | 'BOUNCED'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -29,8 +29,8 @@ const ChequeVault = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await addChequeReminder({
-      id: '', // Will be generated
+    const result = await addChequeReminder({
+      id: generateId('CHQ-'),
       contactName: formData.contactName,
       chequeNo: formData.chequeNo,
       bankName: formData.bankName,
@@ -39,15 +39,20 @@ const ChequeVault = () => {
       status: 'PENDING',
       notes: formData.notes,
     });
-    setIsModalOpen(false);
-    setFormData({
-      contactName: '',
-      chequeNo: '',
-      bankName: '',
-      chequeDate: new Date().toISOString().split('T')[0],
-      amount: 0,
-      notes: '',
-    });
+    
+    if (result.ok) {
+      setIsModalOpen(false);
+      setFormData({
+        contactName: '',
+        chequeNo: '',
+        bankName: '',
+        chequeDate: new Date().toISOString().split('T')[0],
+        amount: 0,
+        notes: '',
+      });
+    } else {
+      alert(`Failed to save cheque: ${result.error || 'Unknown error'}`);
+    }
   };
 
   const updateStatus = async (cheque: any, status: 'CLEARED' | 'BOUNCED') => {
