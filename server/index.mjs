@@ -278,6 +278,7 @@ const RESOURCE_CONFIG = {
   customFieldValues: { delegate: 'customFieldValue', idField: 'id', searchFields: ['entityId', 'valueText'], defaultOrderBy: { updatedAt: 'desc' } },
   helpCenterCategories: { delegate: 'helpCenterCategory', idField: 'id', searchFields: ['name'], defaultOrderBy: { sortOrder: 'asc' } },
   helpCenterArticles: { delegate: 'helpCenterArticle', idField: 'id', searchFields: ['title', 'slug'], defaultOrderBy: { sortOrder: 'asc' } },
+  chequeReminders: { delegate: 'chequeReminder', idField: 'id', searchFields: ['contactName', 'chequeNo', 'bankName', 'notes'], defaultOrderBy: { chequeDate: 'asc' } },
 };
 
 const getResource = (key) => RESOURCE_CONFIG[String(key || '').trim()] || null;

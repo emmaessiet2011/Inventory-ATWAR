@@ -30,6 +30,12 @@ enum PaymentStatus {
   OVERDUE
 }
 
+enum ChequeStatus {
+  PENDING
+  CLEARED
+  BOUNCED
+}
+
 enum SaleStatus {
   FINAL
   DRAFT
@@ -1321,3 +1327,20 @@ model AppSetting {
   updatedAt                    DateTime @updatedAt
 }
 
+model ChequeReminder {
+  id           String       @id @default(uuid())
+  contactName  String
+  chequeNo     String?
+  bankName     String?
+  chequeDate   DateTime
+  amount       Decimal      @default(0) @db.Decimal(12, 3)
+  status       ChequeStatus @default(PENDING)
+  notes        String?
+  attachmentUrl String?
+  locationId   String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([chequeDate])
+  @@index([status])
+}

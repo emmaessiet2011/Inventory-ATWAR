@@ -1166,6 +1166,19 @@ export interface AppSettings {
   themeColor: string;
 }
 
+export interface ChequeReminder {
+  id: string;
+  contactName: string;
+  chequeNo?: string;
+  bankName?: string;
+  chequeDate: string;
+  amount: number;
+  status: 'PENDING' | 'CLEARED' | 'BOUNCED';
+  notes?: string;
+  attachmentUrl?: string;
+  locationId?: string;
+}
+
 // ============================================================
 //  CONTEXT TYPE
 // ============================================================
@@ -1388,6 +1401,13 @@ interface GlobalContextType {
   addOrder: (order: GlobalOrder) => Promise<CrudMutationResult>;
   updateOrder: (order: GlobalOrder) => Promise<CrudMutationResult>;
   deleteOrder: (id: string) => Promise<CrudMutationResult>;
+
+  // --- Cheque Reminders ---
+  chequeReminders: ChequeReminder[];
+  setChequeReminders: React.Dispatch<React.SetStateAction<ChequeReminder[]>>;
+  addChequeReminder: (cheque: ChequeReminder) => Promise<CrudMutationResult>;
+  updateChequeReminder: (cheque: ChequeReminder) => Promise<CrudMutationResult>;
+  deleteChequeReminder: (id: string) => Promise<CrudMutationResult>;
 
   // --- Activity Logs ---
   activityLogs: ActivityLogEntry[];
@@ -2859,6 +2879,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [discounts, setDiscounts] = useState<Discount[]>([]);
 
   // ---- Activity Logs ----
+  const [chequeReminders, setChequeReminders] = useState<ChequeReminder[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLogEntry[]>([]);
 
   // ---- Settings ----
@@ -3099,6 +3120,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           remoteSellingPriceGroups,
           remotePurchaseReqs,
           remotePurchaseOrders,
+          remoteChequeReminders,
         ] = await Promise.all([
           apiFetchAllWithRetry<Product>('products'),
           apiFetchAllWithRetry<Customer>('customers'),
@@ -3124,6 +3146,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAllWithRetry<SellingPriceGroup>('sellingPriceGroups'),
           apiFetchAllWithRetry<PurchaseRequisition>('purchaseRequisitions'),
           apiFetchAllWithRetry<PurchaseOrder>('purchaseOrders'),
+          apiFetchAllWithRetry<ChequeReminder>('chequeReminders'),
         ]);
 
         if (cancelled) return;
@@ -3249,6 +3272,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (remotePurchaseOrders) {
           setPurchaseOrders((remotePurchaseOrders as PurchaseOrder[]).map((record) => normalizePurchaseOrderRecordLoaded(record)));
         }
+        if (remoteChequeReminders) {
+          setChequeReminders(remoteChequeReminders as ChequeReminder[]);
+        }
 
         setSyncStatus(hadFetchFailure ? 'error' : 'synced');
       } catch {
@@ -3338,7 +3364,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           freshRoles,
           freshExpenses, freshExpenseCategories, freshPurchases, freshSellReturns, freshPurchaseReturns, freshOrders, freshActivityLogs,
           freshTaxRates, freshProductCategories, freshProductBrands, freshProductUnits,
-          freshCustomerGroups, freshSellingPriceGroups,
+          freshCustomerGroups, freshSellingPriceGroups, freshChequeReminders,
         ] = await Promise.all([
           apiFetchAll<Product>('products').catch(() => null),
           apiFetchAll<Sale>('sales').catch(() => null),
@@ -3359,6 +3385,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           apiFetchAll<ProductUnit>('productUnits').catch(() => null),
           apiFetchAll<CustomerGroup>('customerGroups').catch(() => null),
           apiFetchAll<SellingPriceGroup>('sellingPriceGroups').catch(() => null),
+          apiFetchAll<ChequeReminder>('chequeReminders').catch(() => null),
         ]);
         if (freshProducts) {
           const availableCategories = (freshProductCategories as ProductCategory[] | null) ?? [];
@@ -3431,6 +3458,9 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           setCustomerGroups((freshCustomerGroups as CustomerGroup[]).map((group) =>
             normalizeCustomerGroupRecord(group, availablePriceGroups),
           ));
+        }
+        if (freshChequeReminders) {
+          setChequeReminders(freshChequeReminders as ChequeReminder[]);
         }
       } catch {
         // polling failure is non-fatal — the user keeps their current data
@@ -10154,6 +10184,40 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   // ============================================================
+  //  CRUD: CHEQUE REMINDERS
+  // ============================================================
+
+  const addChequeReminder = async (cheque: ChequeReminder): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('chequeReminders', cheque);
+    const result = toCrudResult(saved);
+    if (result.ok && saved.data) {
+      setChequeReminders(prev => [...prev.filter(c => c.id !== saved.data.id), saved.data as ChequeReminder]);
+      recordActivity({ action: 'Added', module: 'Cheque Vault', description: `Added cheque reminder ${cheque.chequeNo || cheque.id}` });
+    }
+    return result;
+  };
+
+  const updateChequeReminder = async (cheque: ChequeReminder): Promise<CrudMutationResult> => {
+    const saved = await syncRecordStrict('chequeReminders', cheque);
+    const result = toCrudResult(saved);
+    if (result.ok && saved.data) {
+      setChequeReminders(prev => prev.map(c => c.id === cheque.id ? (saved.data as ChequeReminder) : c));
+      recordActivity({ action: 'Updated', module: 'Cheque Vault', description: `Updated cheque reminder ${cheque.chequeNo || cheque.id}` });
+    }
+    return result;
+  };
+
+  const deleteChequeReminder = async (id: string): Promise<CrudMutationResult> => {
+    const deleted = await deleteRecordStrict('chequeReminders', id);
+    const result = toCrudResult(deleted);
+    if (result.ok) {
+      setChequeReminders(prev => prev.filter(c => c.id !== id));
+      recordActivity({ action: 'Deleted', module: 'Cheque Vault', description: `Deleted cheque reminder ${id}` });
+    }
+    return result;
+  };
+
+  // ============================================================
   //  CRUD: DISCOUNTS
   // ============================================================
 
@@ -10309,6 +10373,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       productVariations, setProductVariations, addProductVariation, updateProductVariation, deleteProductVariation,
       sellingPriceGroups, setSellingPriceGroups, addSellingPriceGroup, updateSellingPriceGroup, deleteSellingPriceGroup,
       discounts, setDiscounts, addDiscount, updateDiscount, deleteDiscount,
+      chequeReminders, setChequeReminders, addChequeReminder, updateChequeReminder, deleteChequeReminder,
       activityLogs, setActivityLogs, addActivityLog, clearActivityLogs,
       settings, updateSettings,
       currentUser, setCurrentUser, userPreferences, updateCurrentUserPreferences,

@@ -88,6 +88,7 @@ import FieldPayments from '@/components/payments/FieldPayments';
 import ListPayments from '@/components/payments/ListPayments';
 import PaymentLedger from '@/components/payments/Ledger';
 import ListAccounts from '@/components/accounts/ListAccounts';
+import ChequeVault from '@/components/accounts/ChequeVault';
 import BalanceSheet from '@/components/reports/BalanceSheet';
 import TrialBalance from '@/components/reports/TrialBalance';
 import CashFlow from '@/components/reports/CashFlow';
@@ -1105,6 +1106,8 @@ const AppContent: React.FC = () => {
             canDeleteAccountTransactions={canDeleteAccountTransactions}
           />
         );
+      case 'cheque-vault':
+        return <ChequeVault />;
       case 'balance-sheet':
         if (!settings.enablePaymentAccounts) return renderModuleDisabled('Payment Accounts');
         if (!canAccessAccounts) return renderAccessDenied('Payment Accounts');

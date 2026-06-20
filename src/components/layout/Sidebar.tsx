@@ -181,6 +181,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       icon: Wallet,
       subItems: [
         { title: 'List Accounts', path: 'list-accounts' },
+        { title: 'Cheque Vault', path: 'cheque-vault' },
         { title: 'Balance Sheet', path: 'balance-sheet' },
         { title: 'Trial Balance', path: 'trial-balance' },
         { title: 'Cash Flow', path: 'cash-flow' },

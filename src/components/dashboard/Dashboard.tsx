@@ -97,6 +97,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     expenses: expensesSource,
     sellReturns: sellReturnsSource,
     purchaseReturns: purchaseReturnsSource,
+    chequeReminders: chequeRemindersSource,
     settings,
     currentUser,
     userPreferences,
@@ -108,6 +109,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const purchases = Array.isArray(purchasesSource) ? purchasesSource : [];
   const payments = Array.isArray(paymentsSource) ? paymentsSource : [];
   const orders = Array.isArray(ordersSource) ? ordersSource : [];
+  const chequeReminders = Array.isArray(chequeRemindersSource) ? chequeRemindersSource : [];
   const locations = Array.isArray(locationsSource) ? locationsSource : [];
   const customers = Array.isArray(customersSource) ? customersSource : [];
   const expenses = Array.isArray(expensesSource) ? expensesSource : [];
@@ -199,14 +201,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const tomorrowMidnight = useMemo(() => { const d = new Date(todayMidnight); d.setDate(d.getDate() + 1); return d; }, [todayMidnight]);
   const pendingCheques = useMemo(() => {
-    return payments
+    return chequeReminders
       .filter(p => {
-        if (p.method !== 'Cheque' || !p.chequeDate || p.chequeCleared) return false;
+        if (p.status !== 'PENDING') return false;
         const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
         return d <= tomorrowMidnight;
       })
-      .sort((a, b) => new Date(a.chequeDate!).getTime() - new Date(b.chequeDate!).getTime());
-  }, [payments, tomorrowMidnight]);
+      .sort((a, b) => new Date(a.chequeDate).getTime() - new Date(b.chequeDate).getTime());
+  }, [chequeReminders, tomorrowMidnight]);
   const [showChequePopup, setShowChequePopup] = useState(() => {
     const todayStr = new Date().toISOString().split('T')[0];
     return chequeReminderDismissedOn !== todayStr;
@@ -1344,7 +1346,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
           <div className="space-y-2">
             {pendingCheques.map(p => {
-              const d = new Date(p.chequeDate!); d.setHours(0,0,0,0);
+              const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
               const isToday = d.getTime() === todayMidnight.getTime();
               const isOverdue = d < todayMidnight;
               return (
@@ -2106,7 +2108,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               </div>
               <div className="space-y-2 max-h-72 overflow-y-auto">
                 {pendingCheques.map(p => {
-                  const d = new Date(p.chequeDate!); d.setHours(0,0,0,0);
+                  const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
                   const isToday = d.getTime() === todayMidnight.getTime();
                   const isOverdue = d < todayMidnight;
                   return (
