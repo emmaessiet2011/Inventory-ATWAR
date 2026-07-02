@@ -41,6 +41,10 @@ const parseArgs = () => {
 
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
+    if (arg === '--pieces') {
+      parsed.pieces = true;
+      continue;
+    }
     if (arg === '--apply') {
       parsed.apply = true;
       continue;
@@ -220,7 +224,7 @@ async function main() {
   const [locations, products] = await Promise.all([
     prisma.location.findMany({ select: { id: true, name: true, isActive: true } }),
     prisma.product.findMany({
-      select: { id: true, sku: true, name: true, unitPurchasePrice: true, meta: true },
+      select: { id: true, sku: true, name: true, unitPurchasePrice: true, meta: true, containerSize: true },
     }),
   ]);
 
@@ -275,11 +279,19 @@ async function main() {
       return;
     }
 
+    let finalQty = payload.qty;
+    if (args.pieces && selected.containerSize) {
+      const cSize = Number(selected.containerSize);
+      if (cSize > 0) {
+        finalQty = round3(payload.qty * cSize);
+      }
+    }
+
     desiredByProductId.set(selected.id, {
       productId: selected.id,
       productName: selected.name,
       sku: selected.sku,
-      qty: payload.qty,
+      qty: finalQty,
       unitCost: round3(Number(selected.unitPurchasePrice || 0)),
       row: payload.row,
     });
