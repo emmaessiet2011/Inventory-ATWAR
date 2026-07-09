@@ -671,15 +671,6 @@ const ViewSaleDetails: React.FC<ViewSaleDetailsProps> = ({
                 </div>
               </div>
 
-              {customerRecord && (
-                <div className="mt-3 mr-auto w-full max-w-[96mm] border-2 border-dashed border-slate-500 px-3 py-2">
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">Account Statement</div>
-                  <div className="flex justify-between items-baseline">
-                    <span className="text-[10px] text-slate-700">Total Outstanding (all invoices):</span>
-                    <span className="font-black text-[12px]">{formatCurrency(Math.max(0, Number(customerRecord.totalSellDue || 0)))}</span>
-                  </div>
-                </div>
-              )}
 
               <div className="mt-5 grid grid-cols-2 gap-6">
                 <div>

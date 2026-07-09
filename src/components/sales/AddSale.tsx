@@ -3444,17 +3444,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                                 <p>Thank you for your business!</p>
                                 <p>Terms & Conditions Apply.</p>
                             </div>
-
-                            {selectedCustomerRecord && (
-                              <div className="mt-4 mr-auto w-full max-w-[52mm] border-2 border-dashed border-slate-400 rounded px-3 py-2 bg-slate-50">
-                                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">Account Statement</p>
-                                <div className="flex justify-between items-baseline">
-                                  <span className="text-[10px] text-slate-600">Total Outstanding:</span>
-                                  <span className="text-sm font-black text-slate-800">{formatCurrency(Math.max(0, Number(selectedCustomerRecord.totalSellDue || 0)))}</span>
-                                </div>
-                                <p className="text-[8px] text-slate-400 mt-0.5">Balance across all invoices</p>
-                              </div>
-                            )}
                         </div>
                     </div>
 
@@ -3568,16 +3557,6 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                             </div>
                           ))}
                         </div>
-
-                        {selectedCustomerRecord && (
-                          <div className="mt-3 mr-auto w-full max-w-[96mm] border-2 border-dashed border-slate-500 px-3 py-2">
-                            <div className="text-[9px] font-bold uppercase tracking-widest text-slate-500 mb-1">Account Statement</div>
-                            <div className="flex justify-between items-baseline">
-                              <span className="text-[10px] text-slate-700">Total Outstanding (all invoices):</span>
-                              <span className="font-black text-[12px]">{formatCurrency(Math.max(0, Number(selectedCustomerRecord.totalSellDue || 0)))}</span>
-                            </div>
-                          </div>
-                        )}
 
                         <div className="mt-5 grid grid-cols-2 gap-6">
                           <div>
