@@ -51,7 +51,7 @@ const ChequeVault = () => {
         notes: '',
       });
     } else {
-      alert(`Failed to save cheque: ${result.error || 'Unknown error'}`);
+      console.error(`Failed to save cheque: ${result.error || 'Unknown error'}`);
     }
   };
 
