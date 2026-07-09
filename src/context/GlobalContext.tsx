@@ -34,7 +34,6 @@ import {
 import type { FractionalSaleMode } from '../utils/fractionalProducts';
 import {
   convertContainerStockToBaseUnits,
-  getContainerSize,
   isFractionalProduct,
   isFractionalStockStoredAsBase,
   withFractionalStockBaseMeta,
@@ -7255,7 +7254,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       method: normalizedMethod,
       account: resolveDefaultAccountFromMethod(normalizedMethod),
     });
-    let customerAllocationBySaleId = new Map<string, number>();
+    // let customerAllocationBySaleId = new Map<string, number>();
     let customerAppliedToInvoices = 0;
     let customerUnappliedRemainder = 0;
 
@@ -7300,7 +7299,7 @@ export const GlobalProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         customerAppliedToInvoices = Number((customerAppliedToInvoices + paying).toFixed(3));
         if (s.invoiceNo) covered.add(String(s.invoiceNo).trim());
       }
-      customerAllocationBySaleId = allocationBySaleId;
+      // customerAllocationBySaleId = allocationBySaleId;
       customerUnappliedRemainder = Number(Math.max(0, normalizedPayment.amount - customerAppliedToInvoices).toFixed(3));
       if (covered.size > 0) {
         paymentToStore = {

@@ -33,11 +33,9 @@ import { getAccessibleActiveLocations, productVisibleAtLocation } from '@/utils/
 import {
   FractionalSaleMode,
   getBaseUnitName,
-  getContainerSize,
   getContainerUnitName,
   getFractionalModeUnitName,
   getFractionalModeUnitPrice,
-  getSaleDisplayQuantity,
   getStockQuantityForSale,
   isFractionalProduct,
 } from '@/utils/fractionalProducts';

@@ -26,7 +26,6 @@ import {
   getContainerUnitName,
   getFractionalModeUnitName,
   getFractionalModeUnitPrice,
-  getSaleDisplayQuantity,
   getStockDisplay,
   getStockQuantityForSale,
   isFractionalProduct,

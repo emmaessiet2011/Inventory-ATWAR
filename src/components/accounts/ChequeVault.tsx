@@ -3,7 +3,7 @@ import { Plus, Search, Calendar, Landmark, CheckCircle2, XCircle, AlertCircle, R
 import { useGlobalContext } from '../../context/GlobalContext';
 
 const ChequeVault = () => {
-  const { chequeReminders, addChequeReminder, updateChequeReminder, deleteChequeReminder, generateId } = useGlobalContext();
+  const { chequeReminders, addChequeReminder, updateChequeReminder, generateId } = useGlobalContext();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'CLEARED' | 'BOUNCED'>('ALL');
   const [isModalOpen, setIsModalOpen] = useState(false);

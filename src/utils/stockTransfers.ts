@@ -96,6 +96,8 @@ const toIsoDate = (value: string): string => {
   return Number.isFinite(parsed) ? new Date(parsed).toISOString() : new Date().toISOString();
 };
 const skuLocationKey = (sku: unknown, location: unknown): string => `${normalize(sku)}@@${normalize(location)}`;
+
+/*
 const isWarehouseLocationForProduct = (product: Product, locationId: string, locationName: string): boolean => {
   const normalizedLocationId = normalize(locationId);
   const normalizedLocationName = normalize(locationName);
@@ -106,6 +108,7 @@ const isWarehouseLocationForProduct = (product: Product, locationId: string, loc
   if (normalizedLocationName.includes('1450968') && productLooksWarehouseMaster(product)) return true;
   return false;
 };
+*/
 
 let stockTransfersCache: StockTransferRecord[] = [];
 let stockLedgerCache: StockLedgerEntry[] = [];
@@ -363,6 +366,7 @@ export const simulateStockTransfer = ({
   const now = Date.now();
   const ledgerEntries: StockLedgerEntry[] = [];
   let ledgerSeq = 0;
+/*
   const syncWarehouseMirrorInventory = (
     product: Product,
     locationId: string,
@@ -374,6 +378,7 @@ export const simulateStockTransfer = ({
     if (!existing) return;
     existing.stock = Math.max(0, round3(nextQty));
   };
+*/
 
   const getSourceProduct = (item: StockTransferItem): Product => {
     const sourceKey = skuLocationKey(item.sku, transfer.locationFrom);
