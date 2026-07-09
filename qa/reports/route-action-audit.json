@@ -1,6 +1,6 @@
 {
   "summary": {
-    "routes": 95,
+    "routes": 96,
     "dynamicPrefixes": [
       "edit-sale/",
       "view-user/",
@@ -26,9 +26,15 @@
     ],
     "unknownNavigationTargets": 0,
     "deadOnClickHandlers": 0,
-    "bannedCalls": 0
+    "bannedCalls": 1
   },
   "unknownNavigationTargets": [],
   "deadOnClickHandlers": [],
-  "bannedCalls": []
+  "bannedCalls": [
+    {
+      "file": "src/components/accounts/ChequeVault.tsx",
+      "line": 54,
+      "call": "alert"
+    }
+  ]
 }
