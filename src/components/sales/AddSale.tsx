@@ -1240,10 +1240,17 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
     return (cust as any)?.advanceBalance || 0;
   }, [customer, customers]);
 
+  const lastInitializedPriceGroupRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (isEdit) return;
 
     if (resolvedSellingPriceGroup) {
+      if (lastInitializedPriceGroupRef.current === resolvedSellingPriceGroup.id) {
+        return; // Already initialized tax/pay terms for this group
+      }
+      lastInitializedPriceGroupRef.current = resolvedSellingPriceGroup.id;
+
       if (resolvedSellingPriceGroup.payTermDays > 0) {
         setPayTermNumber(String(resolvedSellingPriceGroup.payTermDays));
         setPayTermUnit(resolvedSellingPriceGroup.payTermUnit || 'Days');
@@ -1263,6 +1270,11 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       return;
     }
 
+    if (lastInitializedPriceGroupRef.current === (selectedCustomerObj?.id || 'none')) {
+        return;
+    }
+    lastInitializedPriceGroupRef.current = selectedCustomerObj?.id || 'none';
+
     const parsed = parsePayTerm(selectedCustomerObj?.payTerm);
     if (parsed) {
       setPayTermNumber(parsed.number);
@@ -1271,7 +1283,7 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
       setPayTermNumber('');
       setPayTermUnit('Days');
     }
-  }, [resolvedSellingPriceGroup?.id, selectedCustomerObj?.id, isEdit, taxRates]);
+  }, [resolvedSellingPriceGroup?.id, selectedCustomerObj?.id, isEdit, taxRates, resolvedSellingPriceGroup]);
 
   useEffect(() => {
     if (isEdit) return;
@@ -3193,10 +3205,25 @@ const AddSale: React.FC<AddSaleProps> = ({ onNavigate, fromOrder, sourceOrderId:
                           (() => {
                             const locObj = locations.find(l => l.name === location);
                             const methods = locObj?.paymentMethods?.filter(pm => pm.enabled) || [];
-                            if (methods.length > 0) {
-                              return methods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>);
+                            
+                            const customMethodsRaw = settings.customPaymentMethods || '';
+                            const customMethods = customMethodsRaw.split(',').map(s => s.trim()).filter(Boolean);
+                            const customOptions = customMethods.map(m => ({ id: `custom-${m}`, name: m, enabled: true, account: 'Bank Account' }));
+                            
+                            const allMethods = [...methods];
+                            customOptions.forEach(opt => {
+                              if (!allMethods.some(m => m.name.toLowerCase() === opt.name.toLowerCase())) {
+                                allMethods.push(opt as any);
+                              }
+                            });
+
+                            if (allMethods.length > 0) {
+                              return allMethods.map(pm => <option key={pm.id} value={pm.name}>{pm.name}</option>);
                             }
-                            return ['Cash', 'Card', 'Cheque', 'Bank Transfer'].map(m => <option key={m} value={m}>{m}</option>);
+                            
+                            const defaultFallback = ['Cash', 'Card', 'Cheque', 'Bank Transfer'];
+                            const finalFallback = Array.from(new Set([...defaultFallback, ...customMethods]));
+                            return finalFallback.map(m => <option key={m} value={m}>{m}</option>);
                           })()
                         )}
                     </select>

@@ -183,10 +183,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     () => normalizeSavedViews(dashboardPreferencesRaw.savedViews),
     [dashboardPreferencesRaw],
   );
-  const chequeReminderDismissedOn = useMemo(
-    () => String(dashboardPreferencesRaw.chequeReminderDismissedOn || '').trim(),
-    [dashboardPreferencesRaw],
-  );
+
 
   const [locationFilter, setLocationFilter] = useState(storedSticky.locationFilter);
   const [startDate, setStartDate] = useState(storedSticky.startDate);
@@ -197,7 +194,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const [viewName, setViewName] = useState('');
   const [pendingDeleteViewId, setPendingDeleteViewId] = useState('');
 
-  // Cheque reminders
+  // Cheque reminders (for inline display)
   const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const tomorrowMidnight = useMemo(() => { const d = new Date(todayMidnight); d.setDate(d.getDate() + 1); return d; }, [todayMidnight]);
   const pendingCheques = useMemo(() => {
@@ -209,26 +206,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       })
       .sort((a, b) => new Date(a.chequeDate).getTime() - new Date(b.chequeDate).getTime());
   }, [chequeReminders, tomorrowMidnight]);
-  const [showChequePopup, setShowChequePopup] = useState(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    return chequeReminderDismissedOn !== todayStr;
-  });
-  const dismissChequePopup = async () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    setShowChequePopup(false);
-    if (!currentUser?.id) return;
-    await updateCurrentUserPreferences({
-      dashboard: {
-        ...dashboardPreferencesRaw,
-        chequeReminderDismissedOn: todayStr,
-      },
-    });
-  };
 
-  useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    setShowChequePopup(chequeReminderDismissedOn !== todayStr);
-  }, [chequeReminderDismissedOn]);
+
 
   useEffect(() => {
     setLocationFilter((previous) => (previous === storedSticky.locationFilter ? previous : storedSticky.locationFilter));
@@ -2094,49 +2073,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {showChequePopup && pendingCheques.length > 0 && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-400" />
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 bg-amber-100 rounded-2xl"><Bell size={22} className="text-amber-700" /></div>
-                <div>
-                  <h2 className="text-xl font-black text-slate-900">Cheque Reminders</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">Cheques due soon — don't miss the deposit</p>
-                </div>
-              </div>
-              <div className="space-y-2 max-h-72 overflow-y-auto">
-                {pendingCheques.map(p => {
-                  const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
-                  const isToday = d.getTime() === todayMidnight.getTime();
-                  const isOverdue = d < todayMidnight;
-                  return (
-                    <div key={p.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-100">
-                      <div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-bold mr-2 ${isOverdue ? 'bg-rose-100 text-rose-700' : isToday ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {isOverdue ? 'Overdue' : isToday ? 'Due Today' : 'Due Tomorrow'}
-                        </span>
-                        <span className="text-sm font-bold text-slate-800">{p.contactName}</span>
-                        {p.chequeNo && <span className="text-xs text-slate-500 ml-2">#{p.chequeNo}</span>}
-                        {p.bankName && <span className="text-xs text-slate-500 ml-1">· {p.bankName}</span>}
-                      </div>
-                      <span className="font-black text-slate-900 text-sm">{formatCurrency(p.amount)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <button
-                onClick={dismissChequePopup}
-                className="mt-5 w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-700 transition"
-              >
-                Dismiss for today
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+
       <ConfirmDialog
         isOpen={!!pendingDeleteViewId}
         title="Delete Saved View"

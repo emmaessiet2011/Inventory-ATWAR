@@ -1148,6 +1148,7 @@ export interface AppSettings {
   cashDenominationEnabledOn: string;
   cashDenominationPaymentMethods: string;
   strictCashDenominationCheck: boolean;
+  customPaymentMethods: string;
   usernamePrefix: string;
   subscriptionPrefix: string;
   salesOrderPrefix: string;
@@ -2334,6 +2335,7 @@ const defaultSettings: AppSettings = {
   cashDenominationEnabledOn: 'All screens',
   cashDenominationPaymentMethods: '',
   strictCashDenominationCheck: false,
+  customPaymentMethods: '',
   usernamePrefix: '',
   subscriptionPrefix: '',
   salesOrderPrefix: 'SO-',

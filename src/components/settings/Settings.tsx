@@ -1294,6 +1294,17 @@ const Settings: React.FC = () => {
                {activeTab === 'payment' && (
                   <div className="space-y-6">
                       <div className="space-y-1.5">
+                          <label className="text-xs font-bold text-slate-900">Custom Payment Methods:</label>
+                          <input
+                            type="text"
+                            value={settings.customPaymentMethods || ''}
+                            onChange={(e) => handleChange('customPaymentMethods', e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-slate-50 border-transparent focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all text-sm font-medium text-slate-700"
+                            placeholder="e.g. Atwar Company, Mobile Money, Crypto"
+                          />
+                          <p className="text-xs text-slate-500">Comma-separated values. These will be added as options everywhere payment methods are selected.</p>
+                      </div>
+                      <div className="space-y-1.5">
                           <label className="text-xs font-bold text-slate-900">Cash Denominations:</label>
                           <input
                             type="text"

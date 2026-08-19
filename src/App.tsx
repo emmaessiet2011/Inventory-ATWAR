@@ -106,6 +106,8 @@ import {
   AUTH_LOGIN_STARTED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY,
   AUTH_REMEMBER_ME_STORAGE_KEY,
+  AUTH_SESSION_STORAGE_KEY,
+  AUTH_PERSISTENT_STORAGE_KEY,
   clearAuthToken,
 } from '@/utils/hardenedStorage';
 
@@ -126,7 +128,7 @@ const App: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { settings, currentUser, setCurrentUser, roles, products, orders } = useGlobalContext();
+  const { settings, currentUser, setCurrentUser, roles, products, orders, chequeReminders, updateCurrentUserPreferences } = useGlobalContext();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => !!currentUser || hasValidAuthToken());
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -151,6 +153,52 @@ const AppContent: React.FC = () => {
   const [sessionWarningMode, setSessionWarningMode] = useState<'idle' | 'absolute'>('idle');
   const currentPageValue = currentPage;
 
+  const userPreferences = useMemo(() => (currentUser as any)?.preferences || {}, [currentUser]);
+  const dashboardPreferencesRaw = useMemo(
+    () => (typeof userPreferences.dashboard === 'object' && userPreferences.dashboard !== null ? userPreferences.dashboard : {}) as Record<string, any>,
+    [userPreferences],
+  );
+  const chequeReminderDismissedOn = useMemo(
+    () => String(dashboardPreferencesRaw.chequeReminderDismissedOn || '').trim(),
+    [dashboardPreferencesRaw],
+  );
+
+  const todayMidnight = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const tomorrowMidnight = useMemo(() => { const d = new Date(todayMidnight); d.setDate(d.getDate() + 1); return d; }, [todayMidnight]);
+  const pendingCheques = useMemo(() => {
+    return (chequeReminders || [])
+      .filter(p => {
+        if (p.status !== 'PENDING') return false;
+        const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
+        return d <= tomorrowMidnight;
+      })
+      .sort((a, b) => new Date(a.chequeDate).getTime() - new Date(b.chequeDate).getTime());
+  }, [chequeReminders, tomorrowMidnight]);
+
+  const [showChequePopup, setShowChequePopup] = useState(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return chequeReminderDismissedOn !== todayStr;
+  });
+
+  const dismissChequePopup = async () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    setShowChequePopup(false);
+    if (!currentUser?.id) return;
+    if (updateCurrentUserPreferences) {
+      await updateCurrentUserPreferences({
+        dashboard: {
+          ...dashboardPreferencesRaw,
+          chequeReminderDismissedOn: todayStr,
+        },
+      });
+    }
+  };
+
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    setShowChequePopup(chequeReminderDismissedOn !== todayStr);
+  }, [chequeReminderDismissedOn]);
+
   const isSensitiveSessionPage = (page: string): boolean => {
     const normalized = String(page || '').trim().toLowerCase();
     if (!normalized) return false;
@@ -168,7 +216,9 @@ const AppContent: React.FC = () => {
     try {
       sessionStorage.removeItem(AUTH_LAST_ACTIVITY_STORAGE_KEY);
       sessionStorage.removeItem(AUTH_LOGIN_STARTED_AT_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
       localStorage.removeItem(AUTH_REMEMBER_ISSUED_AT_STORAGE_KEY);
+      localStorage.removeItem(AUTH_PERSISTENT_STORAGE_KEY);
     } catch {
       // ignore browser storage failures
     }
@@ -1620,6 +1670,54 @@ const AppContent: React.FC = () => {
           ))}
           {!shouldKeepCurrentPageAlive && renderPage(currentPageValue)}
         </main>
+
+        {showChequePopup && pendingCheques.length > 0 && (
+          <div className="fixed inset-0 z-[1600] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-500 to-orange-400" />
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2.5 bg-amber-100 rounded-2xl"><Bell size={22} className="text-amber-700" /></div>
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">Cheque Reminders</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Cheques due soon — don't miss the deposit</p>
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {pendingCheques.map(p => {
+                    const d = new Date(p.chequeDate); d.setHours(0,0,0,0);
+                    const isToday = d.getTime() === todayMidnight.getTime();
+                    const isOverdue = d < todayMidnight;
+                    return (
+                      <div key={p.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5 border border-slate-100">
+                        <div>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-bold mr-2 ${isOverdue ? 'bg-rose-100 text-rose-700' : isToday ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {isOverdue ? 'Overdue' : isToday ? 'Due Today' : 'Due Tomorrow'}
+                          </span>
+                          <span className="text-sm font-bold text-slate-800">{p.contactName}</span>
+                          {p.chequeNo && <span className="text-xs text-slate-500 ml-2">#{p.chequeNo}</span>}
+                          {p.bankName && <span className="text-xs text-slate-500 ml-1">· {p.bankName}</span>}
+                        </div>
+                        <span className="font-black text-slate-900 text-sm">
+                          {(() => {
+                            const num = Number(p.amount || 0);
+                            return `${settings.currencySymbolPlacement === 'before' ? settings.currencySymbol : ''}${num.toFixed(settings.currencyPrecision)}${settings.currencySymbolPlacement === 'after' ? ` ${settings.currencySymbol}` : ''}`;
+                          })()}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={dismissChequePopup}
+                  className="mt-5 w-full py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-slate-700 transition"
+                >
+                  Dismiss for today
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showSessionExpiryWarning && (
           <div className="fixed inset-0 z-[1400] bg-slate-900/45 backdrop-blur-sm flex items-center justify-center p-4 print:hidden">
