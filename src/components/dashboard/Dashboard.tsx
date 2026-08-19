@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
+
 import {
   AlertCircle,
   AlertTriangle,
-  Bell,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
